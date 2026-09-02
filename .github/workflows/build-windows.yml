@@ -73,6 +73,9 @@ jobs:
     needs: build
     runs-on: ubuntu-latest
     steps:
+      - name: Baixar o repositório
+        uses: actions/checkout@v4
+
       - name: Baixar os dois instaladores
         uses: actions/download-artifact@v4
         with:
