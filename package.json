@@ -1,0 +1,15 @@
+{
+  "name": "aula-facil-desktop",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Aplicativo desktop do AulaFácil — Centro Educacional Shekinah",
+  "scripts": {
+    "desktop": "tauri",
+    "desktop:dev": "tauri dev",
+    "desktop:icons": "tauri icon src-tauri/assets/app-icon.svg",
+    "desktop:build": "npm run desktop:icons && tauri build"
+  },
+  "devDependencies": {
+    "@tauri-apps/cli": "2.11.4"
+  }
+}

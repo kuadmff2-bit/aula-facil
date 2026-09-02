@@ -1,0 +1,45 @@
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "productName": "AulaFácil",
+  "version": "0.1.0",
+  "identifier": "br.com.shekinah.aulafacil",
+  "build": {
+    "frontendDist": "../dist"
+  },
+  "app": {
+    "windows": [
+      {
+        "label": "main",
+        "title": "AulaFácil — Centro Educacional Shekinah",
+        "url": "https://aulafacil-shekinah.kuadmff2.chatgpt.site",
+        "width": 1280,
+        "height": 800,
+        "minWidth": 880,
+        "minHeight": 600,
+        "center": true,
+        "maximized": true,
+        "resizable": true,
+        "fullscreen": false,
+        "devtools": false,
+        "backgroundColor": "#f3f6fb"
+      }
+    ],
+    "security": {
+      "csp": null
+    }
+  },
+  "bundle": {
+    "active": true,
+    "targets": ["nsis"],
+    "publisher": "Centro Educacional Shekinah",
+    "category": "Education",
+    "shortDescription": "Gestão escolar simples e completa.",
+    "longDescription": "Aplicativo desktop do AulaFácil para a gestão do Centro Educacional Shekinah.",
+    "icon": [
+      "icons/32x32.png",
+      "icons/128x128.png",
+      "icons/128x128@2x.png",
+      "icons/icon.ico"
+    ]
+  }
+}
