@@ -14,12 +14,11 @@ Aplicativo leve para usar o **AulaFácil — Centro Educacional Shekinah** como 
 
 ## Baixar o instalador
 
-1. Abra a aba **Actions** deste repositório.
-2. Entre na execução mais recente chamada **Gerar instaladores do AulaFácil**.
-3. Em **Artifacts**, baixe:
-   - `AulaFacil-Windows-ARM64` para Galaxy Book Go e outros Windows ARM;
-   - `AulaFacil-Windows-x64` para a maioria dos computadores Intel e AMD.
-4. Extraia o arquivo `.zip` e execute o instalador `.exe`.
+1. Abra a página [Releases](https://github.com/kuadmff2-bit/aula-facil/releases/latest).
+2. Em **Assets**, baixe:
+   - `AulaFacil-Windows-ARM64-Setup.exe` para Galaxy Book Go e outros Windows ARM;
+   - `AulaFacil-Windows-x64-Setup.exe` para a maioria dos computadores Intel e AMD.
+3. Execute o instalador `.exe`.
 
 O Windows pode exibir o aviso "O Windows protegeu o computador" porque o instalador ainda não possui assinatura digital paga. Nesse caso, confira se o arquivo veio deste repositório, escolha **Mais informações** e depois **Executar assim mesmo**.
 
