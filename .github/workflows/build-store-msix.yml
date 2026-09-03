@@ -18,23 +18,23 @@ on:
       identity_name:
         description: "Package/Identity/Name informado pelo Partner Center"
         required: true
-        default: "kuadmff2bit.AulaFacil.Preview"
+        default: "CarlosOlimpioCruzdeSouza.AulaFcil"
       publisher:
         description: "Package/Identity/Publisher informado pelo Partner Center"
         required: true
-        default: "CN=kuadmff2-bit"
+        default: "CN=882E7707-B009-419E-BD3B-FB6BC310FDA4"
       publisher_display_name:
         description: "Nome público do desenvolvedor no Partner Center"
         required: true
-        default: "kuadmff2-bit"
+        default: "Carlos Olímpio Cruz de Souza"
 
 permissions:
   contents: read
 
 env:
-  STORE_IDENTITY_NAME: ${{ inputs.identity_name || 'kuadmff2bit.AulaFacil.Preview' }}
-  STORE_PUBLISHER: ${{ inputs.publisher || 'CN=kuadmff2-bit' }}
-  STORE_PUBLISHER_DISPLAY_NAME: ${{ inputs.publisher_display_name || 'kuadmff2-bit' }}
+  STORE_IDENTITY_NAME: ${{ inputs.identity_name || 'CarlosOlimpioCruzdeSouza.AulaFcil' }}
+  STORE_PUBLISHER: ${{ inputs.publisher || 'CN=882E7707-B009-419E-BD3B-FB6BC310FDA4' }}
+  STORE_PUBLISHER_DISPLAY_NAME: ${{ inputs.publisher_display_name || 'Carlos Olímpio Cruz de Souza' }}
 
 jobs:
   build:
