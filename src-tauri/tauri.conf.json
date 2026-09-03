@@ -1,9 +1,12 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
   "productName": "AulaFácil",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "identifier": "br.com.shekinah.aulafacil",
   "build": {
+    "beforeDevCommand": "npm run dev",
+    "devUrl": "http://127.0.0.1:1420",
+    "beforeBuildCommand": "npm run build",
     "frontendDist": "../dist"
   },
   "app": {
@@ -11,7 +14,6 @@
       {
         "label": "main",
         "title": "AulaFácil — Centro Educacional Shekinah",
-        "url": "https://aulafacil-shekinah.kuadmff2.chatgpt.site",
         "width": 1280,
         "height": 800,
         "minWidth": 880,
@@ -25,7 +27,7 @@
       }
     ],
     "security": {
-      "csp": null
+      "csp": "default-src 'self'; img-src 'self' data: blob:; style-src 'self' 'unsafe-inline'; font-src 'self' data:"
     }
   },
   "bundle": {

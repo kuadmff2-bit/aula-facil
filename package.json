@@ -1,15 +1,27 @@
 {
   "name": "aula-facil-desktop",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "private": true,
   "description": "Aplicativo desktop do AulaFácil — Centro Educacional Shekinah",
   "scripts": {
+    "dev": "vite --host 127.0.0.1 --port 1420",
+    "build": "tsc --noEmit && vite build",
     "desktop": "tauri",
     "desktop:dev": "tauri dev",
     "desktop:icons": "tauri icon src-tauri/assets/app-icon.svg",
     "desktop:build": "npm run desktop:icons && tauri build"
   },
+  "dependencies": {
+    "lucide-react": "^0.542.0",
+    "react": "^19.1.1",
+    "react-dom": "^19.1.1"
+  },
   "devDependencies": {
-    "@tauri-apps/cli": "2.11.4"
+    "@tauri-apps/cli": "2.11.4",
+    "@types/react": "^19.1.12",
+    "@types/react-dom": "^19.1.9",
+    "@vitejs/plugin-react": "^5.0.2",
+    "typescript": "^5.9.2",
+    "vite": "^7.1.3"
   }
 }
