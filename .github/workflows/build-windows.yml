@@ -7,6 +7,7 @@ on:
 
 permissions:
   contents: write
+  actions: read
 
 jobs:
   build:
@@ -81,13 +82,22 @@ jobs:
         with:
           path: installers
 
+      - name: Preparar downloads e hashes verificáveis
+        run: |
+          mkdir -p release-assets
+          cp installers/AulaFacil-Windows-ARM64/AulaFacil-Windows-ARM64-Setup.exe release-assets/
+          cp installers/AulaFacil-Windows-x64/AulaFacil-Windows-x64-Setup.exe release-assets/
+          cd release-assets
+          sha256sum *.exe > SHA256SUMS.txt
+
       - name: Publicar a versão do aplicativo
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           files=(
-            "installers/AulaFacil-Windows-ARM64/AulaFacil-Windows-ARM64-Setup.exe"
-            "installers/AulaFacil-Windows-x64/AulaFacil-Windows-x64-Setup.exe"
+            "release-assets/AulaFacil-Windows-ARM64-Setup.exe"
+            "release-assets/AulaFacil-Windows-x64-Setup.exe"
+            "release-assets/SHA256SUMS.txt"
           )
           version=$(node -p "require('./package.json').version")
           tag="v${version}"

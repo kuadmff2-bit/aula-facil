@@ -1,0 +1,6 @@
+* @kuadmff2-bit
+
+# Alterações na compilação e na política de assinatura exigem o mantenedor.
+/.github/workflows/ @kuadmff2-bit
+/CODE_SIGNING.md @kuadmff2-bit
+/src-tauri/ @kuadmff2-bit

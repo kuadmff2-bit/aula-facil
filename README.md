@@ -17,7 +17,10 @@ Sistema local de gestão escolar do **Centro Educacional Shekinah**. A interface
 - instalador para Windows ARM64, incluindo o Galaxy Book Go;
 - instalador para computadores Windows x64.
 
-Os dados ficam somente no perfil do usuário do Windows. Faça backups frequentes pelo menu **Backup e dados**.
+Os dados ficam somente no perfil do usuário do Windows. Esta versão não envia
+cadastros, telemetria ou análises para a internet. Consulte a
+[política de privacidade](PRIVACY.md) e faça backups frequentes pelo menu
+**Backup e dados**.
 
 ## Baixar o instalador
 
@@ -27,7 +30,35 @@ Os dados ficam somente no perfil do usuário do Windows. Faça backups frequente
    - `AulaFacil-Windows-x64-Setup.exe` para a maioria dos computadores Intel e AMD.
 3. Desinstale a versão 0.1.0, caso ela esteja instalada, e execute o novo instalador `.exe`.
 
-O Windows pode exibir o aviso "O Windows protegeu o computador" porque o instalador ainda não possui assinatura digital paga. Nesse caso, confira se o arquivo veio deste repositório, escolha **Mais informações** e depois **Executar assim mesmo**.
+Os instaladores 0.2.0 ainda não possuem assinatura digital. O Microsoft Defender
+SmartScreen pode oferecer **Mais informações > Executar assim mesmo**, mas o
+Controle Inteligente de Aplicativos (Smart App Control) pode bloquear o arquivo
+sem mostrar essa opção. Não desative o antivírus nem o firewall. O projeto está
+solicitando assinatura gratuita para código aberto; a situação atual e o
+processo estão documentados na [política de assinatura](CODE_SIGNING.md).
+
+Depois de baixar, compare o arquivo com `SHA256SUMS.txt` disponível na mesma
+Release.
+
+## Code signing policy
+
+Free code signing provided by [SignPath.io](https://signpath.io/), certificate
+by [SignPath Foundation](https://signpath.org/).
+
+Responsáveis do projeto:
+
+- autor, mantenedor, committer e revisor: [@kuadmff2-bit](https://github.com/kuadmff2-bit);
+- aprovador manual das solicitações de assinatura: [@kuadmff2-bit](https://github.com/kuadmff2-bit).
+
+Nenhuma assinatura é aprovada automaticamente. Consulte a
+[política de assinatura completa](CODE_SIGNING.md), a
+[política de segurança](SECURITY.md) e a [política de privacidade](PRIVACY.md).
+
+## Desinstalação
+
+Abra **Configurações do Windows > Aplicativos > Aplicativos instalados**, localize
+**AulaFácil**, abra o menu de opções e selecione **Desinstalar**. Para apagar os
+registros antes disso, use **Backup e dados > Limpar sistema** dentro do app.
 
 ## Desenvolvimento
 
@@ -51,3 +82,7 @@ O aplicativo Android para responsáveis e alunos será distribuído como APK com
 ## Tecnologia
 
 Este projeto usa React, TypeScript, Vite e [Tauri 2](https://v2.tauri.app/). A aplicação é empacotada com seus próprios arquivos e usa o componente de renderização do Windows apenas para exibir a interface local.
+
+## Licença
+
+Distribuído sob a [licença MIT](LICENSE).
