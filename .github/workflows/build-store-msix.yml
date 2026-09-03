@@ -1,0 +1,140 @@
+name: Preparar pacote da Microsoft Store
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - ".github/workflows/build-store-msix.yml"
+      - "scripts/build-msix.ps1"
+      - "src/**"
+      - "src-tauri/**"
+      - "index.html"
+      - "package.json"
+      - "package-lock.json"
+      - "tsconfig.json"
+      - "vite.config.ts"
+  workflow_dispatch:
+    inputs:
+      identity_name:
+        description: "Package/Identity/Name informado pelo Partner Center"
+        required: true
+        default: "kuadmff2bit.AulaFacil.Preview"
+      publisher:
+        description: "Package/Identity/Publisher informado pelo Partner Center"
+        required: true
+        default: "CN=kuadmff2-bit"
+      publisher_display_name:
+        description: "Nome público do desenvolvedor no Partner Center"
+        required: true
+        default: "kuadmff2-bit"
+
+permissions:
+  contents: read
+
+env:
+  STORE_IDENTITY_NAME: ${{ inputs.identity_name || 'kuadmff2bit.AulaFacil.Preview' }}
+  STORE_PUBLISHER: ${{ inputs.publisher || 'CN=kuadmff2-bit' }}
+  STORE_PUBLISHER_DISPLAY_NAME: ${{ inputs.publisher_display_name || 'kuadmff2-bit' }}
+
+jobs:
+  build:
+    name: MSIX ${{ matrix.architecture }}
+    runs-on: windows-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - architecture: arm64
+            target: aarch64-pc-windows-msvc
+          - architecture: x64
+            target: x86_64-pc-windows-msvc
+
+    steps:
+      - name: Baixar o código
+        uses: actions/checkout@v4
+
+      - name: Preparar Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Preparar Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
+
+      - name: Ativar cache do Rust
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri -> target
+
+      - name: Instalar dependências
+        run: npm ci
+
+      - name: Gerar ícones da Microsoft Store
+        run: npm run desktop:icons
+
+      - name: Compilar o aplicativo sem instalador EXE
+        run: npm run desktop -- build --target ${{ matrix.target }} --no-bundle
+
+      - name: Montar e validar o MSIX
+        shell: pwsh
+        run: |
+          $version = node -p "require('./package.json').version"
+          $parts = $version.Split('.')
+          if ($parts.Count -ne 3) { throw "A versão deve usar o formato X.Y.Z." }
+          $packageVersion = "$($parts[0]).$($parts[1]).$($parts[2]).0"
+
+          ./scripts/build-msix.ps1 `
+            -Architecture "${{ matrix.architecture }}" `
+            -TargetTriple "${{ matrix.target }}" `
+            -IdentityName "$env:STORE_IDENTITY_NAME" `
+            -Publisher "$env:STORE_PUBLISHER" `
+            -PublisherDisplayName "$env:STORE_PUBLISHER_DISPLAY_NAME" `
+            -PackageVersion "$packageVersion"
+
+      - name: Guardar pacote da arquitetura
+        uses: actions/upload-artifact@v4
+        with:
+          name: AulaFacil-Store-${{ matrix.architecture }}
+          path: src-tauri/target/msix/${{ matrix.architecture }}/*.msix
+          if-no-files-found: error
+          retention-days: 30
+
+  bundle:
+    name: Criar pacote único da Store
+    needs: build
+    runs-on: windows-latest
+
+    steps:
+      - name: Baixar os pacotes ARM64 e x64
+        uses: actions/download-artifact@v4
+        with:
+          pattern: AulaFacil-Store-*
+          path: packages
+
+      - name: Criar o MSIX Bundle
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Path "bundle-input" -Force | Out-Null
+          Get-ChildItem "packages" -Filter "*.msix" -Recurse |
+            Copy-Item -Destination "bundle-input"
+
+          $windowsKits = Join-Path ${env:ProgramFiles(x86)} "Windows Kits\10\bin"
+          $makeAppx = Get-ChildItem $windowsKits -Filter "makeappx.exe" -Recurse |
+            Where-Object { $_.FullName -match "\\x64\\makeappx\.exe$" } |
+            Sort-Object FullName -Descending |
+            Select-Object -First 1
+
+          if (-not $makeAppx) { throw "MakeAppx.exe não foi encontrado." }
+          & $makeAppx.FullName bundle /d "bundle-input" /p "AulaFacil-Store.msixbundle" /o
+          if ($LASTEXITCODE -ne 0) { throw "Falha ao criar o MSIX Bundle." }
+
+      - name: Guardar pacote para envio ao Partner Center
+        uses: actions/upload-artifact@v4
+        with:
+          name: AulaFacil-Store-MSIX
+          path: AulaFacil-Store.msixbundle
+          if-no-files-found: error
+          retention-days: 30

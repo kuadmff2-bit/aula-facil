@@ -34,11 +34,27 @@ Os instaladores 0.2.0 ainda não possuem assinatura digital. O Microsoft Defende
 SmartScreen pode oferecer **Mais informações > Executar assim mesmo**, mas o
 Controle Inteligente de Aplicativos (Smart App Control) pode bloquear o arquivo
 sem mostrar essa opção. Não desative o antivírus nem o firewall. O projeto está
-solicitando assinatura gratuita para código aberto; a situação atual e o
-processo estão documentados na [política de assinatura](CODE_SIGNING.md).
+preparando distribuição assinada pela Microsoft Store e, como alternativa para
+o instalador EXE direto, uma solicitação à SignPath Foundation. A situação atual
+e o processo estão documentados na [política de assinatura](CODE_SIGNING.md).
 
 Depois de baixar, compare o arquivo com `SHA256SUMS.txt` disponível na mesma
 Release.
+
+## Microsoft Store — instalação sem bloqueio
+
+O caminho principal para eliminar o bloqueio sem comprar certificado será a
+Microsoft Store. Contas individuais podem publicar sem taxa de cadastro e a
+Microsoft assina gratuitamente pacotes MSIX aprovados pela certificação.
+
+O workflow
+[`.github/workflows/build-store-msix.yml`](.github/workflows/build-store-msix.yml)
+já prepara um único pacote ARM64 + x64. A compilação padrão usa uma identidade
+de teste apenas para validar o empacotamento. Antes do envio à Store, os três
+valores de identidade devem ser copiados exatamente do Partner Center ao
+executar o workflow manualmente.
+
+Cadastro oficial: [Microsoft Store Developer](https://storedeveloper.microsoft.com/).
 
 ## Code signing policy
 

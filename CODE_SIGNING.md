@@ -3,8 +3,10 @@
 Free code signing provided by [SignPath.io](https://signpath.io/), certificate
 by [SignPath Foundation](https://signpath.org/).
 
-O projeto está solicitando a participação no programa gratuito para projetos de
-código aberto. Até a aprovação e a publicação de uma nova Release assinada, os
+O caminho principal será a distribuição de um pacote MSIX pela Microsoft Store,
+que assina o pacote depois da certificação. A SignPath Foundation permanece como
+alternativa para assinar o instalador EXE distribuído diretamente pelo GitHub.
+Até a aprovação em um desses canais e a publicação de uma nova versão, os
 instaladores atuais permanecem **sem assinatura digital**.
 
 ## Responsáveis
@@ -36,6 +38,12 @@ O workflow público está em
 A integração de assinatura será ativada somente depois que a SignPath fornecer
 os identificadores do projeto, a política e o token de API. Isso evita um fluxo
 quebrado ou uma falsa alegação de que os arquivos atuais já estão assinados.
+
+O pacote para a Microsoft Store é gerado pelo workflow
+[`.github/workflows/build-store-msix.yml`](.github/workflows/build-store-msix.yml).
+A identidade definitiva do pacote deve ser obtida no Partner Center depois da
+reserva do nome do aplicativo. O MSIX de teste produzido antes disso não deve ser
+distribuído aos usuários.
 
 ## Metadados e privacidade
 
