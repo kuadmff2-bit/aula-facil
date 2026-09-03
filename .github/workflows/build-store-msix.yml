@@ -18,7 +18,7 @@ on:
       identity_name:
         description: "Package/Identity/Name informado pelo Partner Center"
         required: true
-        default: "CarlosOlimpioCruzdeSouza.AulaFcil"
+        default: "CarlosOlmpioCruzdeSouza.AulaFcil"
       publisher:
         description: "Package/Identity/Publisher informado pelo Partner Center"
         required: true
@@ -32,7 +32,7 @@ permissions:
   contents: read
 
 env:
-  STORE_IDENTITY_NAME: ${{ inputs.identity_name || 'CarlosOlimpioCruzdeSouza.AulaFcil' }}
+  STORE_IDENTITY_NAME: ${{ inputs.identity_name || 'CarlosOlmpioCruzdeSouza.AulaFcil' }}
   STORE_PUBLISHER: ${{ inputs.publisher || 'CN=882E7707-B009-419E-BD3B-FB6BC310FDA4' }}
   STORE_PUBLISHER_DISPLAY_NAME: ${{ inputs.publisher_display_name || 'Carlos Olímpio Cruz de Souza' }}
 
