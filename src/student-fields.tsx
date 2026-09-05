@@ -8,6 +8,7 @@ import {
   type StudentFieldType,
   type StudentFieldVisibility,
 } from "./model";
+import { ageGroupFromBirthDate, MAX_REASONABLE_DATE, MIN_REASONABLE_DATE, phoneError } from "./validation";
 
 const fieldTypes: Array<{ value: StudentFieldType; label: string }> = [
   { value: "text", label: "Texto" },
@@ -24,20 +25,9 @@ const visibilityOptions: Array<{ value: StudentFieldVisibility; label: string }>
   { value: "adult", label: "Somente se o aluno tiver 18 anos ou mais" },
 ];
 
-function ageGroup(birthDate: string): "minor" | "adult" | null {
-  if (!/^\d{4}-\d{2}-\d{2}$/.test(birthDate)) return null;
-  const birth = new Date(`${birthDate}T12:00:00`);
-  if (Number.isNaN(birth.getTime())) return null;
-  const today = new Date();
-  let age = today.getFullYear() - birth.getFullYear();
-  const month = today.getMonth() - birth.getMonth();
-  if (month < 0 || (month === 0 && today.getDate() < birth.getDate())) age -= 1;
-  return age < 18 ? "minor" : "adult";
-}
-
 function isVisible(field: StudentFieldDefinition, birthDate: string) {
   if (field.visibility === "always") return true;
-  return ageGroup(birthDate) === field.visibility;
+  return ageGroupFromBirthDate(birthDate) === field.visibility;
 }
 
 export function fieldInputName(field: StudentFieldDefinition) {
@@ -75,18 +65,19 @@ export function collectStudentFields(form: FormData, fields: StudentFieldDefinit
   };
 }
 
-function InputForField({ field }: { field: StudentFieldDefinition }) {
+function InputForField({ field, defaultValue = "" }: { field: StudentFieldDefinition; defaultValue?: string }) {
   const common = {
     name: fieldInputName(field),
     required: field.required,
     placeholder: field.placeholder,
+    defaultValue,
     maxLength: 2000,
   };
 
   if (field.type === "textarea") return <textarea {...common} rows={4} />;
-  if (field.type === "tel") return <input {...common} type="tel" inputMode="tel" />;
+  if (field.type === "tel") return <input {...common} maxLength={19} type="tel" inputMode="tel" onInput={(event) => event.currentTarget.setCustomValidity(phoneError(event.currentTarget.value, field.required))} />;
   if (field.type === "email") return <input {...common} type="email" inputMode="email" />;
-  if (field.type === "date") return <input {...common} type="date" />;
+  if (field.type === "date") return <input {...common} type="date" min={MIN_REASONABLE_DATE} max={MAX_REASONABLE_DATE} />;
   if (field.type === "number") return <input {...common} type="number" />;
   return <input {...common} type="text" />;
 }
@@ -95,14 +86,14 @@ function FieldShell({ label, wide, children }: { label: string; wide?: boolean; 
   return <label className={wide ? "field wide" : "field"}><span>{label}</span>{children}</label>;
 }
 
-export function StudentExtraFieldsForm({ fields, birthDate }: { fields: StudentFieldDefinition[]; birthDate: string }) {
+export function StudentExtraFieldsForm({ fields, birthDate, student }: { fields: StudentFieldDefinition[]; birthDate: string; student?: Student }) {
   const visible = fields.filter((field) => isVisible(field, birthDate));
   if (!visible.length) return null;
 
   return <>
     {visible.map((field) => (
       <FieldShell key={field.id} label={`${field.label}${field.required ? " *" : ""}`} wide={field.type === "textarea"}>
-        <InputForField field={field} />
+        <InputForField field={field} defaultValue={student ? studentFieldValue(student, field) : ""} />
       </FieldShell>
     ))}
   </>;
