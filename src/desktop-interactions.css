@@ -1,0 +1,16 @@
+#aulafacil-print-root{display:none}
+@page aulafacil-a4-portrait{size:A4 portrait;margin:0}
+@page aulafacil-a4-landscape{size:A4 landscape;margin:0}
+@page aulafacil-letter-portrait{size:Letter portrait;margin:0}
+@page aulafacil-letter-landscape{size:Letter landscape;margin:0}
+@media print{
+  body.aulafacil-printing{margin:0!important;padding:0!important;background:#fff!important}
+  body.aulafacil-printing>#root{display:none!important}
+  body.aulafacil-printing>#aulafacil-print-root{display:block!important;visibility:visible!important;position:static!important;inset:auto!important;width:auto!important;height:auto!important;margin:0!important;padding:0!important;background:#fff!important;overflow:visible!important}
+  body.aulafacil-printing>#aulafacil-print-root,body.aulafacil-printing>#aulafacil-print-root *{visibility:visible!important}
+  #aulafacil-print-root[data-paper-size="a4"][data-page-orientation="portrait"]{page:aulafacil-a4-portrait}
+  #aulafacil-print-root[data-paper-size="a4"][data-page-orientation="landscape"]{page:aulafacil-a4-landscape}
+  #aulafacil-print-root[data-paper-size="letter"][data-page-orientation="portrait"]{page:aulafacil-letter-portrait}
+  #aulafacil-print-root[data-paper-size="letter"][data-page-orientation="landscape"]{page:aulafacil-letter-landscape}
+  #aulafacil-print-root>#print-area,#aulafacil-print-root>#certificate-print-area{position:static!important;left:auto!important;top:auto!important;inset:auto!important;margin:0!important;transform:none!important}
+}
