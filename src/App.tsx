@@ -120,7 +120,7 @@ function initials(name: string) {
 }
 
 function effectiveStatus(invoice: Invoice): InvoiceStatus {
-  if (invoice.status === "paid" || invoice.status === "cancelled") return invoice.status;
+  if (invoice.status === "paid" || invoice.status === "cancelled" || invoice.status === "negotiated") return invoice.status;
   return invoice.dueDate < localDate() ? "overdue" : "pending";
 }
 
@@ -128,6 +128,7 @@ function statusText(status: InvoiceStatus) {
   if (status === "paid") return "Pago";
   if (status === "overdue") return "Atrasado";
   if (status === "cancelled") return "Cancelado";
+  if (status === "negotiated") return "Renegociada";
   return "Pendente";
 }
 
@@ -363,8 +364,8 @@ export default function App() {
       notify("Pagamentos confirmados não são reabertos apagando o histórico. Use o Financeiro para estorno ou ajuste.", "warning");
       return;
     }
-    if (invoice.status === "cancelled") {
-      notify("Esta cobrança está cancelada.", "warning");
+    if (invoice.status === "cancelled" || invoice.status === "negotiated") {
+      notify(invoice.status === "negotiated" ? "Esta cobrança faz parte de uma negociação ativa." : "Esta cobrança está cancelada.", "warning");
       return;
     }
     const breakdown = invoiceAmountDue(invoice, database.settings.finance);
@@ -509,7 +510,7 @@ export default function App() {
 
   const activeStudents = database.students.filter((item) => item.active);
   const paidInvoices = database.invoices.filter((item) => effectiveStatus(item) === "paid");
-  const openInvoices = database.invoices.filter((item) => effectiveStatus(item) !== "paid");
+  const openInvoices = database.invoices.filter((item) => { const status = effectiveStatus(item); return status === "pending" || status === "overdue"; });
   const overdueInvoices = database.invoices.filter((item) => effectiveStatus(item) === "overdue");
   const receivedTotal = paidInvoices.reduce((sum, item) => sum + item.amount, 0);
   const pendingTotal = openInvoices.reduce((sum, item) => sum + item.amount, 0);
@@ -759,7 +760,7 @@ function StudentDetails({ student, database, classItem, onClose, onGrade, onInvo
   const records = database.attendance.filter((item) => item.studentId === student.id);
   const presence = records.length ? Math.round(records.filter((item) => item.status === "present").length / records.length * 100) : null;
   const average = grades.length ? grades.reduce((sum, item) => sum + item.score, 0) / grades.length : null;
-  return <div className="modal-backdrop" role="presentation" onMouseDown={(event) => event.target === event.currentTarget && onClose()}><section className="details-panel"><header className="details-header"><button className="modal-close" onClick={onClose}><X /></button><div className="big-avatar">{initials(student.name)}</div><div><span className="status active">Matrícula ativa</span><h2>{student.name}</h2><p>{classItem?.name ?? "Sem turma"} · {classItem?.schedule ?? "Horário não informado"}</p></div></header><div className="details-body"><div className="student-metrics"><MiniMetric label="Média" value={average === null ? "—" : average.toFixed(1)} icon={GraduationCap} tone="blue" /><MiniMetric label="Frequência" value={presence === null ? "—" : `${presence}%`} icon={CalendarCheck2} tone="green" /><MiniMetric label="Em aberto" value={money(invoices.filter((item) => effectiveStatus(item) !== "paid").reduce((sum, item) => sum + item.amount, 0))} icon={WalletCards} tone="amber" /></div><div className="info-grid"><Info label="Nascimento" value={dateLabel(student.birthDate)} /><StudentExtraInfo student={student} fields={database.settings.studentFields} /></div><div className="details-actions"><button className="primary-button" onClick={onGrade}><Plus size={17} /> Lançar nota</button><button className="secondary-button" onClick={onInvoice}><Plus size={17} /> Nova cobrança</button><button className="secondary-button" onClick={() => onDocument("Declaração")}><FileText size={17} /> Declaração</button><button className="secondary-button" onClick={() => onDocument("Certificado")}><FileCheck2 size={17} /> Certificado</button></div><section className="detail-section"><div className="section-heading"><div><h3>Notas</h3><p>Histórico de avaliações.</p></div></div>{grades.length ? <div className="record-list">{grades.map((grade) => <div key={grade.id}><span className={grade.score >= 7 ? "score good" : "score attention"}>{grade.score.toFixed(1)}</span><div><strong>{grade.label}</strong><small>{grade.term}</small></div></div>)}</div> : <p className="inline-empty">Nenhuma nota lançada.</p>}</section><section className="detail-section"><div className="section-heading"><div><h3>Financeiro</h3><p>Cobranças deste aluno.</p></div></div>{invoices.length ? <div className="invoice-list">{invoices.map((invoice) => { const status = effectiveStatus(invoice); return <div key={invoice.id}><div><strong>{invoice.reference}</strong><small>Vencimento: {dateLabel(invoice.dueDate)}</small></div><b>{money(invoice.amount)}</b><span className={`status ${status}`}>{statusText(status)}</span><button className="text-button" onClick={() => onToggleInvoice(invoice)}>{status === "paid" ? "Reabrir" : "Confirmar"}</button>{status === "paid" && <button className="icon-button small" onClick={() => onReceipt(invoice)} title="Recibo"><ReceiptText size={16} /></button>}</div>; })}</div> : <p className="inline-empty">Nenhuma cobrança cadastrada.</p>}</section><button className="delete-record" onClick={onDelete}><Trash2 size={17} /> Excluir aluno e registros</button></div></section></div>;
+  return <div className="modal-backdrop" role="presentation" onMouseDown={(event) => event.target === event.currentTarget && onClose()}><section className="details-panel"><header className="details-header"><button className="modal-close" onClick={onClose}><X /></button><div className="big-avatar">{initials(student.name)}</div><div><span className="status active">Matrícula ativa</span><h2>{student.name}</h2><p>{classItem?.name ?? "Sem turma"} · {classItem?.schedule ?? "Horário não informado"}</p></div></header><div className="details-body"><div className="student-metrics"><MiniMetric label="Média" value={average === null ? "—" : average.toFixed(1)} icon={GraduationCap} tone="blue" /><MiniMetric label="Frequência" value={presence === null ? "—" : `${presence}%`} icon={CalendarCheck2} tone="green" /><MiniMetric label="Em aberto" value={money(invoices.filter((item) => { const status = effectiveStatus(item); return status === "pending" || status === "overdue"; }).reduce((sum, item) => sum + item.amount, 0))} icon={WalletCards} tone="amber" /></div><div className="info-grid"><Info label="Nascimento" value={dateLabel(student.birthDate)} /><StudentExtraInfo student={student} fields={database.settings.studentFields} /></div><div className="details-actions"><button className="primary-button" onClick={onGrade}><Plus size={17} /> Lançar nota</button><button className="secondary-button" onClick={onInvoice}><Plus size={17} /> Nova cobrança</button><button className="secondary-button" onClick={() => onDocument("Declaração")}><FileText size={17} /> Declaração</button><button className="secondary-button" onClick={() => onDocument("Certificado")}><FileCheck2 size={17} /> Certificado</button></div><section className="detail-section"><div className="section-heading"><div><h3>Notas</h3><p>Histórico de avaliações.</p></div></div>{grades.length ? <div className="record-list">{grades.map((grade) => <div key={grade.id}><span className={grade.score >= 7 ? "score good" : "score attention"}>{grade.score.toFixed(1)}</span><div><strong>{grade.label}</strong><small>{grade.term}</small></div></div>)}</div> : <p className="inline-empty">Nenhuma nota lançada.</p>}</section><section className="detail-section"><div className="section-heading"><div><h3>Financeiro</h3><p>Cobranças deste aluno.</p></div></div>{invoices.length ? <div className="invoice-list">{invoices.map((invoice) => { const status = effectiveStatus(invoice); return <div key={invoice.id}><div><strong>{invoice.reference}</strong><small>Vencimento: {dateLabel(invoice.dueDate)}</small></div><b>{money(invoice.amount)}</b><span className={`status ${status}`}>{statusText(status)}</span><button className="text-button" onClick={() => onToggleInvoice(invoice)}>{status === "paid" ? "Reabrir" : "Confirmar"}</button>{status === "paid" && <button className="icon-button small" onClick={() => onReceipt(invoice)} title="Recibo"><ReceiptText size={16} /></button>}</div>; })}</div> : <p className="inline-empty">Nenhuma cobrança cadastrada.</p>}</section><button className="delete-record" onClick={onDelete}><Trash2 size={17} /> Excluir aluno e registros</button></div></section></div>;
 }
 
 function DocumentModal({ value, database, classItem, onClose }: { value: NonNullable<Printable>; database: SchoolDatabase; classItem?: ClassItem; onClose: () => void }) {

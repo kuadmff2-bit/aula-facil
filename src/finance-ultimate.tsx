@@ -3,6 +3,7 @@ import { AlertTriangle, CheckCircle2, Copy, ExternalLink, Plus, ReceiptText, Wal
 import { emptyBillingProfile, generateProviderCharge, getBillingProfile, saveBillingProfile, type BillingProfile, type GeneratedCharge } from "./billing";
 import { dueDateForMonth, invoiceAmountDue, referenceMonthFromDate } from "./finance-utils";
 import { makeId, type Invoice, type Payment, type SchoolDatabase, type Student } from "./model";
+import { DebtNegotiationPanel } from "./debt-negotiation-panel";
 import "./finance-ultimate.css";
 
 const SELECTED_SCHOOL_KEY = "aulafacil.cloud.selected-school";
@@ -13,7 +14,7 @@ type Props = {
   onReceipt: (student: Student, invoice: Invoice, payment: Payment) => void;
 };
 
-type Filter = "all" | "pending" | "overdue" | "paid" | "cancelled";
+type Filter = "all" | "pending" | "overdue" | "paid" | "cancelled" | "negotiated";
 type Modal = { kind: "pay" | "charge"; invoice: Invoice; student: Student } | null;
 
 type Notice = { tone: "success" | "warning" | "danger"; text: string } | null;
@@ -34,7 +35,7 @@ function dateLabel(value: string | null | undefined) {
 }
 
 function effectiveStatus(invoice: Invoice): Filter {
-  if (invoice.status === "paid" || invoice.status === "cancelled") return invoice.status;
+  if (invoice.status === "paid" || invoice.status === "cancelled" || invoice.status === "negotiated") return invoice.status;
   return invoice.dueDate < localDate() ? "overdue" : "pending";
 }
 
@@ -42,6 +43,7 @@ function statusLabel(status: Filter) {
   if (status === "paid") return "Pago";
   if (status === "overdue") return "Atrasado";
   if (status === "cancelled") return "Cancelado";
+  if (status === "negotiated") return "Renegociada";
   if (status === "pending") return "Pendente";
   return "Todas";
 }
@@ -228,7 +230,7 @@ export function FinanceUltimate({ database, onChange, onReceipt }: Props) {
 
     {notice && <div className={`finance-notice ${notice.tone}`}><span>{notice.text}</span><button onClick={() => setNotice(null)}><X size={15}/></button></div>}
 
-    <div className="filter-tabs">{(["all","pending","overdue","paid","cancelled"] as Filter[]).map((item) => <button key={item} className={filter === item ? "active" : ""} onClick={() => setFilter(item)}>{statusLabel(item)}</button>)}</div>
+    <div className="filter-tabs">{(["all","pending","overdue","negotiated","paid","cancelled"] as Filter[]).map((item) => <button key={item} className={filter === item ? "active" : ""} onClick={() => setFilter(item)}>{statusLabel(item)}</button>)}</div>
 
     {visibleInvoices.length ? <div className="card table-card finance-table"><table><thead><tr><th>Aluno</th><th>Referência</th><th>Vencimento</th><th>Valor atualizado</th><th>Status</th><th>Ações</th></tr></thead><tbody>{visibleInvoices.map((invoice) => {
       const student = students.get(invoice.studentId);
@@ -248,6 +250,8 @@ export function FinanceUltimate({ database, onChange, onReceipt }: Props) {
         </div></td>
       </tr>;
     })}</tbody></table></div> : <div className="card finance-empty"><WalletCards/><h3>Nenhuma cobrança</h3><p>Gere as mensalidades do mês ou altere o filtro.</p></div>}
+
+    <DebtNegotiationPanel database={database} />
 
     {modal?.kind === "pay" && <div className="modal-backdrop"><section className="modal finance-modal"><header><div><h2>Registrar pagamento</h2><p>{modal.student.name} · {modal.invoice.reference}</p></div><button className="modal-close" onClick={() => setModal(null)}><X/></button></header>{(() => { const b = invoiceAmountDue(modal.invoice, database.settings.finance); const final = Math.max(0, b.totalDue - discount); return <div className="finance-payment-body"><div className="payment-breakdown"><div><span>Mensalidade</span><b>{money(b.baseAmount)}</b></div><div><span>Multa</span><b>{money(b.lateFee)}</b></div><div><span>Juros</span><b>{money(b.interest)}</b></div><div><span>Desconto</span><b>- {money(discount)}</b></div><div className="total"><span>Total recebido</span><strong>{money(final)}</strong></div></div><label><span>Desconto concedido</span><input type="number" min={0} max={b.totalDue} step="0.01" value={discount} onChange={(event) => setDiscount(Math.max(0, Number(event.target.value) || 0))}/></label><label><span>Forma de pagamento</span><select value={paymentMethod} onChange={(event) => setPaymentMethod(event.target.value)}><option value="dinheiro">Dinheiro</option><option value="pix_manual">Pix manual</option><option value="cartao">Cartão/maquininha</option><option value="transferencia">Transferência</option><option value="outro">Outro</option></select></label><div className="form-actions"><button className="secondary-button" onClick={() => setModal(null)}>Cancelar</button><button className="primary-button" onClick={confirmPayment}>Confirmar e gerar recibo</button></div></div>; })()}</section></div>}
 

@@ -363,3 +363,5 @@ tbody tr:hover { background: #f8fbff; }
   #print-area, #print-area * { visibility: visible !important; }
   #print-area { position: fixed; inset: 0; width: 210mm; min-height: 297mm; margin: 0; box-shadow: none; }
 }
+
+.status.negotiated{background:rgba(124,58,237,.11);color:#7c3aed}

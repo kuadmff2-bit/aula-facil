@@ -98,7 +98,7 @@ export type ClassItem = {
   createdAt: string;
 };
 
-export type InvoiceStatus = "pending" | "paid" | "overdue" | "cancelled";
+export type InvoiceStatus = "pending" | "paid" | "overdue" | "cancelled" | "negotiated";
 export type PaymentStatus = "pending" | "confirmed" | "refunded" | "cancelled" | "failed";
 
 export type Invoice = {
@@ -179,7 +179,7 @@ const MAX_RECORDS_PER_COLLECTION = 250_000;
 const FIELD_TYPES: StudentFieldType[] = ["text", "tel", "email", "date", "number", "textarea"];
 const FIELD_VISIBILITIES: StudentFieldVisibility[] = ["always", "minor", "adult"];
 const FIELD_SOURCES: StudentFieldSource[] = ["phone", "guardianName", "guardianPhone"];
-const INVOICE_STATUSES: InvoiceStatus[] = ["pending", "paid", "overdue", "cancelled"];
+const INVOICE_STATUSES: InvoiceStatus[] = ["pending", "paid", "overdue", "cancelled", "negotiated"];
 const PAYMENT_STATUSES: PaymentStatus[] = ["pending", "confirmed", "refunded", "cancelled", "failed"];
 const LATE_FEE_MODES: LateFeeMode[] = ["none", "fixed", "percent"];
 const INTEREST_MODES: InterestMode[] = ["none", "daily_percent", "monthly_percent", "fixed_daily"];
