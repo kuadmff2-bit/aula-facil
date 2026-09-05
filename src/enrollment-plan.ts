@@ -20,11 +20,6 @@ function addMonths(referenceMonth: string, offset: number) {
   return `${date.getUTCFullYear()}-${String(date.getUTCMonth() + 1).padStart(2, "0")}`;
 }
 
-function referenceLabel(referenceMonth: string) {
-  const [year, month] = referenceMonth.split("-");
-  return `${month}/${year}`;
-}
-
 function invoiceStatusFor(dueDate: string): Invoice["status"] {
   return dueDate < localDate() ? "overdue" : "pending";
 }
@@ -38,8 +33,9 @@ function dueDayFor(student: Student, database: SchoolDatabase) {
 
 export function buildFixedCoursePlan(database: SchoolDatabase, student: Student, classItem: ClassItem) {
   if ((classItem.durationType ?? "open_ended") !== "fixed") return [] as Invoice[];
-  const months = Math.max(1, Math.min(240, Math.trunc(classItem.durationMonths ?? 0)));
-  if (!months || classItem.monthlyFee <= 0) return [] as Invoice[];
+  const requestedMonths = classItem.durationMonths ?? 0;
+  if (!Number.isInteger(requestedMonths) || requestedMonths < 1 || requestedMonths > 240 || classItem.monthlyFee <= 0) return [] as Invoice[];
+  const months = requestedMonths;
 
   const startMonth = monthFromDate(student.enrollmentStartDate || student.createdAt.slice(0, 10));
   const dueDay = dueDayFor(student, database);
@@ -48,13 +44,16 @@ export function buildFixedCoursePlan(database: SchoolDatabase, student: Student,
 
   for (let index = 0; index < months; index += 1) {
     const referenceMonth = addMonths(startMonth, index);
-    const duplicate = database.invoices.some((item) => item.studentId === student.id && item.installmentNumber === index + 1 && item.planGenerated);
+    const duplicate = database.invoices.some((item) => item.studentId === student.id && (
+      (item.installmentNumber === index + 1 && item.planGenerated)
+      || (item.reference === referenceMonth && item.status !== "cancelled")
+    ));
     if (duplicate) continue;
     const dueDate = dueDateForMonth(referenceMonth, dueDay);
     invoices.push({
       id: makeId("cobranca"),
       studentId: student.id,
-      reference: referenceLabel(referenceMonth),
+      reference: referenceMonth,
       dueDate,
       amount: classItem.monthlyFee,
       status: invoiceStatusFor(dueDate),
@@ -74,14 +73,13 @@ export function ensureOpenEndedInvoiceForMonth(database: SchoolDatabase, student
   if ((student.enrollmentStatus ?? (student.active ? "active" : "paused")) !== "active") return null;
   if (classItem.monthlyFee <= 0 || !/^\d{4}-\d{2}$/.test(referenceMonth)) return null;
 
-  const reference = referenceLabel(referenceMonth);
-  const exists = database.invoices.some((item) => item.studentId === student.id && item.reference === reference && item.status !== "cancelled");
+  const exists = database.invoices.some((item) => item.studentId === student.id && item.reference === referenceMonth && item.status !== "cancelled");
   if (exists) return null;
   const dueDate = dueDateForMonth(referenceMonth, dueDayFor(student, database));
   return {
     id: makeId("cobranca"),
     studentId: student.id,
-    reference,
+    reference: referenceMonth,
     dueDate,
     amount: classItem.monthlyFee,
     status: invoiceStatusFor(dueDate),
