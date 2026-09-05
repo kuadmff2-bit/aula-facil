@@ -99,6 +99,7 @@ export type ClassItem = {
 };
 
 export type InvoiceStatus = "pending" | "paid" | "overdue" | "cancelled";
+export type PaymentStatus = "pending" | "confirmed" | "refunded" | "cancelled" | "failed";
 
 export type Invoice = {
   id: string;
@@ -112,6 +113,26 @@ export type Invoice = {
   providerChargeId?: string | null;
   pixCopyPaste?: string | null;
   boletoUrl?: string | null;
+  createdAt: string;
+};
+
+export type Payment = {
+  id: string;
+  studentId: string;
+  invoiceId?: string | null;
+  negotiationInstallmentId?: string | null;
+  amountReceived: number;
+  principalAmount: number;
+  lateFeeAmount: number;
+  interestAmount: number;
+  discountAmount: number;
+  paymentMethod: string;
+  provider?: string | null;
+  providerPaymentId?: string | null;
+  status: PaymentStatus;
+  paidAt: string | null;
+  receiptNumber?: string | null;
+  notes?: string;
   createdAt: string;
 };
 
@@ -148,6 +169,7 @@ export type SchoolDatabase = {
   students: Student[];
   classes: ClassItem[];
   invoices: Invoice[];
+  payments: Payment[];
   attendance: Attendance[];
   grades: Grade[];
   notices: Notice[];
@@ -158,6 +180,7 @@ const FIELD_TYPES: StudentFieldType[] = ["text", "tel", "email", "date", "number
 const FIELD_VISIBILITIES: StudentFieldVisibility[] = ["always", "minor", "adult"];
 const FIELD_SOURCES: StudentFieldSource[] = ["phone", "guardianName", "guardianPhone"];
 const INVOICE_STATUSES: InvoiceStatus[] = ["pending", "paid", "overdue", "cancelled"];
+const PAYMENT_STATUSES: PaymentStatus[] = ["pending", "confirmed", "refunded", "cancelled", "failed"];
 const LATE_FEE_MODES: LateFeeMode[] = ["none", "fixed", "percent"];
 const INTEREST_MODES: InterestMode[] = ["none", "daily_percent", "monthly_percent", "fixed_daily"];
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
@@ -300,6 +323,45 @@ function sanitizeInvoice(item: unknown): Invoice | null {
     providerChargeId: item.providerChargeId === null || item.providerChargeId === undefined ? null : text(item.providerChargeId, 255) || null,
     pixCopyPaste: item.pixCopyPaste === null || item.pixCopyPaste === undefined ? null : text(item.pixCopyPaste, 8_000) || null,
     boletoUrl: item.boletoUrl === null || item.boletoUrl === undefined ? null : text(item.boletoUrl, 2_048) || null,
+    createdAt,
+  };
+}
+
+function sanitizePayment(item: unknown): Payment | null {
+  if (!isRecord(item)) return null;
+  const id = text(item.id, 180);
+  const studentId = text(item.studentId, 180);
+  const invoiceId = item.invoiceId === null || item.invoiceId === undefined ? null : text(item.invoiceId, 180) || null;
+  const negotiationInstallmentId = item.negotiationInstallmentId === null || item.negotiationInstallmentId === undefined ? null : text(item.negotiationInstallmentId, 180) || null;
+  const amountReceived = finiteNumber(item.amountReceived, 0, 100_000_000, null);
+  const principalAmount = finiteNumber(item.principalAmount, 0, 100_000_000, null);
+  const lateFeeAmount = finiteNumber(item.lateFeeAmount, 0, 100_000_000, null);
+  const interestAmount = finiteNumber(item.interestAmount, 0, 100_000_000, null);
+  const discountAmount = finiteNumber(item.discountAmount, 0, 100_000_000, null);
+  const paymentMethod = text(item.paymentMethod, 40, "manual");
+  const status = PAYMENT_STATUSES.includes(item.status as PaymentStatus) ? item.status as PaymentStatus : null;
+  const createdAt = text(item.createdAt, 48);
+  if (!id || !studentId || (!invoiceId && !negotiationInstallmentId) || amountReceived === null || principalAmount === null || lateFeeAmount === null || interestAmount === null || discountAmount === null || !paymentMethod || !status || !createdAt) return null;
+  const expected = Math.round((principalAmount + lateFeeAmount + interestAmount - discountAmount) * 100) / 100;
+  if (Math.abs(expected - amountReceived) > 0.011) return null;
+
+  return {
+    id,
+    studentId,
+    invoiceId,
+    negotiationInstallmentId,
+    amountReceived,
+    principalAmount,
+    lateFeeAmount,
+    interestAmount,
+    discountAmount,
+    paymentMethod,
+    provider: item.provider === null || item.provider === undefined ? null : text(item.provider, 40) || null,
+    providerPaymentId: item.providerPaymentId === null || item.providerPaymentId === undefined ? null : text(item.providerPaymentId, 255) || null,
+    status,
+    paidAt: item.paidAt === null || item.paidAt === undefined ? null : text(item.paidAt, 48) || null,
+    receiptNumber: item.receiptNumber === null || item.receiptNumber === undefined ? null : text(item.receiptNumber, 120) || null,
+    notes: text(item.notes, 2_000),
     createdAt,
   };
 }
@@ -452,6 +514,7 @@ export function emptyDatabase(): SchoolDatabase {
     students: [],
     classes: [],
     invoices: [],
+    payments: [],
     attendance: [],
     grades: [],
     notices: [],
@@ -539,6 +602,7 @@ export function normalizeDatabase(value: unknown): SchoolDatabase | null {
     || !validArray(value.students)
     || !validArray(value.classes)
     || !validArray(value.invoices)
+    || !validArray(value.payments ?? [])
     || !validArray(value.attendance)
     || !validArray(value.grades)
     || !validArray(value.notices)) return null;
@@ -547,11 +611,12 @@ export function normalizeDatabase(value: unknown): SchoolDatabase | null {
   const students = sanitizeCollection(value.students, sanitizeStudent);
   const classes = sanitizeCollection(value.classes, sanitizeClass);
   const invoices = sanitizeCollection(value.invoices, sanitizeInvoice);
+  const payments = sanitizeCollection((value.payments ?? []) as unknown[], sanitizePayment);
   const attendance = sanitizeCollection(value.attendance, sanitizeAttendance);
   const grades = sanitizeCollection(value.grades, sanitizeGrade);
   const notices = sanitizeCollection(value.notices, sanitizeNotice);
 
-  if (!settings || !students || !classes || !invoices || !attendance || !grades || !notices) return null;
+  if (!settings || !students || !classes || !invoices || !payments || !attendance || !grades || !notices) return null;
 
   return {
     version: 1,
@@ -560,6 +625,7 @@ export function normalizeDatabase(value: unknown): SchoolDatabase | null {
     students,
     classes,
     invoices,
+    payments,
     attendance,
     grades,
     notices,
@@ -603,7 +669,8 @@ export function ensureUuidDatabase(database: SchoolDatabase): SchoolDatabase {
   const fieldMap = mapIds(next.settings.studentFields);
   const classMap = mapIds(next.classes);
   const studentMap = mapIds(next.students);
-  mapIds(next.invoices);
+  const invoiceMap = mapIds(next.invoices);
+  mapIds(next.payments);
   mapIds(next.attendance);
   mapIds(next.grades);
   mapIds(next.notices);
@@ -617,6 +684,37 @@ export function ensureUuidDatabase(database: SchoolDatabase): SchoolDatabase {
     student.customFields = migratedFields;
   }
   for (const invoice of next.invoices) invoice.studentId = studentMap.get(invoice.studentId) ?? invoice.studentId;
+  for (const payment of next.payments) {
+    payment.studentId = studentMap.get(payment.studentId) ?? payment.studentId;
+    if (payment.invoiceId) payment.invoiceId = invoiceMap.get(payment.invoiceId) ?? payment.invoiceId;
+  }
+
+  const paidInvoiceIds = new Set(next.payments.filter((payment) => payment.invoiceId && payment.status === "confirmed").map((payment) => payment.invoiceId));
+  for (const invoice of next.invoices) {
+    if (invoice.status !== "paid" || paidInvoiceIds.has(invoice.id)) continue;
+    const now = invoice.paidAt ?? invoice.createdAt;
+    next.payments.push({
+      id: randomUuid(),
+      studentId: invoice.studentId,
+      invoiceId: invoice.id,
+      negotiationInstallmentId: null,
+      amountReceived: invoice.amount,
+      principalAmount: invoice.amount,
+      lateFeeAmount: 0,
+      interestAmount: 0,
+      discountAmount: 0,
+      paymentMethod: "manual",
+      provider: null,
+      providerPaymentId: null,
+      status: "confirmed",
+      paidAt: invoice.paidAt,
+      receiptNumber: null,
+      notes: "Pagamento migrado de versão anterior. Acréscimos históricos não eram registrados separadamente.",
+      createdAt: now,
+    });
+    changed = true;
+  }
+
   for (const item of next.attendance) {
     item.studentId = studentMap.get(item.studentId) ?? item.studentId;
     item.classId = classMap.get(item.classId) ?? item.classId;

@@ -44,6 +44,7 @@ export type CloudDataSummary = {
   classes: number;
   students: number;
   invoices: number;
+  payments: number;
   attendance: number;
   grades: number;
   notices: number;
@@ -156,11 +157,21 @@ async function countActive(table: string, schoolId: string) {
   return count ?? 0;
 }
 
+async function countRows(table: string, schoolId: string) {
+  const { count, error } = await cloud
+    .from(table)
+    .select("id", { count: "exact", head: true })
+    .eq("school_id", schoolId);
+  if (error) fail(`Não foi possível contar registros de ${table}`, error);
+  return count ?? 0;
+}
+
 export async function getCloudDataSummary(schoolId: string): Promise<CloudDataSummary> {
-  const [classes, students, invoices, attendance, grades, notices] = await Promise.all([
+  const [classes, students, invoices, payments, attendance, grades, notices] = await Promise.all([
     countActive("classes", schoolId),
     countActive("students", schoolId),
     countActive("invoices", schoolId),
+    countRows("payments", schoolId),
     countActive("attendance", schoolId),
     countActive("grades", schoolId),
     countActive("notices", schoolId),
@@ -169,10 +180,11 @@ export async function getCloudDataSummary(schoolId: string): Promise<CloudDataSu
     classes,
     students,
     invoices,
+    payments,
     attendance,
     grades,
     notices,
-    totalOperationalRecords: classes + students + invoices + attendance + grades + notices,
+    totalOperationalRecords: classes + students + invoices + payments + attendance + grades + notices,
   };
 }
 
@@ -307,6 +319,27 @@ export async function seedEmptyCloudFromLocal(schoolId: string, database: School
     deleted_at: null,
   })));
 
+  await upsertRows("payments", normalized.payments.map((item) => ({
+    id: item.id,
+    school_id: schoolId,
+    student_id: item.studentId,
+    invoice_id: item.invoiceId ?? null,
+    negotiation_installment_id: item.negotiationInstallmentId ?? null,
+    amount_received: item.amountReceived,
+    principal_amount: item.principalAmount,
+    late_fee_amount: item.lateFeeAmount,
+    interest_amount: item.interestAmount,
+    discount_amount: item.discountAmount,
+    payment_method: item.paymentMethod,
+    provider: item.provider ?? null,
+    provider_payment_id: item.providerPaymentId ?? null,
+    status: item.status,
+    paid_at: item.paidAt,
+    receipt_number: item.receiptNumber ?? null,
+    notes: item.notes ?? null,
+    created_at: item.createdAt,
+  })));
+
   await upsertRows("attendance", normalized.attendance.map((item) => ({
     id: item.id,
     school_id: schoolId,
@@ -346,6 +379,12 @@ async function selectActive(table: string, schoolId: string, columns = "*") {
   return data ?? [];
 }
 
+async function selectRows(table: string, schoolId: string, columns = "*") {
+  const { data, error } = await cloud.from(table).select(columns).eq("school_id", schoolId);
+  if (error) fail(`Não foi possível baixar ${table}`, error);
+  return data ?? [];
+}
+
 export async function downloadCloudDatabase(schoolId: string, localAppearance: AppearanceMode = "system"): Promise<SchoolDatabase> {
   const [
     schoolResult,
@@ -354,6 +393,7 @@ export async function downloadCloudDatabase(schoolId: string, localAppearance: A
     classes,
     students,
     invoices,
+    payments,
     attendance,
     grades,
     notices,
@@ -365,6 +405,7 @@ export async function downloadCloudDatabase(schoolId: string, localAppearance: A
     selectActive("classes", schoolId),
     selectActive("students", schoolId),
     selectActive("invoices", schoolId),
+    selectRows("payments", schoolId),
     selectActive("attendance", schoolId),
     selectActive("grades", schoolId),
     selectActive("notices", schoolId),
@@ -464,6 +505,25 @@ export async function downloadCloudDatabase(schoolId: string, localAppearance: A
       providerChargeId: row.provider_charge_id ?? null,
       pixCopyPaste: row.pix_copy_paste ?? null,
       boletoUrl: row.boleto_url ?? null,
+      createdAt: nullableText(row.created_at),
+    })),
+    payments: (payments as any[]).map((row) => ({
+      id: String(row.id),
+      studentId: String(row.student_id),
+      invoiceId: row.invoice_id ? String(row.invoice_id) : null,
+      negotiationInstallmentId: row.negotiation_installment_id ? String(row.negotiation_installment_id) : null,
+      amountReceived: numeric(row.amount_received),
+      principalAmount: numeric(row.principal_amount),
+      lateFeeAmount: numeric(row.late_fee_amount),
+      interestAmount: numeric(row.interest_amount),
+      discountAmount: numeric(row.discount_amount),
+      paymentMethod: nullableText(row.payment_method) || "manual",
+      provider: row.provider ?? null,
+      providerPaymentId: row.provider_payment_id ?? null,
+      status: row.status,
+      paidAt: row.paid_at ? nullableText(row.paid_at) : null,
+      receiptNumber: row.receipt_number ?? null,
+      notes: nullableText(row.notes),
       createdAt: nullableText(row.created_at),
     })),
     attendance: (attendance as any[]).map((row) => ({
