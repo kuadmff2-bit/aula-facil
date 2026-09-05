@@ -169,6 +169,23 @@ export default function App() {
     return () => media.removeEventListener("change", applyTheme);
   }, [database.settings.appearance]);
   useEffect(() => {
+    const handleStorageFailure = (event: Event) => {
+      const detail = (event as CustomEvent<{ message?: string }>).detail;
+      setConfirmation({
+        title: "Falha ao salvar os dados",
+        message: detail?.message ?? "O armazenamento protegido não respondeu como esperado.",
+        detail: "Faça um backup antes de fechar o aplicativo. Se o problema continuar, reinicie o AulaFácil e verifique o armazenamento do Windows.",
+        confirmLabel: "Entendi",
+        cancelLabel: "Fechar aviso",
+        tone: "warning",
+        onConfirm: () => undefined,
+      });
+    };
+    window.addEventListener("aulafacil:storage-failure", handleStorageFailure);
+    return () => window.removeEventListener("aulafacil:storage-failure", handleStorageFailure);
+  }, []);
+
+  useEffect(() => {
     if (!toast) return;
     const timeout = window.setTimeout(() => setToast(null), 3200);
     return () => window.clearTimeout(timeout);

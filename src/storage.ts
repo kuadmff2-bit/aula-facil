@@ -94,10 +94,9 @@ function reportStorageFailure(error: unknown) {
   console.error("Falha no armazenamento protegido do AulaFácil", error);
   if (storageFailureShown) return;
   storageFailureShown = true;
-  window.alert(
-    "O AulaFácil não conseguiu gravar os dados no armazenamento protegido. "
-    + "Não feche o aplicativo até fazer um backup e verificar o problema.",
-  );
+  const message = "O AulaFácil não conseguiu gravar os dados no armazenamento protegido. "
+    + "Não feche o aplicativo até fazer um backup e verificar o problema.";
+  window.dispatchEvent(new CustomEvent("aulafacil:storage-failure", { detail: { message } }));
 }
 
 export function saveDatabase(database: SchoolDatabase) {
