@@ -1,5 +1,5 @@
 import { useMemo, useState } from "react";
-import { CheckCircle2, FileCheck2, FileText, MessageCircle, Pencil, ReceiptText, UserRoundPause, UserRoundCheck, WalletCards, X } from "lucide-react";
+import { CheckCircle2, FileCheck2, FileText, MessageCircle, PauseCircle, Pencil, ReceiptText, UserCheck, WalletCards, X } from "lucide-react";
 import { invoiceAmountDue } from "./finance-utils";
 import { openStudentWhatsApp } from "./student-contact";
 import type { ClassItem, Invoice, InvoiceStatus, SchoolDatabase, Student } from "./model";
@@ -82,7 +82,7 @@ export function StudentDetailsPanel({ student, classItem, database, onClose, onE
           <button className="secondary-button" onClick={() => contact("general")}><MessageCircle size={17}/> WhatsApp</button>
           {oldestOpen && <button className="primary-button" onClick={() => contact(effectiveStatus(oldestOpen) === "overdue" ? "overdue" : "pending", oldestOpen)}><MessageCircle size={17}/> Cobrar no WhatsApp</button>}
           <button className="secondary-button" onClick={onEdit}><Pencil size={17}/> Editar aluno</button>
-          {status === "active" ? <button className="secondary-button" onClick={onPause}><UserRoundPause size={17}/> Trancar curso</button> : status === "paused" ? <button className="secondary-button" onClick={onResume}><UserRoundCheck size={17}/> Reativar matrícula</button> : null}
+          {status === "active" ? <button className="secondary-button" onClick={onPause}><PauseCircle size={17}/> Trancar curso</button> : status === "paused" ? <button className="secondary-button" onClick={onResume}><UserCheck size={17}/> Reativar matrícula</button> : null}
         </div>
 
         <div className="student-info-strip">
