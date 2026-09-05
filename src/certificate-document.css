@@ -1,0 +1,26 @@
+.professional-certificate { width: min(1120px, 100%); aspect-ratio: 1.414 / 1; margin: 0 auto; padding: 18px; color: #172033; background: #f7f4ec; print-color-adjust: exact; -webkit-print-color-adjust: exact; }
+.professional-certificate-frame { height: 100%; display: flex; flex-direction: column; padding: 34px 42px; border: 4px solid var(--certificate-primary); outline: 1px solid color-mix(in srgb, var(--certificate-secondary) 55%, transparent); outline-offset: -12px; background: linear-gradient(145deg, rgba(255,255,255,.95), rgba(250,248,241,.95)); }
+.professional-certificate-header { display: flex; align-items: flex-start; justify-content: space-between; gap: 24px; }
+.professional-certificate-brand { display: flex; align-items: center; gap: 14px; }
+.professional-certificate-brand img, .professional-certificate-logo-fallback { width: 68px; height: 68px; object-fit: contain; border-radius: 14px; }
+.professional-certificate-logo-fallback { display: grid; place-items: center; color: white; font-size: 20px; font-weight: 900; background: var(--certificate-primary); }
+.professional-certificate-brand > div { display: grid; gap: 3px; }
+.professional-certificate-brand strong { font-size: 17px; }
+.professional-certificate-brand span { color: #687086; font-size: 11px; }
+.professional-certificate-number { color: #5f6678; font-size: 11px; font-weight: 800; }
+.professional-certificate-body { flex: 1; display: grid; place-items: center; align-content: center; text-align: center; padding: 28px 7%; }
+.professional-certificate-kicker { color: var(--certificate-secondary); font-size: 11px; font-weight: 900; letter-spacing: 2.1px; text-transform: uppercase; }
+.professional-certificate-body h1 { margin: 8px 0 5px; color: var(--certificate-primary); font-family: Georgia, "Times New Roman", serif; font-size: clamp(38px, 5vw, 68px); font-weight: 500; letter-spacing: 1px; }
+.professional-certificate-divider { width: 116px; height: 3px; margin: 9px auto 22px; border-radius: 999px; background: var(--certificate-secondary); }
+.professional-certificate-body p { max-width: 780px; margin: 0; font-family: Georgia, "Times New Roman", serif; font-size: clamp(16px, 2vw, 24px); line-height: 1.72; }
+.professional-certificate-workload { margin-top: 18px; color: #4f576b; font-size: 12px; }
+.professional-certificate-date { margin-top: 12px; color: #687086; font-size: 11px; }
+.professional-certificate-signatures { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 24px; align-items: end; margin: 0 auto 23px; width: min(780px, 100%); }
+.professional-certificate-signature { display: grid; gap: 7px; text-align: center; }
+.professional-certificate-signature span { display: block; height: 32px; border-bottom: 1px solid #687086; }
+.professional-certificate-signature strong { font-size: 10px; font-weight: 800; }
+.professional-certificate-footer { display: flex; justify-content: space-between; gap: 20px; color: #7a8190; font-size: 9px; }
+@media print {
+  .professional-certificate { width: 100%; height: 100%; aspect-ratio: auto; padding: 0; }
+  .professional-certificate-frame { break-inside: avoid; }
+}
