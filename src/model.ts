@@ -19,6 +19,8 @@ export type SchoolSettings = {
   appearance: AppearanceMode;
   studentFields: StudentFieldDefinition[];
   allowedDueDays: number[];
+  lateFeePercent: number;
+  monthlyInterestPercent: number;
 };
 
 export type Student = {
@@ -46,7 +48,7 @@ export type ClassItem = {
   createdAt: string;
 };
 
-export type InvoiceStatus = "pending" | "paid" | "overdue";
+export type InvoiceStatus = "pending" | "paid" | "overdue" | "negotiated";
 
 export type Invoice = {
   id: string;
@@ -56,6 +58,7 @@ export type Invoice = {
   amount: number;
   status: InvoiceStatus;
   paidAt: string | null;
+  paidAmount?: number | null;
   createdAt: string;
 };
 
@@ -101,7 +104,7 @@ const MAX_RECORDS_PER_COLLECTION = 250_000;
 const FIELD_TYPES: StudentFieldType[] = ["text", "tel", "email", "date", "number", "textarea"];
 const FIELD_VISIBILITIES: StudentFieldVisibility[] = ["always", "minor", "adult"];
 const FIELD_SOURCES: StudentFieldSource[] = ["phone", "guardianName", "guardianPhone"];
-const INVOICE_STATUSES: InvoiceStatus[] = ["pending", "paid", "overdue"];
+const INVOICE_STATUSES: InvoiceStatus[] = ["pending", "paid", "overdue", "negotiated"];
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return Boolean(value) && typeof value === "object" && !Array.isArray(value);
@@ -225,6 +228,9 @@ function sanitizeInvoice(item: unknown): Invoice | null {
   const createdAt = text(item.createdAt, 48);
   const amount = finiteNumber(item.amount, 0, 100_000_000, null);
   const status = INVOICE_STATUSES.includes(item.status as InvoiceStatus) ? item.status as InvoiceStatus : null;
+  const paidAmount = item.paidAmount === null || item.paidAmount === undefined
+    ? null
+    : finiteNumber(item.paidAmount, 0, 100_000_000, null);
   if (!id || !studentId || !reference || !dueDate || !createdAt || amount === null || !status) return null;
 
   return {
@@ -235,6 +241,7 @@ function sanitizeInvoice(item: unknown): Invoice | null {
     amount,
     status,
     paidAt: item.paidAt === null || item.paidAt === undefined ? null : text(item.paidAt, 48) || null,
+    paidAmount,
     createdAt,
   };
 }
@@ -320,6 +327,8 @@ export function defaultSchoolSettings(): SchoolSettings {
     appearance: "system",
     studentFields: defaultStudentFields(),
     allowedDueDays: [5, 10, 15, 20, 25],
+    lateFeePercent: 0,
+    monthlyInterestPercent: 0,
   };
 }
 
@@ -372,6 +381,8 @@ export function normalizeDatabase(value: unknown): SchoolDatabase | null {
       appearance,
       studentFields,
       allowedDueDays: sanitizeDueDays(rawSettings.allowedDueDays),
+      lateFeePercent: finiteNumber(rawSettings.lateFeePercent, 0, 100, 0) ?? 0,
+      monthlyInterestPercent: finiteNumber(rawSettings.monthlyInterestPercent, 0, 100, 0) ?? 0,
     },
     students,
     classes,
