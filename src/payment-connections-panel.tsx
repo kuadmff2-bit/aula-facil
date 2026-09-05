@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import {
+  configurePaymentCredentials,
   createPaymentConnection,
   listPaymentConnections,
   removePaymentConnection,
@@ -33,10 +34,22 @@ export function PaymentConnectionsPanel() {
   const [priority, setPriority] = useState(50);
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState<Message>(null);
+  const [credentialConnectionId, setCredentialConnectionId] = useState("");
+  const [credentialValues, setCredentialValues] = useState<Record<string, string>>({});
 
   const selectedProvider = useMemo(
     () => PAYMENT_PROVIDERS.find((provider) => provider.key === providerKey) ?? PAYMENT_PROVIDERS[0],
     [providerKey],
+  );
+
+  const credentialConnection = useMemo(
+    () => connections.find((connection) => connection.id === credentialConnectionId) ?? null,
+    [connections, credentialConnectionId],
+  );
+
+  const credentialProvider = useMemo(
+    () => credentialConnection ? PAYMENT_PROVIDERS.find((provider) => provider.key === credentialConnection.providerKey) ?? null : null,
+    [credentialConnection],
   );
 
   const refresh = async (targetSchoolId = schoolId) => {
@@ -74,7 +87,7 @@ export function PaymentConnectionsPanel() {
     if (!schoolId) throw new Error("Entre no AulaFácil Cloud e selecione a instituição antes de configurar recebimentos online.");
     if (providerKey === "manual_pix" && !pixKey.trim()) throw new Error("Informe a chave Pix da escola.");
 
-    await createPaymentConnection(schoolId, {
+    const created = await createPaymentConnection(schoolId, {
       providerKey,
       displayName: displayName.trim() || selectedProvider.name,
       environment,
@@ -87,11 +100,15 @@ export function PaymentConnectionsPanel() {
     setDisplayName(selectedProvider.name);
     setPixKey("");
     setPixRecipient("");
+    if (providerKey !== "manual_pix") {
+      setCredentialConnectionId(created.id);
+      setCredentialValues({});
+    }
     setMessage({
       tone: providerKey === "manual_pix" ? "success" : "warning",
       text: providerKey === "manual_pix"
         ? "Pix manual adicionado. A escola pode usá-lo como opção de recebimento."
-        : "Conexão adicionada. Ela só será usada depois que as credenciais secretas forem configuradas no servidor.",
+        : "Conexão adicionada. Configure as credenciais para habilitar cobranças automáticas.",
     });
   });
 
@@ -116,6 +133,23 @@ export function PaymentConnectionsPanel() {
     await refresh();
     setMessage({ tone: "success", text: `${connection.displayName} definido como padrão para ${kind === "pix" ? "Pix" : kind === "boleto" ? "boleto" : "cartão"}.` });
   });
+
+  const saveCredentials = () => {
+    if (!credentialConnection || !credentialProvider) return;
+    void run(async () => {
+      const payload: Record<string, string> = {};
+      for (const field of credentialProvider.credentialFields) {
+        const value = credentialValues[field.key]?.trim() ?? "";
+        if (field.required && !value) throw new Error(`Preencha ${field.label}.`);
+        if (value) payload[field.key] = value;
+      }
+      await configurePaymentCredentials(credentialConnection.id, payload);
+      setCredentialValues({});
+      setCredentialConnectionId("");
+      await refresh();
+      setMessage({ tone: "success", text: `Credenciais de ${credentialConnection.displayName} protegidas no servidor. O aplicativo não consegue lê-las de volta.` });
+    });
+  };
 
   return (
     <section className="card payment-connections-card">
@@ -152,11 +186,39 @@ export function PaymentConnectionsPanel() {
                 {connection.supportsPix && <button type="button" className={connection.defaultForPix ? "active" : ""} onClick={() => makeDefault(connection, "pix")}>{connection.defaultForPix ? "Pix padrão" : "Usar para Pix"}</button>}
                 {connection.supportsBoleto && <button type="button" className={connection.defaultForBoleto ? "active" : ""} onClick={() => makeDefault(connection, "boleto")}>{connection.defaultForBoleto ? "Boleto padrão" : "Usar para boleto"}</button>}
                 {connection.supportsCard && <button type="button" className={connection.defaultForCard ? "active" : ""} onClick={() => makeDefault(connection, "card")}>{connection.defaultForCard ? "Cartão padrão" : "Usar para cartão"}</button>}
+                {connection.providerKey !== "manual_pix" && <button type="button" onClick={() => { setCredentialConnectionId(connection.id); setCredentialValues({}); }}>{connection.credentialsConfigured ? "Trocar credenciais" : "Configurar credenciais"}</button>}
                 <button type="button" onClick={() => void run(async () => { await updatePaymentConnection(connection.id, { enabled: !connection.enabled }); await refresh(); })}>{connection.enabled ? "Pausar" : "Ativar"}</button>
-                <button type="button" className="danger" onClick={() => void run(async () => { await removePaymentConnection(connection.id); await refresh(); setMessage({ tone: "success", text: "Conexão removida." }); })}>Remover</button>
+                <button type="button" className="danger" onClick={() => void run(async () => { await removePaymentConnection(connection.id); if (credentialConnectionId === connection.id) setCredentialConnectionId(""); await refresh(); setMessage({ tone: "success", text: "Conexão e credenciais associadas removidas." }); })}>Remover</button>
               </div>
             </article>
           ))}
+        </div>
+      )}
+
+      {credentialConnection && credentialProvider && (
+        <div className="payment-credential-box">
+          <div>
+            <h3>Credenciais de {credentialConnection.displayName}</h3>
+            <p>Esses valores serão enviados diretamente ao backend seguro e armazenados no Supabase Vault. Eles não entram no backup, no banco local nem no repositório.</p>
+          </div>
+          <div className="payment-form-grid">
+            {credentialProvider.credentialFields.map((field) => (
+              <label key={field.key}>
+                <span>{field.label}{field.required ? " *" : ""}</span>
+                <input
+                  type="password"
+                  autoComplete="off"
+                  value={credentialValues[field.key] ?? ""}
+                  onChange={(event) => setCredentialValues((current) => ({ ...current, [field.key]: event.target.value }))}
+                  placeholder={field.placeholder ?? "••••••••"}
+                />
+              </label>
+            ))}
+          </div>
+          <div className="settings-inline-actions">
+            <button type="button" className="secondary-button" disabled={busy} onClick={() => { setCredentialValues({}); setCredentialConnectionId(""); }}>Cancelar</button>
+            <button type="button" className="primary-button" disabled={busy} onClick={saveCredentials}>{busy ? "Protegendo..." : "Salvar no cofre seguro"}</button>
+          </div>
         </div>
       )}
 
@@ -193,7 +255,7 @@ export function PaymentConnectionsPanel() {
           <span>{selectedProvider.description}</span>
           {selectedProvider.notes && <small>{selectedProvider.notes}</small>}
         </div>
-        {providerKey !== "manual_pix" && <div className="payment-secret-note">As chaves secretas não serão gravadas no aplicativo nem no banco acessível ao cliente. A configuração de credenciais será enviada ao backend seguro.</div>}
+        {providerKey !== "manual_pix" && <div className="payment-secret-note">As chaves secretas não serão gravadas no aplicativo nem no banco acessível ao cliente. Após criar a conexão, o AulaFácil abre o cofre seguro para configurá-las.</div>}
         {message && <div className={`payment-message ${message.tone}`} role="status">{message.text}</div>}
         <button type="button" className="primary-button" disabled={busy || !schoolId} onClick={addConnection}>{busy ? "Aguarde..." : "Adicionar conexão"}</button>
       </div>
