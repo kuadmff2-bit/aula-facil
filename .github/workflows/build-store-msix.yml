@@ -60,7 +60,9 @@ jobs:
       - name: Instalar dependências
         run: npm ci
 
-      - name: Validar estrutura e configurações críticas
+      - name: Validar requisitos de lançamento
+        env:
+          AULAFACIL_STRICT_RELEASE: "1"
         run: node scripts/quality-check.mjs
 
       - name: Validar TypeScript e frontend
