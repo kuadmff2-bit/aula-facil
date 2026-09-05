@@ -55,6 +55,8 @@ import {
 import { loadDatabase, parseBackup, saveDatabase } from "./storage";
 import { collectStudentFields, StudentExtraFieldsForm, StudentExtraInfo, StudentFieldsSettings } from "./student-fields";
 import { ReceiptDocument } from "./receipt-document";
+import { AppearanceSettings } from "./appearance-settings";
+import { ConfirmDialog, type ConfirmRequest } from "./confirm-dialog";
 
 type ModalKind = "student" | "class" | "invoice" | "bulk-invoice" | "notice" | "grade" | "student-details" | null;
 type Toast = { message: string; tone: "success" | "warning" | "danger" };
@@ -136,9 +138,22 @@ export default function App() {
   const [toast, setToast] = useState<Toast | null>(null);
   const [printable, setPrintable] = useState<Printable>(null);
   const [studentBirthDate, setStudentBirthDate] = useState("");
+  const [confirmation, setConfirmation] = useState<(ConfirmRequest & { onConfirm: () => void }) | null>(null);
   const importRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => saveDatabase(database), [database]);
+  useEffect(() => {
+    const media = window.matchMedia("(prefers-color-scheme: dark)");
+    const applyTheme = () => {
+      const appearance = database.settings.appearance ?? "system";
+      const resolved = appearance === "system" ? (media.matches ? "dark" : "light") : appearance;
+      document.documentElement.dataset.theme = resolved;
+      document.documentElement.style.colorScheme = resolved;
+    };
+    applyTheme();
+    media.addEventListener("change", applyTheme);
+    return () => media.removeEventListener("change", applyTheme);
+  }, [database.settings.appearance]);
   useEffect(() => {
     if (!toast) return;
     const timeout = window.setTimeout(() => setToast(null), 3200);
@@ -159,6 +174,10 @@ export default function App() {
   };
 
   const notify = (message: string, tone: Toast["tone"] = "success") => setToast({ message, tone });
+
+  const confirmAction = (request: ConfirmRequest, action: () => void) => {
+    setConfirmation({ ...request, onConfirm: action });
+  };
 
   const openStudentForm = () => {
     if (database.classes.length === 0) {
@@ -340,16 +359,23 @@ export default function App() {
   };
 
   const deleteStudent = (student: Student) => {
-    if (!window.confirm(`Excluir o cadastro de ${student.name} e todos os registros relacionados?`)) return;
-    updateDatabase((draft) => {
-      draft.students = draft.students.filter((item) => item.id !== student.id);
-      draft.invoices = draft.invoices.filter((item) => item.studentId !== student.id);
-      draft.attendance = draft.attendance.filter((item) => item.studentId !== student.id);
-      draft.grades = draft.grades.filter((item) => item.studentId !== student.id);
+    confirmAction({
+      title: "Excluir aluno?",
+      message: `O cadastro de ${student.name} e os registros relacionados serão removidos deste dispositivo.`,
+      detail: "Mensalidades, chamadas e notas vinculadas também serão removidas. Faça um backup se precisar preservar essas informações.",
+      confirmLabel: "Excluir aluno",
+      tone: "danger",
+    }, () => {
+      updateDatabase((draft) => {
+        draft.students = draft.students.filter((item) => item.id !== student.id);
+        draft.invoices = draft.invoices.filter((item) => item.studentId !== student.id);
+        draft.attendance = draft.attendance.filter((item) => item.studentId !== student.id);
+        draft.grades = draft.grades.filter((item) => item.studentId !== student.id);
+      });
+      setSelectedStudentId("");
+      setModal(null);
+      notify("Cadastro removido.", "warning");
     });
-    setSelectedStudentId("");
-    setModal(null);
-    notify("Cadastro removido.", "warning");
   };
 
   const deleteClass = (classItem: ClassItem) => {
@@ -358,11 +384,18 @@ export default function App() {
       notify("Mova ou remova os alunos desta turma primeiro.", "warning");
       return;
     }
-    if (!window.confirm(`Excluir a turma ${classItem.name}?`)) return;
-    updateDatabase((draft) => {
-      draft.classes = draft.classes.filter((item) => item.id !== classItem.id);
+    confirmAction({
+      title: "Excluir turma?",
+      message: `A turma ${classItem.name} será removida do AulaFácil.`,
+      detail: "Esta ação só é permitida quando a turma não possui alunos vinculados.",
+      confirmLabel: "Excluir turma",
+      tone: "danger",
+    }, () => {
+      updateDatabase((draft) => {
+        draft.classes = draft.classes.filter((item) => item.id !== classItem.id);
+      });
+      notify("Turma removida.", "warning");
     });
-    notify("Turma removida.", "warning");
   };
 
   const saveAttendance = () => {
@@ -412,11 +445,18 @@ export default function App() {
   const importBackup = async (file: File) => {
     try {
       const restored = parseBackup(await file.text());
-      if (!window.confirm("Restaurar este backup substituirá os dados atuais. Continuar?")) return;
-      setDatabase(restored);
-      setModal(null);
-      setSelectedStudentId("");
-      notify("Backup restaurado com sucesso.");
+      confirmAction({
+        title: "Restaurar este backup?",
+        message: "Os dados locais atuais serão substituídos pelo conteúdo do arquivo selecionado.",
+        detail: "O arquivo já foi validado pelo AulaFácil. Crie um backup dos dados atuais antes de continuar se precisar preservá-los.",
+        confirmLabel: "Restaurar backup",
+        tone: "warning",
+      }, () => {
+        setDatabase(restored);
+        setModal(null);
+        setSelectedStudentId("");
+        notify("Backup restaurado com sucesso.");
+      });
     } catch (error) {
       notify(error instanceof Error ? error.message : "Não foi possível restaurar o arquivo.", "danger");
     } finally {
@@ -425,11 +465,18 @@ export default function App() {
   };
 
   const resetDatabase = () => {
-    if (!window.confirm("Apagar definitivamente todos os dados deste computador? Faça um backup antes.")) return;
-    setDatabase(emptyDatabase());
-    setSelectedStudentId("");
-    setAttendanceMarks({});
-    notify("O AulaFácil voltou ao estado vazio.", "warning");
+    confirmAction({
+      title: "Limpar todos os dados locais?",
+      message: "Alunos, turmas, notas, chamadas, cobranças e avisos desta instalação serão removidos.",
+      detail: "Esta ação é destrutiva. Faça um backup antes se existir qualquer informação que precise ser preservada.",
+      confirmLabel: "Limpar sistema",
+      tone: "danger",
+    }, () => {
+      setDatabase(emptyDatabase());
+      setSelectedStudentId("");
+      setAttendanceMarks({});
+      notify("O AulaFácil voltou ao estado vazio.", "warning");
+    });
   };
 
   const activeStudents = database.students.filter((item) => item.active);
@@ -589,15 +636,21 @@ export default function App() {
           {view === "notices" && (
             <section className="stack">
               <PageHeader title="Mural de avisos" subtitle="Comunicados preparados pela secretaria." action="Novo aviso" icon={Plus} onAction={() => setModal("notice")} />
-              {database.notices.length ? <div className="notice-grid">{database.notices.map((notice) => <article className="card notice-card" key={notice.id}><div><span className="audience">{notice.audience}</span><time>{new Date(notice.publishedAt).toLocaleDateString("pt-BR")}</time></div><h3>{notice.title}</h3><p>{notice.message}</p><button className="quiet-danger" onClick={() => { if (window.confirm("Excluir este aviso?")) updateDatabase((draft) => { draft.notices = draft.notices.filter((item) => item.id !== notice.id); }); }}><Trash2 size={16} /> Excluir</button></article>)}</div> : <EmptyState icon={Megaphone} title="Nenhum aviso" text="O mural começa vazio. Crie apenas comunicados reais." action="Criar primeiro aviso" onAction={() => setModal("notice")} />}
+              {database.notices.length ? <div className="notice-grid">{database.notices.map((notice) => <article className="card notice-card" key={notice.id}><div><span className="audience">{notice.audience}</span><time>{new Date(notice.publishedAt).toLocaleDateString("pt-BR")}</time></div><h3>{notice.title}</h3><p>{notice.message}</p><button className="quiet-danger" onClick={() => confirmAction({ title: "Excluir aviso?", message: `O aviso “${notice.title}” será removido do mural.`, confirmLabel: "Excluir aviso", tone: "danger" }, () => updateDatabase((draft) => { draft.notices = draft.notices.filter((item) => item.id !== notice.id); }))}><Trash2 size={16} /> Excluir</button></article>)}</div> : <EmptyState icon={Megaphone} title="Nenhum aviso" text="O mural começa vazio. Crie apenas comunicados reais." action="Criar primeiro aviso" onAction={() => setModal("notice")} />}
             </section>
           )}
 
           {view === "settings" && (
-            <StudentFieldsSettings
-              fields={database.settings.studentFields}
-              onChange={(fields) => updateDatabase((draft) => { draft.settings.studentFields = fields; })}
-            />
+            <section className="stack">
+              <AppearanceSettings
+                value={database.settings.appearance}
+                onChange={(appearance) => updateDatabase((draft) => { draft.settings.appearance = appearance; })}
+              />
+              <StudentFieldsSettings
+                fields={database.settings.studentFields}
+                onChange={(fields) => updateDatabase((draft) => { draft.settings.studentFields = fields; })}
+              />
+            </section>
           )}
 
           {view === "backup" && (
@@ -629,6 +682,15 @@ export default function App() {
       {modal === "student-details" && selectedStudent && <StudentDetails student={selectedStudent} database={database} classItem={classById.get(selectedStudent.classId)} onClose={() => setModal(null)} onGrade={() => setModal("grade")} onInvoice={() => openInvoiceForm(selectedStudent.id)} onDocument={(type) => setPrintable({ type, student: selectedStudent })} onReceipt={(invoice) => setPrintable({ type: "Recibo", student: selectedStudent, invoice })} onToggleInvoice={setInvoicePaid} onDelete={() => deleteStudent(selectedStudent)} />}
 
       {printable && <DocumentModal value={printable} classItem={classById.get(printable.student.classId)} onClose={() => setPrintable(null)} />}
+      {confirmation && <ConfirmDialog
+        {...confirmation}
+        onCancel={() => setConfirmation(null)}
+        onConfirm={() => {
+          const action = confirmation.onConfirm;
+          setConfirmation(null);
+          action();
+        }}
+      />}
       {toast && <div className={`toast ${toast.tone}`}>{toast.tone === "success" ? <CheckCircle2 /> : <AlertTriangle />}<span>{toast.message}</span><button onClick={() => setToast(null)}><X size={16} /></button></div>}
     </div>
   );

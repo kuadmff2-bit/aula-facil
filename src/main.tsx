@@ -3,6 +3,7 @@ import { createRoot } from "react-dom/client";
 import App from "./App";
 import { initializeSecureStorage } from "./storage";
 import "./styles.css";
+import "./theme.css";
 
 const root = createRoot(document.getElementById("root")!);
 
