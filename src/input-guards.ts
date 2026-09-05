@@ -27,43 +27,79 @@ function isPhoneInput(input: HTMLInputElement) {
   return context.includes("telefone") || context.includes("whatsapp") || context.includes("celular") || context.includes("phone");
 }
 
-function validateInput(input: HTMLInputElement) {
-  if (isPhoneInput(input)) {
-    input.maxLength = Math.min(input.maxLength > 0 ? input.maxLength : 19, 19);
-    input.setAttribute("inputmode", "tel");
-    input.setCustomValidity(phoneError(input.value, input.required));
-    input.setAttribute("aria-invalid", input.validationMessage ? "true" : "false");
-    return;
-  }
-
+function prepareDateInput(input: HTMLInputElement) {
   if (input.type !== "date") return;
-
   if (isBirthDateInput(input)) {
     input.min = MIN_REASONABLE_DATE;
     input.max = localTodayIso();
-    input.setCustomValidity(input.value ? birthDateError(input.value) : input.required ? "Informe a data de nascimento." : "");
   } else {
     if (!input.min) input.min = MIN_REASONABLE_DATE;
     if (!input.max) input.max = MAX_REASONABLE_DATE;
+  }
+}
+
+function validatePhone(input: HTMLInputElement) {
+  input.maxLength = Math.min(input.maxLength > 0 ? input.maxLength : 19, 19);
+  input.setAttribute("inputmode", "tel");
+  input.setCustomValidity(phoneError(input.value, input.required));
+  input.setAttribute("aria-invalid", input.validationMessage ? "true" : "false");
+}
+
+function validateDate(input: HTMLInputElement) {
+  prepareDateInput(input);
+  if (isBirthDateInput(input)) {
+    input.setCustomValidity(input.value ? birthDateError(input.value) : input.required ? "Informe a data de nascimento." : "");
+  } else {
     input.setCustomValidity(genericDateError(input.value));
   }
   input.setAttribute("aria-invalid", input.validationMessage ? "true" : "false");
 }
 
 export function installGlobalInputGuards() {
-  const validateTarget = (event: Event) => {
-    if (isInput(event.target)) validateInput(event.target);
+  document.addEventListener("focusin", (event) => {
+    if (!isInput(event.target)) return;
+    if (isPhoneInput(event.target)) {
+      event.target.maxLength = Math.min(event.target.maxLength > 0 ? event.target.maxLength : 19, 19);
+      event.target.setAttribute("inputmode", "tel");
+      return;
+    }
+    if (event.target.type === "date") prepareDateInput(event.target);
+  }, true);
+
+  document.addEventListener("input", (event) => {
+    if (!isInput(event.target)) return;
+    if (isPhoneInput(event.target)) {
+      validatePhone(event.target);
+      return;
+    }
+    if (event.target.type === "date") {
+      // Enquanto o usuário ainda está digitando dia/mês/ano, o WebView pode
+      // expor value="" temporariamente. Não transforme isso em erro durante a
+      // edição, senão o próprio campo nativo reinicia o segmento digitado.
+      prepareDateInput(event.target);
+      event.target.setCustomValidity("");
+      event.target.setAttribute("aria-invalid", "false");
+    }
+  }, true);
+
+  const validateCommittedValue = (event: Event) => {
+    if (!isInput(event.target)) return;
+    if (isPhoneInput(event.target)) {
+      validatePhone(event.target);
+      return;
+    }
+    if (event.target.type === "date") validateDate(event.target);
   };
 
-  document.addEventListener("input", validateTarget, true);
-  document.addEventListener("change", validateTarget, true);
-  document.addEventListener("blur", validateTarget, true);
-  document.addEventListener("focusin", validateTarget, true);
+  document.addEventListener("change", validateCommittedValue, true);
+  document.addEventListener("blur", validateCommittedValue, true);
+
   document.addEventListener("submit", (event) => {
     const form = event.target;
     if (!(form instanceof HTMLFormElement)) return;
     for (const input of Array.from(form.querySelectorAll<HTMLInputElement>("input"))) {
-      if (input.type === "date" || isPhoneInput(input)) validateInput(input);
+      if (isPhoneInput(input)) validatePhone(input);
+      else if (input.type === "date") validateDate(input);
     }
   }, true);
 }
