@@ -1,4 +1,4 @@
-import { type FormEvent, type ReactNode } from "react";
+import { type FormEvent, type ReactNode, useState } from "react";
 import { Plus, ShieldCheck, Trash2 } from "lucide-react";
 import {
   makeId,
@@ -45,11 +45,7 @@ export function studentFieldValue(student: Student, field: StudentFieldDefinitio
 
 export function collectStudentFields(form: FormData, fields: StudentFieldDefinition[]) {
   const customFields: Record<string, string> = {};
-  const sourceValues: Record<StudentFieldSource, string> = {
-    phone: "",
-    guardianName: "",
-    guardianPhone: "",
-  };
+  const sourceValues: Record<StudentFieldSource, string> = { phone: "", guardianName: "", guardianPhone: "" };
 
   for (const field of fields) {
     const value = String(form.get(fieldInputName(field)) ?? "").trim().slice(0, 2000);
@@ -57,23 +53,11 @@ export function collectStudentFields(form: FormData, fields: StudentFieldDefinit
     else if (value) customFields[field.id] = value;
   }
 
-  return {
-    phone: sourceValues.phone,
-    guardianName: sourceValues.guardianName,
-    guardianPhone: sourceValues.guardianPhone,
-    customFields,
-  };
+  return { phone: sourceValues.phone, guardianName: sourceValues.guardianName, guardianPhone: sourceValues.guardianPhone, customFields };
 }
 
 function InputForField({ field, defaultValue = "" }: { field: StudentFieldDefinition; defaultValue?: string }) {
-  const common = {
-    name: fieldInputName(field),
-    required: field.required,
-    placeholder: field.placeholder,
-    defaultValue,
-    maxLength: 2000,
-  };
-
+  const common = { name: fieldInputName(field), required: field.required, placeholder: field.placeholder, defaultValue, maxLength: 2000 };
   if (field.type === "textarea") return <textarea {...common} rows={4} />;
   if (field.type === "tel") return <input {...common} maxLength={19} type="tel" inputMode="tel" onInput={(event) => event.currentTarget.setCustomValidity(phoneError(event.currentTarget.value, field.required))} />;
   if (field.type === "email") return <input {...common} type="email" inputMode="email" />;
@@ -89,24 +73,15 @@ function FieldShell({ label, wide, children }: { label: string; wide?: boolean; 
 export function StudentExtraFieldsForm({ fields, birthDate, student }: { fields: StudentFieldDefinition[]; birthDate: string; student?: Student }) {
   const visible = fields.filter((field) => isVisible(field, birthDate));
   if (!visible.length) return null;
-
-  return <>
-    {visible.map((field) => (
-      <FieldShell key={field.id} label={`${field.label}${field.required ? " *" : ""}`} wide={field.type === "textarea"}>
-        <InputForField field={field} defaultValue={student ? studentFieldValue(student, field) : ""} />
-      </FieldShell>
-    ))}
-  </>;
+  return <>{visible.map((field) => <FieldShell key={field.id} label={`${field.label}${field.required ? " *" : ""}`} wide={field.type === "textarea"}><InputForField field={field} defaultValue={student ? studentFieldValue(student, field) : ""} /></FieldShell>)}</>;
 }
 
 export function StudentExtraInfo({ student, fields }: { student: Student; fields: StudentFieldDefinition[] }) {
   const visible = fields.filter((field) => isVisible(field, student.birthDate));
-  return <>
-    {visible.map((field) => {
-      const value = studentFieldValue(student, field);
-      return <div className="info-box" key={field.id}><small>{field.label}</small><strong>{value || "Não informado"}</strong></div>;
-    })}
-  </>;
+  return <>{visible.map((field) => {
+    const value = studentFieldValue(student, field);
+    return <div className="info-box" key={field.id}><small>{field.label}</small><strong>{value || "Não informado"}</strong></div>;
+  })}</>;
 }
 
 function typeLabel(type: StudentFieldType) {
@@ -117,72 +92,62 @@ function visibilityLabel(visibility: StudentFieldVisibility) {
   return visibilityOptions.find((item) => item.value === visibility)?.label ?? visibility;
 }
 
-export function StudentFieldsSettings({
-  fields,
-  onChange,
-}: {
-  fields: StudentFieldDefinition[];
-  onChange: (fields: StudentFieldDefinition[]) => void;
-}) {
+export function StudentFieldsSettings({ fields, onChange }: { fields: StudentFieldDefinition[]; onChange: (fields: StudentFieldDefinition[]) => void }) {
+  const [pendingRemoveId, setPendingRemoveId] = useState("");
+
   const addField = (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     const form = new FormData(event.currentTarget);
     const label = String(form.get("label") ?? "").trim().slice(0, 80);
     if (!label) return;
-
     const type = String(form.get("type") ?? "text") as StudentFieldType;
     const visibility = String(form.get("visibility") ?? "always") as StudentFieldVisibility;
     const placeholder = String(form.get("placeholder") ?? "").trim().slice(0, 120);
     const required = form.get("required") === "on";
-
     onChange([...fields, {
-      id: makeId("campo"),
-      label,
+      id: makeId("campo"), label,
       type: fieldTypes.some((item) => item.value === type) ? type : "text",
       required,
       visibility: visibilityOptions.some((item) => item.value === visibility) ? visibility : "always",
       placeholder,
     }]);
+    setPendingRemoveId("");
     event.currentTarget.reset();
   };
 
   const updateField = (id: string, change: Partial<StudentFieldDefinition>) => {
+    setPendingRemoveId("");
     onChange(fields.map((field) => field.id === id ? { ...field, ...change } : field));
   };
 
   const removeField = (field: StudentFieldDefinition) => {
-    if (!window.confirm(`Remover “${field.label}” do formulário? Valores antigos já cadastrados serão preservados no banco.`)) return;
+    if (pendingRemoveId !== field.id) {
+      setPendingRemoveId(field.id);
+      return;
+    }
     onChange(fields.filter((item) => item.id !== field.id));
+    setPendingRemoveId("");
   };
 
   return <section className="stack">
     <div className="security-hero card">
       <span><ShieldCheck size={30} /></span>
-      <div>
-        <h2>Cadastro montado pela própria escola</h2>
-        <p>Nome do aluno, nascimento e turma permanecem como base do sistema. Todos os demais campos podem ser criados, renomeados, tornados obrigatórios ou removidos.</p>
-      </div>
+      <div><h2>Cadastro montado pela própria escola</h2><p>Nome do aluno, nascimento e turma permanecem como base do sistema. Todos os demais campos podem ser criados, renomeados, tornados obrigatórios ou removidos.</p></div>
     </div>
 
     <div className="card" style={{ padding: 24 }}>
-      <div className="section-heading">
-        <div><h2>Campos atuais</h2><p>As alterações valem imediatamente para os próximos cadastros.</p></div>
-      </div>
+      <div className="section-heading"><div><h2>Campos atuais</h2><p>As alterações valem imediatamente para os próximos cadastros.</p></div></div>
       <div style={{ display: "grid", gap: 12 }}>
         {fields.length === 0 && <p className="inline-empty">Nenhum campo extra configurado. O cadastro pedirá apenas nome, nascimento e turma.</p>}
         {fields.map((field) => (
-          <div key={field.id} style={{ display: "grid", gridTemplateColumns: "minmax(180px, 1.3fr) minmax(150px, .8fr) minmax(220px, 1fr) auto auto", gap: 10, alignItems: "center", padding: 14, border: "1px solid #e5e7eb", borderRadius: 14 }}>
+          <div key={field.id} style={{ display: "grid", gridTemplateColumns: "minmax(180px, 1.3fr) minmax(150px, .8fr) minmax(220px, 1fr) auto auto", gap: 10, alignItems: "center", padding: 14, border: "1px solid var(--border)", borderRadius: 14 }}>
             <input value={field.label} maxLength={80} aria-label="Nome do campo" onChange={(event) => updateField(field.id, { label: event.target.value })} />
-            <select value={field.type} aria-label={`Tipo de ${field.label}`} onChange={(event) => updateField(field.id, { type: event.target.value as StudentFieldType })}>
-              {fieldTypes.map((item) => <option key={item.value} value={item.value}>{item.label}</option>)}
-            </select>
-            <select value={field.visibility} aria-label={`Quando mostrar ${field.label}`} onChange={(event) => updateField(field.id, { visibility: event.target.value as StudentFieldVisibility })}>
-              {visibilityOptions.map((item) => <option key={item.value} value={item.value}>{item.label}</option>)}
-            </select>
+            <select value={field.type} aria-label={`Tipo de ${field.label}`} onChange={(event) => updateField(field.id, { type: event.target.value as StudentFieldType })}>{fieldTypes.map((item) => <option key={item.value} value={item.value}>{item.label}</option>)}</select>
+            <select value={field.visibility} aria-label={`Quando mostrar ${field.label}`} onChange={(event) => updateField(field.id, { visibility: event.target.value as StudentFieldVisibility })}>{visibilityOptions.map((item) => <option key={item.value} value={item.value}>{item.label}</option>)}</select>
             <label style={{ display: "flex", gap: 7, alignItems: "center", whiteSpace: "nowrap" }}><input type="checkbox" checked={field.required} onChange={(event) => updateField(field.id, { required: event.target.checked })} /> Obrigatório</label>
-            <button className="quiet-danger" onClick={() => removeField(field)} title={`Remover ${field.label}`}><Trash2 size={17} /></button>
+            <button className="quiet-danger" onClick={() => removeField(field)} title={pendingRemoveId === field.id ? `Confirmar remoção de ${field.label}` : `Remover ${field.label}`}>{pendingRemoveId === field.id ? "Confirmar" : <Trash2 size={17} />}</button>
             <input style={{ gridColumn: "1 / 4" }} value={field.placeholder} maxLength={120} placeholder="Exemplo ou orientação exibida dentro do campo" aria-label={`Exemplo de ${field.label}`} onChange={(event) => updateField(field.id, { placeholder: event.target.value })} />
-            <small style={{ gridColumn: "4 / 6", color: "#64748b" }}>{typeLabel(field.type)} · {visibilityLabel(field.visibility)}</small>
+            <small style={{ gridColumn: "4 / 6", color: "var(--text-muted)" }}>{typeLabel(field.type)} · {visibilityLabel(field.visibility)}{pendingRemoveId === field.id ? " · clique em Confirmar para remover" : ""}</small>
           </div>
         ))}
       </div>
@@ -195,7 +160,7 @@ export function StudentFieldsSettings({
         <FieldShell label="Tipo"><select name="type" defaultValue="text">{fieldTypes.map((item) => <option key={item.value} value={item.value}>{item.label}</option>)}</select></FieldShell>
         <FieldShell label="Quando mostrar"><select name="visibility" defaultValue="always">{visibilityOptions.map((item) => <option key={item.value} value={item.value}>{item.label}</option>)}</select></FieldShell>
         <FieldShell label="Exemplo / dica" wide><input name="placeholder" maxLength={120} placeholder="Ex.: 123456-7" /></FieldShell>
-        <label className="field" style={{ justifyContent: "center" }}><span>Validação</span><label style={{ display: "flex", gap: 8, alignItems: "center", minHeight: 44 }}><input type="checkbox" name="required" /> Campo obrigatório</label></label>
+        <label className="field" style={{ justifyContent: "center" }}><span>Validação</span><span style={{ display: "flex", gap: 8, alignItems: "center", minHeight: 44 }}><input type="checkbox" name="required" /> Campo obrigatório</span></label>
         <div className="form-actions wide"><button className="primary-button" type="submit"><Plus size={18} /> Adicionar campo</button></div>
       </form>
     </div>
