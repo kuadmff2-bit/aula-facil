@@ -33,7 +33,7 @@ export async function confirmManualInvoicePayment(input: {
     lateFeeAmount: Number(row.late_fee_amount ?? 0),
     interestAmount: Number(row.interest_amount ?? 0),
     discountAmount: Number(row.discount_amount ?? 0),
-    paymentMethod: String(row.payment_method ?? input.method || "manual"),
+    paymentMethod: String(row.payment_method ?? input.method ?? "manual"),
     provider: null,
     providerPaymentId: null,
     status: "confirmed",
