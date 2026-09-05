@@ -1,8 +1,10 @@
 import { useEffect, useState } from "react";
 import {
+  getCloudSyncRole,
   getCloudSyncStatus,
   reconcileCloud,
   safePullFromCloud,
+  type CloudSyncRole,
   type CloudSyncStatus,
 } from "./cloud-safe-sync";
 import type { SchoolDatabase } from "./model";
@@ -20,10 +22,18 @@ type Message = { tone: "success" | "warning" | "danger"; text: string } | null;
 
 const copy: Record<CloudSyncStatus, { title: string; text: string }> = {
   not_linked: { title: "Sincronização ainda não vinculada", text: "Este computador ainda não possui uma revisão-base desta instituição." },
-  synced: { title: "Tudo sincronizado", text: "A cópia local e a nuvem estão na mesma revisão conhecida." },
-  local_changed: { title: "Alterações neste computador", text: "Há mudanças locais prontas para serem enviadas com segurança." },
+  synced: { title: "Tudo sincronizado", text: "A cópia local e a nuvem estão na mesma revisão conhecida para o seu nível de acesso." },
+  local_changed: { title: "Alterações neste computador", text: "Há mudanças locais permitidas pela sua função prontas para serem enviadas com segurança." },
   cloud_changed: { title: "Há novidades na nuvem", text: "Outro dispositivo ou uma automação alterou os dados online." },
   conflict: { title: "Conflito detectado", text: "Este computador e a nuvem mudaram desde a última sincronização. Nada será sobrescrito automaticamente." },
+};
+
+const roleCopy: Record<CloudSyncRole, { label: string; scope: string }> = {
+  owner: { label: "Proprietário", scope: "instituição, configurações, acadêmico e financeiro" },
+  admin: { label: "Administrador", scope: "instituição, configurações, acadêmico e financeiro" },
+  finance: { label: "Financeiro", scope: "regras financeiras, cobranças e pagamentos" },
+  teacher: { label: "Professor", scope: "turmas, alunos, chamadas e notas" },
+  staff: { label: "Equipe", scope: "turmas, alunos, chamadas e avisos" },
 };
 
 function downloadEncryptedBackup(content: string) {
@@ -42,6 +52,7 @@ function downloadEncryptedBackup(content: string) {
 export function CloudSyncPanel({ database, onReplaceDatabase }: Props) {
   const [schoolId, setSchoolId] = useState(() => localStorage.getItem(SELECTED_SCHOOL_KEY) ?? "");
   const [status, setStatus] = useState<CloudSyncStatus>("not_linked");
+  const [role, setRole] = useState<CloudSyncRole | null>(null);
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState<Message>(null);
   const [recoveryPassword, setRecoveryPassword] = useState("");
@@ -51,9 +62,15 @@ export function CloudSyncPanel({ database, onReplaceDatabase }: Props) {
   const refresh = async (targetSchoolId = schoolId) => {
     if (!targetSchoolId) {
       setStatus("not_linked");
+      setRole(null);
       return;
     }
-    setStatus(await getCloudSyncStatus(targetSchoolId, database));
+    const [nextStatus, nextRole] = await Promise.all([
+      getCloudSyncStatus(targetSchoolId, database),
+      getCloudSyncRole(targetSchoolId),
+    ]);
+    setStatus(nextStatus);
+    setRole(nextRole);
   };
 
   useEffect(() => {
@@ -62,20 +79,33 @@ export function CloudSyncPanel({ database, onReplaceDatabase }: Props) {
       const nextSchoolId = localStorage.getItem(SELECTED_SCHOOL_KEY) ?? "";
       if (!active) return;
       setSchoolId(nextSchoolId);
-      if (!nextSchoolId || !navigator.onLine) return;
-      void getCloudSyncStatus(nextSchoolId, database)
-        .then((value) => active && setStatus(value))
+      if (!nextSchoolId) {
+        setRole(null);
+        return;
+      }
+      if (!navigator.onLine) return;
+      void Promise.all([
+        getCloudSyncStatus(nextSchoolId, database),
+        getCloudSyncRole(nextSchoolId),
+      ])
+        .then(([nextStatus, nextRole]) => {
+          if (!active) return;
+          setStatus(nextStatus);
+          setRole(nextRole);
+        })
         .catch(() => undefined);
     };
     check();
     const interval = window.setInterval(check, 60_000);
     window.addEventListener("online", check);
     window.addEventListener("storage", check);
+    window.addEventListener("aulafacil:cloud-school-change", check);
     return () => {
       active = false;
       window.clearInterval(interval);
       window.removeEventListener("online", check);
       window.removeEventListener("storage", check);
+      window.removeEventListener("aulafacil:cloud-school-change", check);
     };
   }, [database.updatedAt]);
 
@@ -106,6 +136,7 @@ export function CloudSyncPanel({ database, onReplaceDatabase }: Props) {
     if (result.database.updatedAt !== database.updatedAt || result.database !== database) {
       onReplaceDatabase(result.database);
     }
+    setRole(await getCloudSyncRole(schoolId));
     setStatus("synced");
     setMessage({ tone: "success", text: "Sincronização concluída sem sobrescrever alterações desconhecidas." });
   });
@@ -118,6 +149,7 @@ export function CloudSyncPanel({ database, onReplaceDatabase }: Props) {
     downloadEncryptedBackup(encryptedBackup);
     const downloaded = await safePullFromCloud(schoolId, database.settings.appearance);
     onReplaceDatabase(downloaded);
+    setRole(await getCloudSyncRole(schoolId));
     setStatus("synced");
     setRecoveryArmed(false);
     setRecoveryPassword("");
@@ -142,8 +174,12 @@ export function CloudSyncPanel({ database, onReplaceDatabase }: Props) {
       <div className="cloud-sync-explainer">
         <div><strong>Sem sobrescrita cega</strong><span>O servidor usa uma revisão da escola para detectar alterações feitas em outro dispositivo.</span></div>
         <div><strong>Offline continua funcionando</strong><span>Você pode trabalhar sem internet e sincronizar quando a conexão voltar.</span></div>
-        <div><strong>Histórico financeiro protegido</strong><span>Pagamentos remotos nunca são apagados só porque não aparecem na cópia local.</span></div>
+        <div><strong>Permissões respeitadas</strong><span>{role ? `${roleCopy[role].label}: sincroniza ${roleCopy[role].scope}.` : "O escopo é definido pela função atribuída à sua conta."}</span></div>
       </div>
+
+      {role && role !== "owner" && role !== "admin" && (
+        <div className="cloud-sync-warning">Alterações feitas fora do escopo de {roleCopy[role].label.toLowerCase()} não são enviadas ao servidor. O backend também aplica essas permissões independentemente da interface.</div>
+      )}
 
       {message && <div className={`cloud-sync-message ${message.tone}`} role="status">{message.text}</div>}
 
