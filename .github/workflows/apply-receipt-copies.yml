@@ -1,0 +1,36 @@
+name: Aplicar recibo em duas vias
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "scripts/patch-receipt-copies.py"
+      - ".github/workflows/apply-receipt-copies.yml"
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Baixar o código
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Aplicar recibo em duas vias
+        run: python scripts/patch-receipt-copies.py
+
+      - name: Publicar alteração
+        shell: bash
+        run: |
+          if git diff --quiet -- src/App.tsx; then
+            echo "Nenhuma alteração necessária."
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add src/App.tsx
+          git commit -m "Integrar recibo em duas vias"
+          git push
