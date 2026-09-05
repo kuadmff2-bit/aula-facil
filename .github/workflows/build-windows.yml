@@ -124,9 +124,6 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           files=(
-            "release-assets/AulaFacil-Windows-ARM64/AulaFacil-Windows-ARM64-Setup.exe"
-          )
-          files=(
             "release-assets/AulaFacil-Windows-ARM64-Setup.exe"
             "release-assets/AulaFacil-Windows-x64-Setup.exe"
             "release-assets/SHA256SUMS.txt"
