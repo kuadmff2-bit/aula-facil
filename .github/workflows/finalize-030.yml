@@ -61,11 +61,14 @@ jobs:
           $manifest = $manifest.Replace('Gestão escolar local, simples e completa.', 'Gestão escolar segura, sincronizada e completa.')
           Set-Content $manifestPath $manifest -Encoding utf8
 
-      - name: Atualizar Cargo.lock sem alterar dependências desnecessariamente
-        run: cargo check --manifest-path src-tauri/Cargo.toml
-
       - name: Instalar dependências pelo lockfile final
         run: npm ci
+
+      - name: Gerar recursos exigidos pelo Tauri
+        run: npm run desktop:icons
+
+      - name: Atualizar Cargo.lock para a versão final
+        run: cargo check --manifest-path src-tauri/Cargo.toml
 
       - name: Validar requisitos estritos de lançamento
         env:
@@ -78,16 +81,13 @@ jobs:
       - name: Validar TypeScript e frontend
         run: npm run build
 
-      - name: Gerar ícones
-        run: npm run desktop:icons
-
       - name: Validar Rust com lockfile congelado
         run: cargo check --locked --manifest-path src-tauri/Cargo.toml
 
       - name: Garantir que não restou versão antiga em arquivos de runtime
         shell: pwsh
         run: |
-          $targets = @("package.json", "package-lock.json", "src-tauri/tauri.conf.json", "src-tauri/Cargo.toml", "src/App.tsx", "src-tauri/msix/AppxManifest.xml")
+          $targets = @("package.json", "package-lock.json", "src-tauri/tauri.conf.json", "src-tauri/Cargo.toml", "src-tauri/Cargo.lock", "src/App.tsx", "src-tauri/msix/AppxManifest.xml")
           foreach ($target in $targets) {
             $content = Get-Content $target -Raw
             if ($content -match '0\.2\.1') { throw "Referência 0.2.1 restante em $target" }
