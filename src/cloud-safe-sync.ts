@@ -1,4 +1,5 @@
 import { cloud, downloadCloudDatabase, getCloudDataSummary, seedEmptyCloudFromLocal } from "./cloud";
+import { hydrateProfessionalCloudFields } from "./cloud-professional-fields";
 import { ensureUuidDatabase, type SchoolDatabase } from "./model";
 
 export type CloudSyncStatus = "not_linked" | "synced" | "local_changed" | "cloud_changed" | "conflict";
@@ -141,6 +142,7 @@ export async function safePushToCloud(schoolId: string, database: SchoolDatabase
     if (!isAdmin(role)) throw new Error("Somente proprietário ou administrador pode realizar o primeiro envio de dados para uma instituição vazia.");
     const normalized = ensureUuidDatabase(database);
     await seedEmptyCloudFromLocal(schoolId, normalized);
+    await pushSnapshot(schoolId, normalized, role);
     writeBaseline(schoolId, await getCloudRevision(schoolId), normalized, role);
     return normalized;
   }
@@ -153,7 +155,8 @@ export async function safePushToCloud(schoolId: string, database: SchoolDatabase
 
 export async function safePullFromCloud(schoolId: string, localAppearance: SchoolDatabase["settings"]["appearance"] = "system") {
   const role = await getCloudSyncRole(schoolId);
-  const database = await downloadCloudDatabase(schoolId, localAppearance);
+  const base = await downloadCloudDatabase(schoolId, localAppearance);
+  const database = ensureUuidDatabase(await hydrateProfessionalCloudFields(schoolId, base));
   writeBaseline(schoolId, await getCloudRevision(schoolId), database, role);
   return database;
 }
