@@ -28,7 +28,7 @@ jobs:
           cache: npm
       - uses: dtolnay/rust-toolchain@stable
       - run: npm ci
-      - name: Aplicar livro local de pagamentos
+      - name: Aplicar livro local e sincronização de pagamentos
         run: python scripts/apply-local-payment-ledger.py
       - name: Validar estrutura
         run: node scripts/quality-check.mjs
@@ -43,12 +43,12 @@ jobs:
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add src/model.ts
+          git add src/model.ts src/cloud.ts
           if git diff --cached --quiet; then
             echo "Nada a integrar."
             exit 0
           fi
-          git commit -m "Adicionar livro local de pagamentos"
+          git commit -m "Adicionar livro de pagamentos local e online"
           git fetch origin develop
           git rebase origin/develop
           git push origin HEAD:develop
