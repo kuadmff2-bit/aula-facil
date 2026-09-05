@@ -70,27 +70,27 @@ jobs:
 
           $appPath = "src/App.tsx"
           $app = Get-Content $appPath -Raw
-          $oldFinance = @'
-          const paidInvoices = database.invoices.filter((item) => effectiveStatus(item) === "paid");
-          const openInvoices = database.invoices.filter((item) => { const status = effectiveStatus(item); return status === "pending" || status === "overdue"; });
-          const overdueInvoices = database.invoices.filter((item) => effectiveStatus(item) === "overdue");
-          const receivedTotal = paidInvoices.reduce((sum, item) => sum + item.amount, 0);
-          const pendingTotal = openInvoices.reduce((sum, item) => sum + item.amount, 0);
-          '@
-          $newFinance = @'
-          const paidInvoices = database.invoices.filter((item) => effectiveStatus(item) === "paid");
-          const openInvoices = database.invoices.filter((item) => { const status = effectiveStatus(item); return status === "pending" || status === "overdue"; });
-          const overdueInvoices = database.invoices.filter((item) => effectiveStatus(item) === "overdue");
-          const confirmedPayments = database.payments.filter((item) => item.status === "confirmed");
-          const invoiceIdsWithConfirmedPayment = new Set(confirmedPayments.map((item) => item.invoiceId).filter((id): id is string => Boolean(id)));
-          const receivedTotal = confirmedPayments.reduce((sum, item) => sum + item.amountReceived, 0)
-            + paidInvoices.filter((invoice) => !invoiceIdsWithConfirmedPayment.has(invoice.id)).reduce((sum, invoice) => sum + invoice.amount, 0);
-          const pendingTotal = openInvoices.reduce((sum, item) => sum + invoiceAmountDue(item, database.settings.finance).totalDue, 0);
-          '@
-          if ($app.Contains($oldFinance)) {
-            $app = $app.Replace($oldFinance, $newFinance)
-          } elseif (-not $app.Contains('const confirmedPayments = database.payments.filter((item) => item.status === "confirmed");')) {
-            throw "Trecho financeiro do dashboard não foi reconhecido; abortando para não alterar código incerto."
+          $alreadyPatched = $app.IndexOf('  const confirmedPayments = database.payments.filter((item) => item.status === "confirmed");') -ge 0
+          if (-not $alreadyPatched) {
+            $startMarker = '  const paidInvoices = database.invoices.filter((item) => effectiveStatus(item) === "paid");'
+            $endMarker = '  const pendingTotal = openInvoices.reduce((sum, item) => sum + item.amount, 0);'
+            $start = $app.IndexOf($startMarker)
+            $end = if ($start -ge 0) { $app.IndexOf($endMarker, $start) } else { -1 }
+            if ($start -lt 0 -or $end -lt 0) {
+              throw "Trecho financeiro do dashboard não foi reconhecido; abortando para não alterar código incerto."
+            }
+            $end += $endMarker.Length
+            $replacement = @(
+              '  const paidInvoices = database.invoices.filter((item) => effectiveStatus(item) === "paid");',
+              '  const openInvoices = database.invoices.filter((item) => { const status = effectiveStatus(item); return status === "pending" || status === "overdue"; });',
+              '  const overdueInvoices = database.invoices.filter((item) => effectiveStatus(item) === "overdue");',
+              '  const confirmedPayments = database.payments.filter((item) => item.status === "confirmed");',
+              '  const invoiceIdsWithConfirmedPayment = new Set(confirmedPayments.map((item) => item.invoiceId).filter((id): id is string => Boolean(id)));',
+              '  const receivedTotal = confirmedPayments.reduce((sum, item) => sum + item.amountReceived, 0)',
+              '    + paidInvoices.filter((invoice) => !invoiceIdsWithConfirmedPayment.has(invoice.id)).reduce((sum, invoice) => sum + invoice.amount, 0);',
+              '  const pendingTotal = openInvoices.reduce((sum, item) => sum + invoiceAmountDue(item, database.settings.finance).totalDue, 0);'
+            ) -join "`n"
+            $app = $app.Substring(0, $start) + $replacement + $app.Substring($end)
           }
           $app = $app -replace 'AulaFácil Desktop <span>v\d+\.\d+\.\d+</span>', 'AulaFácil Desktop <span>v0.3.0</span>'
           Set-Content $appPath $app -Encoding utf8
@@ -191,11 +191,11 @@ jobs:
           Remove-Item $bundleInput,$verifyRoot -Recurse -Force -ErrorAction SilentlyContinue
           New-Item -ItemType Directory -Path $bundleInput -Force | Out-Null
 
-          $x64 = Get-ChildItem "src-tauri/target/msix/x64" -Filter "*.msix" -File
-          $arm64 = Get-ChildItem "src-tauri/target/msix/arm64" -Filter "*.msix" -File
+          $x64 = @(Get-ChildItem "src-tauri/target/msix/x64" -Filter "*.msix" -File)
+          $arm64 = @(Get-ChildItem "src-tauri/target/msix/arm64" -Filter "*.msix" -File)
           if ($x64.Count -ne 1 -or $arm64.Count -ne 1) { throw "Era esperado exatamente um MSIX de cada arquitetura." }
-          Copy-Item $x64.FullName $bundleInput
-          Copy-Item $arm64.FullName $bundleInput
+          Copy-Item $x64[0].FullName $bundleInput
+          Copy-Item $arm64[0].FullName $bundleInput
 
           $windowsKits = Join-Path ${env:ProgramFiles(x86)} "Windows Kits\10\bin"
           $makeAppx = Get-ChildItem $windowsKits -Filter "makeappx.exe" -Recurse |
