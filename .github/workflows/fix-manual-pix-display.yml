@@ -1,0 +1,61 @@
+name: Corrigir exibição do Pix manual
+
+on:
+  push:
+    branches: [develop]
+    paths:
+      - ".github/workflows/fix-manual-pix-display.yml"
+
+permissions:
+  contents: write
+
+concurrency:
+  group: fix-manual-pix-display
+  cancel-in-progress: true
+
+jobs:
+  apply:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: develop
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - uses: dtolnay/rust-toolchain@stable
+      - run: npm ci
+      - name: Exibir chave Pix manual retornada pelo backend
+        shell: pwsh
+        run: |
+          $path = "src/finance-ultimate.tsx"
+          $text = Get-Content $path -Raw
+          $old = '{generatedCharge.pixCopyPaste && <div><code>{generatedCharge.pixCopyPaste}</code><button onClick={() => void navigator.clipboard.writeText(generatedCharge.pixCopyPaste)}><Copy size={16}/> Copiar Pix</button></div>}{(generatedCharge.boletoUrl || generatedCharge.paymentUrl)'
+          $new = '{generatedCharge.pixCopyPaste && <div><code>{generatedCharge.pixCopyPaste}</code><button onClick={() => void navigator.clipboard.writeText(generatedCharge.pixCopyPaste)}><Copy size={16}/> Copiar Pix</button></div>}{!generatedCharge.pixCopyPaste && typeof generatedCharge.metadata.manualPixKey === "string" && generatedCharge.metadata.manualPixKey && <div><div><small>Chave Pix manual{typeof generatedCharge.metadata.recipientName === "string" && generatedCharge.metadata.recipientName ? ` · ${generatedCharge.metadata.recipientName}` : ""}</small><code>{String(generatedCharge.metadata.manualPixKey)}</code></div><button onClick={() => void navigator.clipboard.writeText(String(generatedCharge.metadata.manualPixKey))}><Copy size={16}/> Copiar chave Pix</button></div>}{(generatedCharge.boletoUrl || generatedCharge.paymentUrl)'
+          if (-not $text.Contains($old)) { throw "Trecho de cobrança gerada não encontrado; nenhuma alteração foi publicada." }
+          $text = $text.Replace($old, $new)
+          Set-Content $path $text -Encoding utf8
+      - name: Testar regras
+        run: npm test
+      - name: Validar frontend
+        run: npm run build
+      - name: Gerar ícones
+        run: npm run desktop:icons
+      - name: Validar Tauri
+        run: cargo check --locked --manifest-path src-tauri/Cargo.toml
+      - name: Publicar somente se tudo passou
+        shell: bash
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add src/finance-ultimate.tsx
+          if git diff --cached --quiet; then
+            echo "Nenhuma alteração necessária."
+            exit 0
+          fi
+          git commit -m "Exibir chave do Pix manual no Financeiro"
+          git fetch origin develop
+          git rebase origin/develop
+          git push origin HEAD:develop
