@@ -24,6 +24,8 @@ const terms = read("TERMS_OF_USE.md");
 const privacy = read("PRIVACY.md");
 const embeddedLegal = read("src/legal-documents.ts");
 const storeWorkflow = read(".github/workflows/build-store-msix.yml");
+const mainEntry = read("src/main.tsx");
+const layoutSafety = exists("src/layout-safety.css") ? read("src/layout-safety.css") : "";
 
 const cargoVersion = cargo.match(/^version\s*=\s*"([^"]+)"/m)?.[1];
 
@@ -68,6 +70,23 @@ if (!embeddedLegal.includes('version: "1.0"') || !embeddedLegal.includes('versio
 }
 if (exists("PRIVACY_CLOUD.md") || exists("TERMS_CLOUD.md")) {
   report("Ainda existem documentos jurídicos Cloud antigos/duplicados que podem causar divergência de versão.", true);
+}
+
+if (!mainEntry.includes('import "./layout-safety.css"')) {
+  failures.push("A proteção global contra overflow horizontal não está carregada no entrypoint.");
+}
+if (!layoutSafety) {
+  failures.push("src/layout-safety.css não foi encontrado.");
+} else {
+  if (!/overflow-x\s*:\s*hidden/.test(layoutSafety) || !/overscroll-behavior-x\s*:\s*none/.test(layoutSafety)) {
+    failures.push("A proteção global não bloqueia deslocamento horizontal da janela.");
+  }
+  if (!/min-width\s*:\s*0\s*!important/.test(layoutSafety)) {
+    failures.push("A proteção global não neutraliza larguras mínimas fixas do documento.");
+  }
+  if (!/\.table-card[\s\S]*?overflow-x\s*:\s*auto/.test(layoutSafety)) {
+    failures.push("Tabelas largas não possuem rolagem horizontal isolada dentro do próprio card.");
+  }
 }
 
 const appSource = read("src/App.tsx");
