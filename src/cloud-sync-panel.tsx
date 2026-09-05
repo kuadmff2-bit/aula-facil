@@ -6,6 +6,7 @@ import {
   type CloudSyncStatus,
 } from "./cloud-safe-sync";
 import type { SchoolDatabase } from "./model";
+import { createEncryptedBackup, validateBackupPassword } from "./portable-backup";
 import "./cloud-sync-panel.css";
 
 const SELECTED_SCHOOL_KEY = "aulafacil.cloud.selected-school";
@@ -25,16 +26,17 @@ const copy: Record<CloudSyncStatus, { title: string; text: string }> = {
   conflict: { title: "Conflito detectado", text: "Este computador e a nuvem mudaram desde a última sincronização. Nada será sobrescrito automaticamente." },
 };
 
-function createBackup(database: SchoolDatabase) {
-  const blob = new Blob([JSON.stringify(database, null, 2)], { type: "application/json" });
+function downloadEncryptedBackup(content: string) {
+  const blob = new Blob([content], { type: "application/x-aulafacil-backup" });
   const url = URL.createObjectURL(blob);
   const link = document.createElement("a");
   link.href = url;
-  link.download = `aulafacil-pre-sync-${new Date().toISOString().replace(/[:.]/g, "-")}.json`;
+  link.download = `aulafacil-pre-sync-${new Date().toISOString().replace(/[:.]/g, "-")}.afbackup`;
+  link.rel = "noopener";
   document.body.appendChild(link);
   link.click();
   link.remove();
-  window.setTimeout(() => URL.revokeObjectURL(url), 1000);
+  window.setTimeout(() => URL.revokeObjectURL(url), 1_000);
 }
 
 export function CloudSyncPanel({ database, onReplaceDatabase }: Props) {
@@ -42,6 +44,9 @@ export function CloudSyncPanel({ database, onReplaceDatabase }: Props) {
   const [status, setStatus] = useState<CloudSyncStatus>("not_linked");
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState<Message>(null);
+  const [recoveryPassword, setRecoveryPassword] = useState("");
+  const [recoveryConfirmation, setRecoveryConfirmation] = useState("");
+  const [recoveryArmed, setRecoveryArmed] = useState(false);
 
   const refresh = async (targetSchoolId = schoolId) => {
     if (!targetSchoolId) {
@@ -74,6 +79,14 @@ export function CloudSyncPanel({ database, onReplaceDatabase }: Props) {
     };
   }, [database.updatedAt]);
 
+  useEffect(() => {
+    if (status !== "conflict" && status !== "not_linked") {
+      setRecoveryArmed(false);
+      setRecoveryPassword("");
+      setRecoveryConfirmation("");
+    }
+  }, [status]);
+
   const run = async (operation: () => Promise<void>) => {
     setBusy(true);
     setMessage(null);
@@ -99,14 +112,21 @@ export function CloudSyncPanel({ database, onReplaceDatabase }: Props) {
 
   const recoverCloud = () => void run(async () => {
     if (!schoolId) throw new Error("Selecione uma instituição no AulaFácil Cloud.");
-    createBackup(database);
+    if (recoveryPassword !== recoveryConfirmation) throw new Error("As duas senhas do backup de segurança precisam ser iguais.");
+    validateBackupPassword(recoveryPassword);
+    const encryptedBackup = await createEncryptedBackup(database, recoveryPassword);
+    downloadEncryptedBackup(encryptedBackup);
     const downloaded = await safePullFromCloud(schoolId, database.settings.appearance);
     onReplaceDatabase(downloaded);
     setStatus("synced");
-    setMessage({ tone: "success", text: "A nuvem foi recuperada neste computador. Um backup da cópia anterior foi salvo primeiro." });
+    setRecoveryArmed(false);
+    setRecoveryPassword("");
+    setRecoveryConfirmation("");
+    setMessage({ tone: "success", text: "A nuvem foi recuperada. A cópia local anterior foi salva em um .afbackup criptografado." });
   });
 
   const state = copy[status];
+  const needsRecovery = (status === "conflict" || status === "not_linked") && schoolId;
 
   return (
     <section className="card cloud-sync-card">
@@ -131,14 +151,29 @@ export function CloudSyncPanel({ database, onReplaceDatabase }: Props) {
         <button className="primary-button" disabled={busy || !schoolId || status === "conflict"} onClick={syncNow}>
           {busy ? "Sincronizando..." : "Sincronizar agora"}
         </button>
-        {(status === "conflict" || status === "not_linked") && schoolId && (
-          <button className="secondary-button" disabled={busy} onClick={recoverCloud}>Salvar backup e recuperar nuvem</button>
+        {needsRecovery && !recoveryArmed && (
+          <button className="secondary-button" disabled={busy} onClick={() => setRecoveryArmed(true)}>Preparar recuperação segura</button>
         )}
         <button className="secondary-button" disabled={busy || !schoolId} onClick={() => void refresh()}>Verificar novamente</button>
       </div>
 
+      {needsRecovery && recoveryArmed && (
+        <div className="cloud-sync-recovery">
+          <strong>Proteja a cópia local antes de substituí-la</strong>
+          <span>Crie uma senha com pelo menos 12 caracteres. O AulaFácil salvará um .afbackup criptografado e só depois recuperará a versão online.</span>
+          <div className="cloud-sync-passwords">
+            <input type="password" autoComplete="new-password" minLength={12} maxLength={256} placeholder="Senha do backup" value={recoveryPassword} onChange={(event) => setRecoveryPassword(event.target.value)} />
+            <input type="password" autoComplete="new-password" minLength={12} maxLength={256} placeholder="Confirmar senha" value={recoveryConfirmation} onChange={(event) => setRecoveryConfirmation(event.target.value)} />
+          </div>
+          <div className="cloud-sync-recovery-actions">
+            <button className="secondary-button" disabled={busy} onClick={() => { setRecoveryArmed(false); setRecoveryPassword(""); setRecoveryConfirmation(""); }}>Cancelar</button>
+            <button className="danger-button" disabled={busy || recoveryPassword.length < 12 || recoveryPassword !== recoveryConfirmation} onClick={recoverCloud}>Salvar backup protegido e recuperar nuvem</button>
+          </div>
+        </div>
+      )}
+
       {status === "conflict" && (
-        <div className="cloud-sync-warning">Para evitar perda de dados, o AulaFácil não fará merge automático de um conflito. Salve o backup local antes de escolher recuperar a versão online.</div>
+        <div className="cloud-sync-warning">Para evitar perda de dados, o AulaFácil não faz merge automático de um conflito. A recuperação exige um backup local criptografado antes de substituir a cópia deste computador.</div>
       )}
     </section>
   );
