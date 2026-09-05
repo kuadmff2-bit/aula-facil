@@ -3,7 +3,6 @@ import {
   type ReactNode,
   useEffect,
   useMemo,
-  useRef,
   useState,
 } from "react";
 import {
@@ -53,7 +52,7 @@ import {
   type Student,
   type View,
 } from "./model";
-import { loadDatabase, parseBackup, saveDatabase } from "./storage";
+import { loadDatabase, saveDatabase } from "./storage";
 import { collectStudentFields, StudentExtraFieldsForm, StudentExtraInfo, StudentFieldsSettings } from "./student-fields";
 import { ReceiptDocument } from "./receipt-document";
 import { AppearanceSettings } from "./appearance-settings";
@@ -64,8 +63,9 @@ import { PaymentConnectionsPanel } from "./payment-connections-panel";
 import { FinanceUltimate } from "./finance-ultimate";
 import { CloudSyncPanel } from "./cloud-sync-panel";
 import { MessageAutomationsPanel } from "./message-automations-panel";
-import { invoiceAmountDue } from "./finance-utils";
+import { dueDateForMonth, invoiceAmountDue, referenceMonthFromDate } from "./finance-utils";
 import { CertificateManager } from "./certificate-manager";
+import { BackupPanel } from "./backup-panel";
 
 type ModalKind = "student" | "class" | "invoice" | "bulk-invoice" | "notice" | "grade" | "student-details" | null;
 type Toast = { message: string; tone: "success" | "warning" | "danger" };
@@ -153,7 +153,6 @@ export default function App() {
   const [certificateStudentId, setCertificateStudentId] = useState("");
   const [studentBirthDate, setStudentBirthDate] = useState("");
   const [confirmation, setConfirmation] = useState<(ConfirmRequest & { onConfirm: () => void }) | null>(null);
-  const importRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => saveDatabase(database), [database]);
   useEffect(() => {
@@ -266,14 +265,16 @@ export default function App() {
     const name = formValue(form, "name");
     const birthDate = formValue(form, "birthDate");
     const classId = formValue(form, "classId");
+    const dueDay = Number(formValue(form, "dueDay"));
     const extraFields = collectStudentFields(form, database.settings.studentFields);
-    if (name.length < 3 || !birthDate || !classById.has(classId)) {
-      notify("Preencha nome, nascimento e turma.", "danger");
+    if (name.length < 3 || !birthDate || !classById.has(classId) || !Number.isInteger(dueDay) || !database.settings.finance.allowedDueDays.includes(dueDay)) {
+      notify("Preencha nome, nascimento, turma e um vencimento permitido pela escola.", "danger");
       return;
     }
     updateDatabase((draft) => {
       draft.students.push({
         id: makeId("aluno"), name, birthDate, classId,
+        dueDay,
         ...extraFields,
         active: true,
         createdAt: new Date().toISOString(),
@@ -314,18 +315,27 @@ export default function App() {
   const generateMonthlyInvoices = (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     const form = new FormData(event.currentTarget);
-    const reference = formValue(form, "reference");
-    const dueDate = formValue(form, "dueDate");
-    if (!reference || !dueDate || database.students.length === 0) {
-      notify("Preencha a referência e o vencimento.", "danger");
+    const referenceMonth = formValue(form, "referenceMonth");
+    if (!/^\d{4}-\d{2}$/.test(referenceMonth) || database.students.length === 0) {
+      notify("Escolha o mês de referência.", "danger");
+      return;
+    }
+    let reference: string;
+    try {
+      reference = monthReference(new Date(`${referenceMonth}-01T12:00:00`));
+    } catch {
+      notify("Mês de referência inválido.", "danger");
       return;
     }
     let generated = 0;
     updateDatabase((draft) => {
+      const fallbackDueDay = draft.settings.finance.allowedDueDays[0] ?? 10;
       for (const student of draft.students.filter((item) => item.active)) {
         const exists = draft.invoices.some((item) => item.studentId === student.id && item.reference.toLowerCase() === reference.toLowerCase());
         const classItem = draft.classes.find((item) => item.id === student.classId);
+        const dueDay = student.dueDay && draft.settings.finance.allowedDueDays.includes(student.dueDay) ? student.dueDay : fallbackDueDay;
         if (!exists && classItem && classItem.monthlyFee > 0) {
+          const dueDate = dueDateForMonth(referenceMonth, dueDay);
           draft.invoices.push({
             id: makeId("cobranca"), studentId: student.id, reference, dueDate,
             amount: classItem.monthlyFee,
@@ -338,7 +348,7 @@ export default function App() {
       }
     });
     setModal(null);
-    notify(generated ? `${generated} mensalidade${generated > 1 ? "s" : ""} gerada${generated > 1 ? "s" : ""}.` : "Nenhuma nova mensalidade foi necessária.", generated ? "success" : "warning");
+    notify(generated ? `${generated} mensalidade${generated > 1 ? "s" : ""} gerada${generated > 1 ? "s" : ""} com vencimentos individuais.` : "Nenhuma nova mensalidade foi necessária.", generated ? "success" : "warning");
   };
 
   const addNotice = (event: FormEvent<HTMLFormElement>) => {
@@ -479,37 +489,21 @@ export default function App() {
     setAttendanceMarks(marks);
   };
 
-  const exportBackup = () => {
-    const blob = new Blob([JSON.stringify(database, null, 2)], { type: "application/json" });
-    const url = URL.createObjectURL(blob);
-    const anchor = document.createElement("a");
-    anchor.href = url;
-    anchor.download = `aulafacil-backup-${localDate()}.json`;
-    anchor.click();
-    URL.revokeObjectURL(url);
-    notify("Backup criado. Guarde o arquivo em local seguro.");
-  };
-
-  const importBackup = async (file: File) => {
-    try {
-      const restored = parseBackup(await file.text());
-      confirmAction({
-        title: "Restaurar este backup?",
-        message: "Os dados locais atuais serão substituídos pelo conteúdo do arquivo selecionado.",
-        detail: "O arquivo já foi validado pelo AulaFácil. Crie um backup dos dados atuais antes de continuar se precisar preservá-los.",
-        confirmLabel: "Restaurar backup",
-        tone: "warning",
-      }, () => {
-        setDatabase(restored);
-        setModal(null);
-        setSelectedStudentId("");
-        notify("Backup restaurado com sucesso.");
-      });
-    } catch (error) {
-      notify(error instanceof Error ? error.message : "Não foi possível restaurar o arquivo.", "danger");
-    } finally {
-      if (importRef.current) importRef.current.value = "";
-    }
+  const restoreBackupCandidate = (restored: SchoolDatabase, source: "encrypted" | "legacy") => {
+    confirmAction({
+      title: "Restaurar este backup?",
+      message: "Os dados locais atuais serão substituídos pelo conteúdo validado do arquivo selecionado.",
+      detail: source === "encrypted"
+        ? "O arquivo criptografado e a senha foram validados. Se esta instalação também usa Cloud, sincronize depois da restauração antes de continuar trabalhando em outro dispositivo."
+        : "Este é um backup JSON de uma versão anterior. O AulaFácil validou e migrou sua estrutura antes de permitir a restauração.",
+      confirmLabel: "Restaurar backup",
+      tone: "warning",
+    }, () => {
+      setDatabase(restored);
+      setModal(null);
+      setSelectedStudentId("");
+      notify("Backup restaurado com sucesso.");
+    });
   };
 
   const resetDatabase = () => {
@@ -715,26 +709,23 @@ export default function App() {
           )}
 
           {view === "backup" && (
-            <section className="stack">
-              <div className="security-hero card"><span><ShieldCheck size={30} /></span><div><h2>Proteção local + nuvem opcional</h2><p>O AulaFácil mantém uma cópia local protegida no Windows. Quando a instituição ativa o AulaFácil Cloud, os dados autorizados também podem ser sincronizados para recuperação em outros dispositivos. Backups independentes continuam recomendados.</p></div></div>
-              <div className="backup-grid">
-                <article className="card backup-card"><span className="backup-icon blue"><Download /></span><h3>Criar backup</h3><p>Baixa uma cópia completa de alunos, turmas, notas, chamadas, cobranças e avisos.</p><button className="primary-button" onClick={exportBackup}><Download size={18} /> Salvar backup</button></article>
-                <article className="card backup-card"><span className="backup-icon green"><Upload /></span><h3>Restaurar backup</h3><p>Recupera os dados a partir de um arquivo criado anteriormente pelo AulaFácil.</p><input ref={importRef} hidden type="file" accept="application/json,.json" onChange={(event) => { const file = event.target.files?.[0]; if (file) void importBackup(file); }} /><button className="secondary-button" onClick={() => importRef.current?.click()}><Upload size={18} /> Escolher arquivo</button></article>
-              </div>
-              <div className="card data-summary"><div><h3>Resumo armazenado</h3><p>Última alteração: {new Date(database.updatedAt).toLocaleString("pt-BR")}</p></div><div className="summary-numbers"><span><b>{database.students.length}</b> alunos</span><span><b>{database.classes.length}</b> turmas</span><span><b>{database.invoices.length}</b> cobranças</span><span><b>{database.attendance.length}</b> presenças</span></div></div>
-              <div className="danger-zone card"><div><h3>Apagar todos os dados</h3><p>Use apenas se quiser reiniciar o sistema completamente vazio.</p></div><button className="danger-button" onClick={resetDatabase}><Trash2 size={18} /> Limpar sistema</button></div>
-            </section>
+            <BackupPanel
+              database={database}
+              onRestoreCandidate={restoreBackupCandidate}
+              onReset={resetDatabase}
+              onNotify={notify}
+            />
           )}
         </div>
       </main>
 
       {modal === "class" && <Modal title="Cadastrar turma" description="Comece com dados reais. Você poderá cadastrar os alunos em seguida." onClose={() => setModal(null)}><form className="form-grid" onSubmit={addClass}><Field label="Nome da turma" wide><input name="name" maxLength={100} placeholder="Ex.: Informática completa" autoFocus required /></Field><Field label="Professor"><input name="teacher" maxLength={100} placeholder="Nome do professor" required /></Field><Field label="Sala"><input name="room" maxLength={60} placeholder="Sala 1" /></Field><Field label="Dias e horário"><input name="schedule" maxLength={100} placeholder="Ex.: Seg e Qua · 14h" required /></Field><Field label="Mensalidade"><input name="monthlyFee" type="number" min="0" step="0.01" placeholder="150,00" required /></Field><FormActions onCancel={() => setModal(null)} submit="Cadastrar turma" /></form></Modal>}
 
-      {modal === "student" && <Modal title="Cadastrar aluno" description="Os campos deste cadastro são definidos pela própria instituição." onClose={() => setModal(null)}><form className="form-grid" onSubmit={addStudent}><Field label="Nome completo" wide><input name="name" maxLength={120} placeholder="Nome do aluno" autoFocus required /></Field><Field label="Data de nascimento"><input name="birthDate" type="date" value={studentBirthDate} onChange={(event) => setStudentBirthDate(event.target.value)} required /></Field><Field label="Turma"><select name="classId" required defaultValue=""><option value="" disabled>Escolha a turma</option>{database.classes.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}</select></Field><StudentExtraFieldsForm fields={database.settings.studentFields} birthDate={studentBirthDate} /><FormActions onCancel={() => setModal(null)} submit="Cadastrar aluno" /></form></Modal>}
+      {modal === "student" && <Modal title="Cadastrar aluno" description="Os campos deste cadastro são definidos pela própria instituição." onClose={() => setModal(null)}><form className="form-grid" onSubmit={addStudent}><Field label="Nome completo" wide><input name="name" maxLength={120} placeholder="Nome do aluno" autoFocus required /></Field><Field label="Data de nascimento"><input name="birthDate" type="date" value={studentBirthDate} onChange={(event) => setStudentBirthDate(event.target.value)} required /></Field><Field label="Turma"><select name="classId" required defaultValue=""><option value="" disabled>Escolha a turma</option>{database.classes.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}</select></Field><Field label="Vencimento da mensalidade"><select name="dueDay" required defaultValue={String(database.settings.finance.allowedDueDays[0] ?? 10)}>{database.settings.finance.allowedDueDays.map((day) => <option key={day} value={day}>Dia {day}</option>)}</select></Field><StudentExtraFieldsForm fields={database.settings.studentFields} birthDate={studentBirthDate} /><FormActions onCancel={() => setModal(null)} submit="Cadastrar aluno" /></form></Modal>}
 
       {modal === "invoice" && <Modal title="Criar cobrança" description="Registre uma mensalidade ou outro valor devido pelo aluno." onClose={() => setModal(null)}><form className="form-grid" onSubmit={addInvoice}><Field label="Aluno" wide><select name="studentId" defaultValue={selectedStudentId} required><option value="" disabled>Escolha o aluno</option>{database.students.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}</select></Field><Field label="Referência"><input name="reference" defaultValue={monthReference()} maxLength={80} required /></Field><Field label="Vencimento"><input name="dueDate" type="date" defaultValue={localDate()} required /></Field><Field label="Valor"><input name="amount" type="number" min="0.01" step="0.01" placeholder="150,00" required /></Field><FormActions onCancel={() => setModal(null)} submit="Criar cobrança" /></form></Modal>}
 
-      {modal === "bulk-invoice" && <Modal title="Gerar mensalidades" description="Cria uma cobrança para cada aluno ativo usando o valor definido na turma. Cobranças repetidas não serão duplicadas." onClose={() => setModal(null)}><form className="form-grid" onSubmit={generateMonthlyInvoices}><Field label="Referência" wide><input name="reference" defaultValue={monthReference()} maxLength={80} required /></Field><Field label="Vencimento"><input name="dueDate" type="date" defaultValue={localDate()} required /></Field><div className="form-note wide"><CircleDollarSign size={20} /><span>Serão usados os valores mensais cadastrados em cada turma.</span></div><FormActions onCancel={() => setModal(null)} submit="Gerar mensalidades" /></form></Modal>}
+      {modal === "bulk-invoice" && <Modal title="Gerar mensalidades" description="Cria uma cobrança para cada aluno ativo usando o valor da turma e o dia de vencimento escolhido no cadastro. Cobranças repetidas não serão duplicadas." onClose={() => setModal(null)}><form className="form-grid" onSubmit={generateMonthlyInvoices}><Field label="Mês de referência" wide><input name="referenceMonth" type="month" defaultValue={referenceMonthFromDate()} required /></Field><div className="form-note wide"><CircleDollarSign size={20} /><span>Cada aluno receberá o próprio vencimento. Se o dia não existir naquele mês, será usado o último dia válido.</span></div><FormActions onCancel={() => setModal(null)} submit="Gerar mensalidades" /></form></Modal>}
 
       {modal === "notice" && <Modal title="Novo aviso" description="Prepare o texto que será usado na comunicação da escola." onClose={() => setModal(null)}><form className="form-grid" onSubmit={addNotice}><Field label="Título" wide><input name="title" maxLength={100} placeholder="Assunto do aviso" autoFocus required /></Field><Field label="Público"><select name="audience" defaultValue="Todos"><option>Todos</option><option>Alunos</option><option>Responsáveis</option></select></Field><Field label="Mensagem" wide><textarea name="message" maxLength={700} rows={6} placeholder="Escreva uma mensagem clara e curta." required /></Field><FormActions onCancel={() => setModal(null)} submit="Salvar aviso" /></form></Modal>}
 
@@ -780,7 +771,7 @@ function StudentDetails({ student, database, classItem, onClose, onGrade, onInvo
   const records = database.attendance.filter((item) => item.studentId === student.id);
   const presence = records.length ? Math.round(records.filter((item) => item.status === "present").length / records.length * 100) : null;
   const average = grades.length ? grades.reduce((sum, item) => sum + item.score, 0) / grades.length : null;
-  return <div className="modal-backdrop" role="presentation" onMouseDown={(event) => event.target === event.currentTarget && onClose()}><section className="details-panel"><header className="details-header"><button className="modal-close" onClick={onClose}><X /></button><div className="big-avatar">{initials(student.name)}</div><div><span className={`status ${student.completedAt ? "paid" : student.active ? "active" : "cancelled"}`}>{student.completedAt ? "Curso concluído" : student.active ? "Matrícula ativa" : "Matrícula inativa"}</span><h2>{student.name}</h2><p>{classItem?.name ?? "Sem turma"} · {classItem?.schedule ?? "Horário não informado"}</p></div></header><div className="details-body"><div className="student-metrics"><MiniMetric label="Média" value={average === null ? "—" : average.toFixed(1)} icon={GraduationCap} tone="blue" /><MiniMetric label="Frequência" value={presence === null ? "—" : `${presence}%`} icon={CalendarCheck2} tone="green" /><MiniMetric label="Em aberto" value={money(invoices.filter((item) => { const status = effectiveStatus(item); return status === "pending" || status === "overdue"; }).reduce((sum, item) => sum + item.amount, 0))} icon={WalletCards} tone="amber" /></div><div className="info-grid"><Info label="Nascimento" value={dateLabel(student.birthDate)} /><StudentExtraInfo student={student} fields={database.settings.studentFields} /></div><div className="details-actions"><button className="primary-button" onClick={onGrade}><Plus size={17} /> Lançar nota</button><button className="secondary-button" onClick={onInvoice}><Plus size={17} /> Nova cobrança</button><button className="secondary-button" onClick={onDocument}><FileText size={17} /> Declaração</button><button className="secondary-button" onClick={onCertificate}><FileCheck2 size={17} /> Certificado</button></div><section className="detail-section"><div className="section-heading"><div><h3>Notas</h3><p>Histórico de avaliações.</p></div></div>{grades.length ? <div className="record-list">{grades.map((grade) => <div key={grade.id}><span className={grade.score >= 7 ? "score good" : "score attention"}>{grade.score.toFixed(1)}</span><div><strong>{grade.label}</strong><small>{grade.term}</small></div></div>)}</div> : <p className="inline-empty">Nenhuma nota lançada.</p>}</section><section className="detail-section"><div className="section-heading"><div><h3>Financeiro</h3><p>Cobranças deste aluno.</p></div></div>{invoices.length ? <div className="invoice-list">{invoices.map((invoice) => { const status = effectiveStatus(invoice); return <div key={invoice.id}><div><strong>{invoice.reference}</strong><small>Vencimento: {dateLabel(invoice.dueDate)}</small></div><b>{money(invoice.amount)}</b><span className={`status ${status}`}>{statusText(status)}</span><button className="text-button" onClick={() => onToggleInvoice(invoice)}>{status === "paid" ? "Reabrir" : "Confirmar"}</button>{status === "paid" && <button className="icon-button small" onClick={() => onReceipt(invoice)} title="Recibo"><ReceiptText size={16} /></button>}</div>; })}</div> : <p className="inline-empty">Nenhuma cobrança cadastrada.</p>}</section><button className="delete-record" onClick={onDelete}><Trash2 size={17} /> Excluir aluno e registros</button></div></section></div>;
+  return <div className="modal-backdrop" role="presentation" onMouseDown={(event) => event.target === event.currentTarget && onClose()}><section className="details-panel"><header className="details-header"><button className="modal-close" onClick={onClose}><X /></button><div className="big-avatar">{initials(student.name)}</div><div><span className={`status ${student.completedAt ? "paid" : student.active ? "active" : "cancelled"}`}>{student.completedAt ? "Curso concluído" : student.active ? "Matrícula ativa" : "Matrícula inativa"}</span><h2>{student.name}</h2><p>{classItem?.name ?? "Sem turma"} · {classItem?.schedule ?? "Horário não informado"}</p></div></header><div className="details-body"><div className="student-metrics"><MiniMetric label="Média" value={average === null ? "—" : average.toFixed(1)} icon={GraduationCap} tone="blue" /><MiniMetric label="Frequência" value={presence === null ? "—" : `${presence}%`} icon={CalendarCheck2} tone="green" /><MiniMetric label="Em aberto" value={money(invoices.filter((item) => { const status = effectiveStatus(item); return status === "pending" || status === "overdue"; }).reduce((sum, item) => sum + item.amount, 0))} icon={WalletCards} tone="amber" /></div><div className="info-grid"><Info label="Nascimento" value={dateLabel(student.birthDate)} /><Info label="Vencimento mensal" value={student.dueDay ? `Dia ${student.dueDay}` : "Padrão da escola"} /><StudentExtraInfo student={student} fields={database.settings.studentFields} /></div><div className="details-actions"><button className="primary-button" onClick={onGrade}><Plus size={17} /> Lançar nota</button><button className="secondary-button" onClick={onInvoice}><Plus size={17} /> Nova cobrança</button><button className="secondary-button" onClick={onDocument}><FileText size={17} /> Declaração</button><button className="secondary-button" onClick={onCertificate}><FileCheck2 size={17} /> Certificado</button></div><section className="detail-section"><div className="section-heading"><div><h3>Notas</h3><p>Histórico de avaliações.</p></div></div>{grades.length ? <div className="record-list">{grades.map((grade) => <div key={grade.id}><span className={grade.score >= 7 ? "score good" : "score attention"}>{grade.score.toFixed(1)}</span><div><strong>{grade.label}</strong><small>{grade.term}</small></div></div>)}</div> : <p className="inline-empty">Nenhuma nota lançada.</p>}</section><section className="detail-section"><div className="section-heading"><div><h3>Financeiro</h3><p>Cobranças deste aluno.</p></div></div>{invoices.length ? <div className="invoice-list">{invoices.map((invoice) => { const status = effectiveStatus(invoice); return <div key={invoice.id}><div><strong>{invoice.reference}</strong><small>Vencimento: {dateLabel(invoice.dueDate)}</small></div><b>{money(invoice.amount)}</b><span className={`status ${status}`}>{statusText(status)}</span><button className="text-button" onClick={() => onToggleInvoice(invoice)}>{status === "paid" ? "Reabrir" : "Confirmar"}</button>{status === "paid" && <button className="icon-button small" onClick={() => onReceipt(invoice)} title="Recibo"><ReceiptText size={16} /></button>}</div>; })}</div> : <p className="inline-empty">Nenhuma cobrança cadastrada.</p>}</section><button className="delete-record" onClick={onDelete}><Trash2 size={17} /> Excluir aluno e registros</button></div></section></div>;
 }
 
 function DocumentModal({ value, database, classItem, onClose }: { value: NonNullable<Printable>; database: SchoolDatabase; classItem?: ClassItem; onClose: () => void }) {
