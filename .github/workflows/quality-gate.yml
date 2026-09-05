@@ -2,7 +2,7 @@ name: Validar qualidade do AulaFácil
 
 on:
   push:
-    branches: [main]
+    branches: [develop, main]
   pull_request:
     branches: [main]
   workflow_dispatch:
@@ -16,7 +16,7 @@ concurrency:
 
 jobs:
   quality:
-    name: Código, frontend e Tauri
+    name: Testes, frontend e Tauri
     runs-on: windows-latest
 
     steps:
@@ -43,11 +43,14 @@ jobs:
       - name: Verificar estrutura e configurações críticas
         run: node scripts/quality-check.mjs
 
+      - name: Executar testes automáticos
+        run: npm test
+
       - name: Validar TypeScript e frontend
         run: npm run build
 
-      - name: Gerar ícones do aplicativo
+      - name: Gerar recursos exigidos pelo Tauri
         run: npm run desktop:icons
 
       - name: Validar código nativo do Tauri
-        run: cargo check --manifest-path src-tauri/Cargo.toml
+        run: cargo check --locked --manifest-path src-tauri/Cargo.toml

@@ -60,8 +60,13 @@ jobs:
       - name: Instalar dependências
         run: npm ci
 
-      - name: Validar estrutura e configurações críticas
+      - name: Validar requisitos de lançamento
+        env:
+          AULAFACIL_STRICT_RELEASE: "1"
         run: node scripts/quality-check.mjs
+
+      - name: Executar testes automáticos
+        run: npm test
 
       - name: Validar TypeScript e frontend
         run: npm run build
@@ -125,10 +130,18 @@ jobs:
           & $makeAppx.FullName bundle /d "bundle-input" /p "AulaFacil-Store.msixbundle" /o
           if ($LASTEXITCODE -ne 0) { throw "Falha ao criar o MSIX Bundle." }
 
+      - name: Gerar hash verificável do pacote final
+        shell: pwsh
+        run: |
+          $hash = Get-FileHash "AulaFacil-Store.msixbundle" -Algorithm SHA256
+          "$($hash.Hash.ToLower())  AulaFacil-Store.msixbundle" | Out-File -Encoding ascii "AulaFacil-Store-SHA256.txt"
+
       - name: Guardar pacote para envio ao Partner Center
         uses: actions/upload-artifact@v4
         with:
           name: AulaFacil-Store-MSIX
-          path: AulaFacil-Store.msixbundle
+          path: |
+            AulaFacil-Store.msixbundle
+            AulaFacil-Store-SHA256.txt
           if-no-files-found: error
           retention-days: 30

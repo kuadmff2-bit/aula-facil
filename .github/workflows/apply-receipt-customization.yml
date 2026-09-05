@@ -1,0 +1,68 @@
+name: Integrar recibos personalizáveis
+
+on:
+  push:
+    branches: [develop]
+    paths:
+      - "scripts/apply-receipt-customization.py"
+      - ".github/workflows/apply-receipt-customization.yml"
+
+permissions:
+  contents: write
+
+concurrency:
+  group: apply-receipt-customization
+  cancel-in-progress: true
+
+jobs:
+  integrate:
+    runs-on: windows-latest
+    steps:
+      - name: Baixar a develop
+        uses: actions/checkout@v4
+        with:
+          ref: develop
+          fetch-depth: 0
+
+      - name: Preparar Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Preparar Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Instalar dependências
+        run: npm ci
+
+      - name: Aplicar personalização do recibo
+        run: python scripts/apply-receipt-customization.py
+
+      - name: Validar estrutura
+        run: node scripts/quality-check.mjs
+
+      - name: Executar testes
+        run: npm test
+
+      - name: Validar frontend
+        run: npm run build
+
+      - name: Gerar recursos exigidos pelo Tauri
+        run: npm run desktop:icons
+
+      - name: Validar Tauri
+        run: cargo check --locked --manifest-path src-tauri/Cargo.toml
+
+      - name: Publicar somente se tudo passou
+        shell: bash
+        run: |
+          if git diff --quiet -- src/model.ts src/professional-settings.tsx src/professional-settings.css src/receipt-document.tsx src/receipt-document.css src/App.tsx src/receipt-settings.test.ts; then
+            echo "Nenhuma alteração necessária."
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add src/model.ts src/professional-settings.tsx src/professional-settings.css src/receipt-document.tsx src/receipt-document.css src/App.tsx src/receipt-settings.test.ts
+          git commit -m "Personalizar recibos e garantir duas vias em A4"
+          git push origin HEAD:develop

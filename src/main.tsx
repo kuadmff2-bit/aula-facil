@@ -1,10 +1,15 @@
 import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";
-import App from "./App";
+import App from "./AppNext";
 import { initializeSecureStorage } from "./storage";
+import { installGlobalInputGuards } from "./input-guards";
 import "./styles.css";
+import "./theme.css";
+import "./layout-safety.css";
 
 const root = createRoot(document.getElementById("root")!);
+
+installGlobalInputGuards();
 
 async function start() {
   try {

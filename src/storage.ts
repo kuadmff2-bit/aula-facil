@@ -1,4 +1,4 @@
-import { emptyDatabase, normalizeDatabase, type SchoolDatabase } from "./model";
+import { emptyDatabase, ensureUuidDatabase, normalizeDatabase, type SchoolDatabase } from "./model";
 
 const LEGACY_STORAGE_KEY = "aulafacil.desktop.database.v1";
 const MAX_DATABASE_CHARS = 64 * 1024 * 1024;
@@ -37,7 +37,7 @@ function parseDatabaseText(content: string): SchoolDatabase {
   if (!normalized) {
     throw new Error("O banco de dados possui uma estrutura inválida e não será sobrescrito.");
   }
-  return normalized;
+  return ensureUuidDatabase(normalized);
 }
 
 function readLegacyDatabase(): SchoolDatabase | null {
@@ -94,10 +94,9 @@ function reportStorageFailure(error: unknown) {
   console.error("Falha no armazenamento protegido do AulaFácil", error);
   if (storageFailureShown) return;
   storageFailureShown = true;
-  window.alert(
-    "O AulaFácil não conseguiu gravar os dados no armazenamento protegido. "
-    + "Não feche o aplicativo até fazer um backup e verificar o problema.",
-  );
+  const message = "O AulaFácil não conseguiu gravar os dados no armazenamento protegido. "
+    + "Não feche o aplicativo até fazer um backup e verificar o problema.";
+  window.dispatchEvent(new CustomEvent("aulafacil:storage-failure", { detail: { message } }));
 }
 
 export function saveDatabase(database: SchoolDatabase) {

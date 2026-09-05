@@ -1,0 +1,116 @@
+.backup-ultimate .backup-secure-card {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.backup-ultimate .backup-secure-card > p {
+  margin: 0;
+  color: var(--muted);
+  line-height: 1.55;
+}
+
+.backup-password-field {
+  display: grid;
+  gap: 7px;
+}
+
+.backup-password-field > span {
+  font-size: 0.82rem;
+  font-weight: 700;
+  color: var(--text-soft, var(--muted));
+}
+
+.backup-password-field input {
+  width: 100%;
+  min-height: 44px;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: var(--surface, #fff);
+  color: var(--text);
+  padding: 0 13px;
+  outline: none;
+}
+
+.backup-password-field input:focus {
+  border-color: var(--primary);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--primary) 14%, transparent);
+}
+
+.backup-key-input {
+  position: relative;
+}
+
+.backup-key-input svg {
+  position: absolute;
+  left: 13px;
+  top: 50%;
+  transform: translateY(-50%);
+  color: var(--muted);
+  pointer-events: none;
+}
+
+.backup-key-input input {
+  padding-left: 40px;
+}
+
+.backup-selected-file {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  border: 1px solid var(--border);
+  border-radius: 13px;
+  padding: 11px 12px;
+  background: var(--surface-soft, rgba(15, 23, 42, 0.035));
+}
+
+.backup-selected-file > svg {
+  flex: 0 0 auto;
+  color: var(--primary);
+}
+
+.backup-selected-file > span {
+  min-width: 0;
+  display: grid;
+  gap: 2px;
+}
+
+.backup-selected-file strong,
+.backup-selected-file small {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.backup-selected-file small {
+  color: var(--muted);
+}
+
+.backup-warning {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  padding: 18px 20px;
+}
+
+.backup-warning svg {
+  flex: 0 0 auto;
+  color: var(--primary);
+  margin-top: 2px;
+}
+
+.backup-warning p {
+  margin: 0;
+  line-height: 1.55;
+  color: var(--muted);
+}
+
+.backup-warning strong {
+  color: var(--text);
+}
+
+@media (max-width: 720px) {
+  .backup-warning {
+    padding: 16px;
+  }
+}

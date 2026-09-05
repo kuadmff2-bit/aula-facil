@@ -3,7 +3,6 @@ import {
   type ReactNode,
   useEffect,
   useMemo,
-  useRef,
   useState,
 } from "react";
 import {
@@ -48,17 +47,30 @@ import {
   type Grade,
   type Invoice,
   type InvoiceStatus,
+  type Payment,
   type SchoolDatabase,
   type Student,
   type View,
 } from "./model";
-import { loadDatabase, parseBackup, saveDatabase } from "./storage";
+import { loadDatabase, saveDatabase } from "./storage";
 import { collectStudentFields, StudentExtraFieldsForm, StudentExtraInfo, StudentFieldsSettings } from "./student-fields";
 import { ReceiptDocument } from "./receipt-document";
+import { AppearanceSettings } from "./appearance-settings";
+import { ConfirmDialog, type ConfirmRequest } from "./confirm-dialog";
+import { InstitutionSettingsPanel, FinanceSettingsPanel, DocumentSettingsPanel } from "./professional-settings";
+import { CloudAccountPanel } from "./cloud-account";
+import { PaymentConnectionsPanel } from "./payment-connections-panel";
+import { FinanceUltimate } from "./finance-ultimate";
+import { CloudSyncPanel } from "./cloud-sync-panel";
+import { MessageAutomationsPanel } from "./message-automations-panel";
+import { dueDateForMonth, invoiceAmountDue, referenceMonthFromDate } from "./finance-utils";
+import { CertificateManager } from "./certificate-manager";
+import { BackupPanel } from "./backup-panel";
+import { SchoolBrand } from "./school-brand";
 
 type ModalKind = "student" | "class" | "invoice" | "bulk-invoice" | "notice" | "grade" | "student-details" | null;
 type Toast = { message: string; tone: "success" | "warning" | "danger" };
-type Printable = { type: "Declaração" | "Certificado" | "Recibo"; student: Student; invoice?: Invoice } | null;
+type Printable = { type: "Declaração" | "Recibo"; student: Student; invoice?: Invoice; payment?: Payment } | null;
 
 const navItems = [
   { id: "dashboard" as View, label: "Início", icon: LayoutDashboard },
@@ -110,12 +122,16 @@ function initials(name: string) {
 }
 
 function effectiveStatus(invoice: Invoice): InvoiceStatus {
-  if (invoice.status === "paid") return "paid";
+  if (invoice.status === "paid" || invoice.status === "cancelled" || invoice.status === "negotiated") return invoice.status;
   return invoice.dueDate < localDate() ? "overdue" : "pending";
 }
 
 function statusText(status: InvoiceStatus) {
-  return status === "paid" ? "Pago" : status === "overdue" ? "Atrasado" : "Pendente";
+  if (status === "paid") return "Pago";
+  if (status === "overdue") return "Atrasado";
+  if (status === "cancelled") return "Cancelado";
+  if (status === "negotiated") return "Renegociada";
+  return "Pendente";
 }
 
 function formValue(form: FormData, name: string) {
@@ -135,10 +151,40 @@ export default function App() {
   const [attendanceMarks, setAttendanceMarks] = useState<Record<string, "present" | "absent">>({});
   const [toast, setToast] = useState<Toast | null>(null);
   const [printable, setPrintable] = useState<Printable>(null);
+  const [certificateStudentId, setCertificateStudentId] = useState("");
   const [studentBirthDate, setStudentBirthDate] = useState("");
-  const importRef = useRef<HTMLInputElement>(null);
+  const [confirmation, setConfirmation] = useState<(ConfirmRequest & { onConfirm: () => void }) | null>(null);
 
   useEffect(() => saveDatabase(database), [database]);
+  useEffect(() => {
+    const media = window.matchMedia("(prefers-color-scheme: dark)");
+    const applyTheme = () => {
+      const appearance = database.settings.appearance ?? "system";
+      const resolved = appearance === "system" ? (media.matches ? "dark" : "light") : appearance;
+      document.documentElement.dataset.theme = resolved;
+      document.documentElement.style.colorScheme = resolved;
+    };
+    applyTheme();
+    media.addEventListener("change", applyTheme);
+    return () => media.removeEventListener("change", applyTheme);
+  }, [database.settings.appearance]);
+  useEffect(() => {
+    const handleStorageFailure = (event: Event) => {
+      const detail = (event as CustomEvent<{ message?: string }>).detail;
+      setConfirmation({
+        title: "Falha ao salvar os dados",
+        message: detail?.message ?? "O armazenamento protegido não respondeu como esperado.",
+        detail: "Faça um backup antes de fechar o aplicativo. Se o problema continuar, reinicie o AulaFácil e verifique o armazenamento do Windows.",
+        confirmLabel: "Entendi",
+        cancelLabel: "Fechar aviso",
+        tone: "warning",
+        onConfirm: () => undefined,
+      });
+    };
+    window.addEventListener("aulafacil:storage-failure", handleStorageFailure);
+    return () => window.removeEventListener("aulafacil:storage-failure", handleStorageFailure);
+  }, []);
+
   useEffect(() => {
     if (!toast) return;
     const timeout = window.setTimeout(() => setToast(null), 3200);
@@ -159,6 +205,10 @@ export default function App() {
   };
 
   const notify = (message: string, tone: Toast["tone"] = "success") => setToast({ message, tone });
+
+  const confirmAction = (request: ConfirmRequest, action: () => void) => {
+    setConfirmation({ ...request, onConfirm: action });
+  };
 
   const openStudentForm = () => {
     if (database.classes.length === 0) {
@@ -216,14 +266,16 @@ export default function App() {
     const name = formValue(form, "name");
     const birthDate = formValue(form, "birthDate");
     const classId = formValue(form, "classId");
+    const dueDay = Number(formValue(form, "dueDay"));
     const extraFields = collectStudentFields(form, database.settings.studentFields);
-    if (name.length < 3 || !birthDate || !classById.has(classId)) {
-      notify("Preencha nome, nascimento e turma.", "danger");
+    if (name.length < 3 || !birthDate || !classById.has(classId) || !Number.isInteger(dueDay) || !database.settings.finance.allowedDueDays.includes(dueDay)) {
+      notify("Preencha nome, nascimento, turma e um vencimento permitido pela escola.", "danger");
       return;
     }
     updateDatabase((draft) => {
       draft.students.push({
         id: makeId("aluno"), name, birthDate, classId,
+        dueDay,
         ...extraFields,
         active: true,
         createdAt: new Date().toISOString(),
@@ -264,18 +316,27 @@ export default function App() {
   const generateMonthlyInvoices = (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     const form = new FormData(event.currentTarget);
-    const reference = formValue(form, "reference");
-    const dueDate = formValue(form, "dueDate");
-    if (!reference || !dueDate || database.students.length === 0) {
-      notify("Preencha a referência e o vencimento.", "danger");
+    const referenceMonth = formValue(form, "referenceMonth");
+    if (!/^\d{4}-\d{2}$/.test(referenceMonth) || database.students.length === 0) {
+      notify("Escolha o mês de referência.", "danger");
+      return;
+    }
+    let reference: string;
+    try {
+      reference = monthReference(new Date(`${referenceMonth}-01T12:00:00`));
+    } catch {
+      notify("Mês de referência inválido.", "danger");
       return;
     }
     let generated = 0;
     updateDatabase((draft) => {
+      const fallbackDueDay = draft.settings.finance.allowedDueDays[0] ?? 10;
       for (const student of draft.students.filter((item) => item.active)) {
         const exists = draft.invoices.some((item) => item.studentId === student.id && item.reference.toLowerCase() === reference.toLowerCase());
         const classItem = draft.classes.find((item) => item.id === student.classId);
+        const dueDay = student.dueDay && draft.settings.finance.allowedDueDays.includes(student.dueDay) ? student.dueDay : fallbackDueDay;
         if (!exists && classItem && classItem.monthlyFee > 0) {
+          const dueDate = dueDateForMonth(referenceMonth, dueDay);
           draft.invoices.push({
             id: makeId("cobranca"), studentId: student.id, reference, dueDate,
             amount: classItem.monthlyFee,
@@ -288,7 +349,7 @@ export default function App() {
       }
     });
     setModal(null);
-    notify(generated ? `${generated} mensalidade${generated > 1 ? "s" : ""} gerada${generated > 1 ? "s" : ""}.` : "Nenhuma nova mensalidade foi necessária.", generated ? "success" : "warning");
+    notify(generated ? `${generated} mensalidade${generated > 1 ? "s" : ""} gerada${generated > 1 ? "s" : ""} com vencimentos individuais.` : "Nenhuma nova mensalidade foi necessária.", generated ? "success" : "warning");
   };
 
   const addNotice = (event: FormEvent<HTMLFormElement>) => {
@@ -329,27 +390,51 @@ export default function App() {
   };
 
   const setInvoicePaid = (invoice: Invoice) => {
-    const nextPaid = invoice.status !== "paid";
+    if (invoice.status === "paid") {
+      notify("Pagamentos confirmados não são reabertos apagando o histórico. Use o Financeiro para estorno ou ajuste.", "warning");
+      return;
+    }
+    if (invoice.status === "cancelled" || invoice.status === "negotiated") {
+      notify(invoice.status === "negotiated" ? "Esta cobrança faz parte de uma negociação ativa." : "Esta cobrança está cancelada.", "warning");
+      return;
+    }
+    const breakdown = invoiceAmountDue(invoice, database.settings.finance);
+    const now = new Date().toISOString();
     updateDatabase((draft) => {
       const target = draft.invoices.find((item) => item.id === invoice.id);
       if (!target) return;
-      target.status = nextPaid ? "paid" : target.dueDate < localDate() ? "overdue" : "pending";
-      target.paidAt = nextPaid ? new Date().toISOString() : null;
+      target.status = "paid";
+      target.paidAt = now;
+      draft.payments.push({
+        id: makeId("pagamento"), studentId: invoice.studentId, invoiceId: invoice.id,
+        amountReceived: breakdown.totalDue, principalAmount: breakdown.baseAmount,
+        lateFeeAmount: breakdown.lateFee, interestAmount: breakdown.interest,
+        discountAmount: 0, paymentMethod: "manual", status: "confirmed",
+        paidAt: now, receiptNumber: `LOCAL-${now.replace(/\D/g, "").slice(0, 14)}-${Math.random().toString(36).slice(2, 6).toUpperCase()}`,
+        createdAt: now,
+      });
     });
-    notify(nextPaid ? "Pagamento confirmado." : "Pagamento voltou para pendente.");
+    notify(`Pagamento de ${money(breakdown.totalDue)} confirmado e registrado no histórico.`);
   };
 
   const deleteStudent = (student: Student) => {
-    if (!window.confirm(`Excluir o cadastro de ${student.name} e todos os registros relacionados?`)) return;
-    updateDatabase((draft) => {
-      draft.students = draft.students.filter((item) => item.id !== student.id);
-      draft.invoices = draft.invoices.filter((item) => item.studentId !== student.id);
-      draft.attendance = draft.attendance.filter((item) => item.studentId !== student.id);
-      draft.grades = draft.grades.filter((item) => item.studentId !== student.id);
+    confirmAction({
+      title: "Excluir aluno?",
+      message: `O cadastro de ${student.name} e os registros relacionados serão removidos deste dispositivo.`,
+      detail: "Mensalidades, chamadas e notas vinculadas também serão removidas. Faça um backup se precisar preservar essas informações.",
+      confirmLabel: "Excluir aluno",
+      tone: "danger",
+    }, () => {
+      updateDatabase((draft) => {
+        draft.students = draft.students.filter((item) => item.id !== student.id);
+        draft.invoices = draft.invoices.filter((item) => item.studentId !== student.id);
+        draft.attendance = draft.attendance.filter((item) => item.studentId !== student.id);
+        draft.grades = draft.grades.filter((item) => item.studentId !== student.id);
+      });
+      setSelectedStudentId("");
+      setModal(null);
+      notify("Cadastro removido.", "warning");
     });
-    setSelectedStudentId("");
-    setModal(null);
-    notify("Cadastro removido.", "warning");
   };
 
   const deleteClass = (classItem: ClassItem) => {
@@ -358,11 +443,18 @@ export default function App() {
       notify("Mova ou remova os alunos desta turma primeiro.", "warning");
       return;
     }
-    if (!window.confirm(`Excluir a turma ${classItem.name}?`)) return;
-    updateDatabase((draft) => {
-      draft.classes = draft.classes.filter((item) => item.id !== classItem.id);
+    confirmAction({
+      title: "Excluir turma?",
+      message: `A turma ${classItem.name} será removida do AulaFácil.`,
+      detail: "Esta ação só é permitida quando a turma não possui alunos vinculados.",
+      confirmLabel: "Excluir turma",
+      tone: "danger",
+    }, () => {
+      updateDatabase((draft) => {
+        draft.classes = draft.classes.filter((item) => item.id !== classItem.id);
+      });
+      notify("Turma removida.", "warning");
     });
-    notify("Turma removida.", "warning");
   };
 
   const saveAttendance = () => {
@@ -398,46 +490,47 @@ export default function App() {
     setAttendanceMarks(marks);
   };
 
-  const exportBackup = () => {
-    const blob = new Blob([JSON.stringify(database, null, 2)], { type: "application/json" });
-    const url = URL.createObjectURL(blob);
-    const anchor = document.createElement("a");
-    anchor.href = url;
-    anchor.download = `aulafacil-backup-${localDate()}.json`;
-    anchor.click();
-    URL.revokeObjectURL(url);
-    notify("Backup criado. Guarde o arquivo em local seguro.");
-  };
-
-  const importBackup = async (file: File) => {
-    try {
-      const restored = parseBackup(await file.text());
-      if (!window.confirm("Restaurar este backup substituirá os dados atuais. Continuar?")) return;
+  const restoreBackupCandidate = (restored: SchoolDatabase, source: "encrypted" | "legacy") => {
+    confirmAction({
+      title: "Restaurar este backup?",
+      message: "Os dados locais atuais serão substituídos pelo conteúdo validado do arquivo selecionado.",
+      detail: source === "encrypted"
+        ? "O arquivo criptografado e a senha foram validados. Se esta instalação também usa Cloud, sincronize depois da restauração antes de continuar trabalhando em outro dispositivo."
+        : "Este é um backup JSON de uma versão anterior. O AulaFácil validou e migrou sua estrutura antes de permitir a restauração.",
+      confirmLabel: "Restaurar backup",
+      tone: "warning",
+    }, () => {
       setDatabase(restored);
       setModal(null);
       setSelectedStudentId("");
       notify("Backup restaurado com sucesso.");
-    } catch (error) {
-      notify(error instanceof Error ? error.message : "Não foi possível restaurar o arquivo.", "danger");
-    } finally {
-      if (importRef.current) importRef.current.value = "";
-    }
+    });
   };
 
   const resetDatabase = () => {
-    if (!window.confirm("Apagar definitivamente todos os dados deste computador? Faça um backup antes.")) return;
-    setDatabase(emptyDatabase());
-    setSelectedStudentId("");
-    setAttendanceMarks({});
-    notify("O AulaFácil voltou ao estado vazio.", "warning");
+    confirmAction({
+      title: "Limpar todos os dados locais?",
+      message: "Alunos, turmas, notas, chamadas, cobranças e avisos desta instalação serão removidos.",
+      detail: "Esta ação é destrutiva. Faça um backup antes se existir qualquer informação que precise ser preservada.",
+      confirmLabel: "Limpar sistema",
+      tone: "danger",
+    }, () => {
+      setDatabase(emptyDatabase());
+      setSelectedStudentId("");
+      setAttendanceMarks({});
+      notify("O AulaFácil voltou ao estado vazio.", "warning");
+    });
   };
 
   const activeStudents = database.students.filter((item) => item.active);
   const paidInvoices = database.invoices.filter((item) => effectiveStatus(item) === "paid");
-  const openInvoices = database.invoices.filter((item) => effectiveStatus(item) !== "paid");
+  const openInvoices = database.invoices.filter((item) => { const status = effectiveStatus(item); return status === "pending" || status === "overdue"; });
   const overdueInvoices = database.invoices.filter((item) => effectiveStatus(item) === "overdue");
-  const receivedTotal = paidInvoices.reduce((sum, item) => sum + item.amount, 0);
-  const pendingTotal = openInvoices.reduce((sum, item) => sum + item.amount, 0);
+  const confirmedPayments = database.payments.filter((item) => item.status === "confirmed");
+  const invoiceIdsWithConfirmedPayment = new Set(confirmedPayments.map((item) => item.invoiceId).filter((id): id is string => Boolean(id)));
+  const receivedTotal = confirmedPayments.reduce((sum, item) => sum + item.amountReceived, 0)
+    + paidInvoices.filter((invoice) => !invoiceIdsWithConfirmedPayment.has(invoice.id)).reduce((sum, invoice) => sum + invoice.amount, 0);
+  const pendingTotal = openInvoices.reduce((sum, item) => sum + invoiceAmountDue(item, database.settings.finance).totalDue, 0);
   const attendanceToday = database.attendance.filter((item) => item.date === localDate());
   const presentToday = attendanceToday.filter((item) => item.status === "present").length;
   const attendanceRate = attendanceToday.length ? Math.round((presentToday / attendanceToday.length) * 100) : 0;
@@ -459,9 +552,8 @@ export default function App() {
   return (
     <div className="app-shell">
       <aside className="sidebar">
-        <button className="brand" onClick={() => changeView("dashboard")}>
-          <span className="brand-mark">A<i /></span>
-          <span><strong>AulaFácil</strong><small>Centro Shekinah</small></span>
+        <button className="brand" onClick={() => changeView("dashboard")} aria-label="Ir para o início">
+          <SchoolBrand institution={database.settings.institution} />
         </button>
 
         <div className="nav-label">GESTÃO</div>
@@ -476,8 +568,8 @@ export default function App() {
         </nav>
 
         <div className="sidebar-foot">
-          <div className="local-status"><HardDrive size={18} /><span><strong>Dados locais</strong><small>Salvos neste computador</small></span><CheckCircle2 size={17} /></div>
-          <div className="version">AulaFácil Desktop <span>v0.2.1</span></div>
+          <div className="local-status"><HardDrive size={18} /><span><strong>Cópia local protegida</strong><small>Criptografada no Windows</small></span><CheckCircle2 size={17} /></div>
+          <div className="version">AulaFácil Desktop <span>v0.3.0</span></div>
         </div>
       </aside>
 
@@ -488,7 +580,7 @@ export default function App() {
             <p>{viewCopy[view].description}</p>
           </div>
           <div className="top-actions">
-            <span className="offline-pill"><ShieldCheck size={16} /> Sistema local</span>
+            <span className="offline-pill"><ShieldCheck size={16} /> Dados protegidos</span>
             <button className="icon-button" onClick={() => changeView("notices")} aria-label="Abrir avisos"><Bell size={20} />{database.notices.length > 0 && <i />}</button>
             <div className="avatar">CA</div>
           </div>
@@ -574,61 +666,87 @@ export default function App() {
           )}
 
           {view === "finance" && (
-            <section className="stack">
-              <PageHeader title="Mensalidades" subtitle="Valores registrados neste computador." action="Nova cobrança" icon={Plus} onAction={() => openInvoiceForm()} secondaryAction={database.students.length ? "Gerar para todos" : undefined} onSecondary={() => setModal("bulk-invoice")} />
-              <div className="finance-metrics"><MiniMetric label="Recebido" value={money(receivedTotal)} icon={CheckCircle2} tone="green" /><MiniMetric label="Em aberto" value={money(pendingTotal)} icon={Clock3} tone="amber" /><MiniMetric label="Atrasadas" value={String(overdueInvoices.length)} icon={AlertTriangle} tone="red" /></div>
-              <div className="filter-tabs">{(["all", "pending", "overdue", "paid"] as const).map((item) => <button key={item} className={financeFilter === item ? "active" : ""} onClick={() => setFinanceFilter(item)}>{item === "all" ? "Todas" : statusText(item)}</button>)}</div>
-              {filteredInvoices.length ? <div className="card table-card"><table><thead><tr><th>Aluno</th><th>Referência</th><th>Vencimento</th><th>Valor</th><th>Status</th><th>Ações</th></tr></thead><tbody>{filteredInvoices.map((invoice) => {
-                const student = studentById.get(invoice.studentId);
-                const status = effectiveStatus(invoice);
-                return <tr key={invoice.id}><td><strong>{student?.name ?? "Aluno removido"}</strong></td><td>{invoice.reference}</td><td>{dateLabel(invoice.dueDate)}</td><td><strong>{money(invoice.amount)}</strong></td><td><span className={`status ${status}`}>{statusText(status)}</span></td><td><div className="row-actions"><button className={status === "paid" ? "secondary-button small" : "primary-button small"} onClick={() => setInvoicePaid(invoice)}>{status === "paid" ? "Reabrir" : "Confirmar"}</button>{status === "paid" && student && <button className="icon-button small" title="Abrir recibo" onClick={() => setPrintable({ type: "Recibo", student, invoice })}><ReceiptText size={17} /></button>}</div></td></tr>;
-              })}</tbody></table></div> : <EmptyState icon={WalletCards} title={database.invoices.length ? "Nenhuma cobrança neste filtro" : "Nenhuma cobrança cadastrada"} text={database.invoices.length ? "Escolha outro status acima." : "Crie uma cobrança individual ou gere as mensalidades de todos."} action={database.invoices.length ? undefined : "Criar primeira cobrança"} onAction={() => openInvoiceForm()} />}
-            </section>
+            <FinanceUltimate
+              database={database}
+              onChange={setDatabase}
+              onReceipt={(student, invoice, payment) => setPrintable({ type: "Recibo", student, invoice, payment })}
+            />
           )}
 
           {view === "notices" && (
             <section className="stack">
               <PageHeader title="Mural de avisos" subtitle="Comunicados preparados pela secretaria." action="Novo aviso" icon={Plus} onAction={() => setModal("notice")} />
-              {database.notices.length ? <div className="notice-grid">{database.notices.map((notice) => <article className="card notice-card" key={notice.id}><div><span className="audience">{notice.audience}</span><time>{new Date(notice.publishedAt).toLocaleDateString("pt-BR")}</time></div><h3>{notice.title}</h3><p>{notice.message}</p><button className="quiet-danger" onClick={() => { if (window.confirm("Excluir este aviso?")) updateDatabase((draft) => { draft.notices = draft.notices.filter((item) => item.id !== notice.id); }); }}><Trash2 size={16} /> Excluir</button></article>)}</div> : <EmptyState icon={Megaphone} title="Nenhum aviso" text="O mural começa vazio. Crie apenas comunicados reais." action="Criar primeiro aviso" onAction={() => setModal("notice")} />}
+              {database.notices.length ? <div className="notice-grid">{database.notices.map((notice) => <article className="card notice-card" key={notice.id}><div><span className="audience">{notice.audience}</span><time>{new Date(notice.publishedAt).toLocaleDateString("pt-BR")}</time></div><h3>{notice.title}</h3><p>{notice.message}</p><button className="quiet-danger" onClick={() => confirmAction({ title: "Excluir aviso?", message: `O aviso “${notice.title}” será removido do mural.`, confirmLabel: "Excluir aviso", tone: "danger" }, () => updateDatabase((draft) => { draft.notices = draft.notices.filter((item) => item.id !== notice.id); }))}><Trash2 size={16} /> Excluir</button></article>)}</div> : <EmptyState icon={Megaphone} title="Nenhum aviso" text="O mural começa vazio. Crie apenas comunicados reais." action="Criar primeiro aviso" onAction={() => setModal("notice")} />}
             </section>
           )}
 
           {view === "settings" && (
-            <StudentFieldsSettings
-              fields={database.settings.studentFields}
-              onChange={(fields) => updateDatabase((draft) => { draft.settings.studentFields = fields; })}
-            />
+            <section className="stack">
+              <InstitutionSettingsPanel
+                value={database.settings.institution}
+                onChange={(institution) => updateDatabase((draft) => { draft.settings.institution = institution; })}
+              />
+              <AppearanceSettings
+                value={database.settings.appearance}
+                onChange={(appearance) => updateDatabase((draft) => { draft.settings.appearance = appearance; })}
+              />
+              <StudentFieldsSettings
+                fields={database.settings.studentFields}
+                onChange={(fields) => updateDatabase((draft) => { draft.settings.studentFields = fields; })}
+              />
+              <FinanceSettingsPanel
+                value={database.settings.finance}
+                onChange={(finance) => updateDatabase((draft) => { draft.settings.finance = finance; })}
+              />
+              <DocumentSettingsPanel
+                receipt={database.settings.receipt}
+                certificate={database.settings.certificate}
+                onReceiptChange={(receipt) => updateDatabase((draft) => { draft.settings.receipt = receipt; })}
+                onCertificateChange={(certificate) => updateDatabase((draft) => { draft.settings.certificate = certificate; })}
+              />
+              <CloudAccountPanel database={database} onReplaceDatabase={setDatabase} />
+              <CloudSyncPanel database={database} onReplaceDatabase={setDatabase} />
+              <PaymentConnectionsPanel />
+              <MessageAutomationsPanel />
+            </section>
           )}
 
           {view === "backup" && (
-            <section className="stack">
-              <div className="security-hero card"><span><ShieldCheck size={30} /></span><div><h2>Seus dados ficam neste computador</h2><p>O AulaFácil Desktop não envia cadastros para sites nem exige conta do ChatGPT. Faça backups frequentes para não perder informações se o computador for formatado ou danificado.</p></div></div>
-              <div className="backup-grid">
-                <article className="card backup-card"><span className="backup-icon blue"><Download /></span><h3>Criar backup</h3><p>Baixa uma cópia completa de alunos, turmas, notas, chamadas, cobranças e avisos.</p><button className="primary-button" onClick={exportBackup}><Download size={18} /> Salvar backup</button></article>
-                <article className="card backup-card"><span className="backup-icon green"><Upload /></span><h3>Restaurar backup</h3><p>Recupera os dados a partir de um arquivo criado anteriormente pelo AulaFácil.</p><input ref={importRef} hidden type="file" accept="application/json,.json" onChange={(event) => { const file = event.target.files?.[0]; if (file) void importBackup(file); }} /><button className="secondary-button" onClick={() => importRef.current?.click()}><Upload size={18} /> Escolher arquivo</button></article>
-              </div>
-              <div className="card data-summary"><div><h3>Resumo armazenado</h3><p>Última alteração: {new Date(database.updatedAt).toLocaleString("pt-BR")}</p></div><div className="summary-numbers"><span><b>{database.students.length}</b> alunos</span><span><b>{database.classes.length}</b> turmas</span><span><b>{database.invoices.length}</b> cobranças</span><span><b>{database.attendance.length}</b> presenças</span></div></div>
-              <div className="danger-zone card"><div><h3>Apagar todos os dados</h3><p>Use apenas se quiser reiniciar o sistema completamente vazio.</p></div><button className="danger-button" onClick={resetDatabase}><Trash2 size={18} /> Limpar sistema</button></div>
-            </section>
+            <BackupPanel
+              database={database}
+              onRestoreCandidate={restoreBackupCandidate}
+              onReset={resetDatabase}
+              onNotify={notify}
+            />
           )}
         </div>
       </main>
 
       {modal === "class" && <Modal title="Cadastrar turma" description="Comece com dados reais. Você poderá cadastrar os alunos em seguida." onClose={() => setModal(null)}><form className="form-grid" onSubmit={addClass}><Field label="Nome da turma" wide><input name="name" maxLength={100} placeholder="Ex.: Informática completa" autoFocus required /></Field><Field label="Professor"><input name="teacher" maxLength={100} placeholder="Nome do professor" required /></Field><Field label="Sala"><input name="room" maxLength={60} placeholder="Sala 1" /></Field><Field label="Dias e horário"><input name="schedule" maxLength={100} placeholder="Ex.: Seg e Qua · 14h" required /></Field><Field label="Mensalidade"><input name="monthlyFee" type="number" min="0" step="0.01" placeholder="150,00" required /></Field><FormActions onCancel={() => setModal(null)} submit="Cadastrar turma" /></form></Modal>}
 
-      {modal === "student" && <Modal title="Cadastrar aluno" description="Os campos deste cadastro são definidos pela própria instituição." onClose={() => setModal(null)}><form className="form-grid" onSubmit={addStudent}><Field label="Nome completo" wide><input name="name" maxLength={120} placeholder="Nome do aluno" autoFocus required /></Field><Field label="Data de nascimento"><input name="birthDate" type="date" value={studentBirthDate} onChange={(event) => setStudentBirthDate(event.target.value)} required /></Field><Field label="Turma"><select name="classId" required defaultValue=""><option value="" disabled>Escolha a turma</option>{database.classes.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}</select></Field><StudentExtraFieldsForm fields={database.settings.studentFields} birthDate={studentBirthDate} /><FormActions onCancel={() => setModal(null)} submit="Cadastrar aluno" /></form></Modal>}
+      {modal === "student" && <Modal title="Cadastrar aluno" description="Os campos deste cadastro são definidos pela própria instituição." onClose={() => setModal(null)}><form className="form-grid" onSubmit={addStudent}><Field label="Nome completo" wide><input name="name" maxLength={120} placeholder="Nome do aluno" autoFocus required /></Field><Field label="Data de nascimento"><input name="birthDate" type="date" value={studentBirthDate} onChange={(event) => setStudentBirthDate(event.target.value)} required /></Field><Field label="Turma"><select name="classId" required defaultValue=""><option value="" disabled>Escolha a turma</option>{database.classes.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}</select></Field><Field label="Vencimento da mensalidade"><select name="dueDay" required defaultValue={String(database.settings.finance.allowedDueDays[0] ?? 10)}>{database.settings.finance.allowedDueDays.map((day) => <option key={day} value={day}>Dia {day}</option>)}</select></Field><StudentExtraFieldsForm fields={database.settings.studentFields} birthDate={studentBirthDate} /><FormActions onCancel={() => setModal(null)} submit="Cadastrar aluno" /></form></Modal>}
 
       {modal === "invoice" && <Modal title="Criar cobrança" description="Registre uma mensalidade ou outro valor devido pelo aluno." onClose={() => setModal(null)}><form className="form-grid" onSubmit={addInvoice}><Field label="Aluno" wide><select name="studentId" defaultValue={selectedStudentId} required><option value="" disabled>Escolha o aluno</option>{database.students.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}</select></Field><Field label="Referência"><input name="reference" defaultValue={monthReference()} maxLength={80} required /></Field><Field label="Vencimento"><input name="dueDate" type="date" defaultValue={localDate()} required /></Field><Field label="Valor"><input name="amount" type="number" min="0.01" step="0.01" placeholder="150,00" required /></Field><FormActions onCancel={() => setModal(null)} submit="Criar cobrança" /></form></Modal>}
 
-      {modal === "bulk-invoice" && <Modal title="Gerar mensalidades" description="Cria uma cobrança para cada aluno ativo usando o valor definido na turma. Cobranças repetidas não serão duplicadas." onClose={() => setModal(null)}><form className="form-grid" onSubmit={generateMonthlyInvoices}><Field label="Referência" wide><input name="reference" defaultValue={monthReference()} maxLength={80} required /></Field><Field label="Vencimento"><input name="dueDate" type="date" defaultValue={localDate()} required /></Field><div className="form-note wide"><CircleDollarSign size={20} /><span>Serão usados os valores mensais cadastrados em cada turma.</span></div><FormActions onCancel={() => setModal(null)} submit="Gerar mensalidades" /></form></Modal>}
+      {modal === "bulk-invoice" && <Modal title="Gerar mensalidades" description="Cria uma cobrança para cada aluno ativo usando o valor da turma e o dia de vencimento escolhido no cadastro. Cobranças repetidas não serão duplicadas." onClose={() => setModal(null)}><form className="form-grid" onSubmit={generateMonthlyInvoices}><Field label="Mês de referência" wide><input name="referenceMonth" type="month" defaultValue={referenceMonthFromDate()} required /></Field><div className="form-note wide"><CircleDollarSign size={20} /><span>Cada aluno receberá o próprio vencimento. Se o dia não existir naquele mês, será usado o último dia válido.</span></div><FormActions onCancel={() => setModal(null)} submit="Gerar mensalidades" /></form></Modal>}
 
       {modal === "notice" && <Modal title="Novo aviso" description="Prepare o texto que será usado na comunicação da escola." onClose={() => setModal(null)}><form className="form-grid" onSubmit={addNotice}><Field label="Título" wide><input name="title" maxLength={100} placeholder="Assunto do aviso" autoFocus required /></Field><Field label="Público"><select name="audience" defaultValue="Todos"><option>Todos</option><option>Alunos</option><option>Responsáveis</option></select></Field><Field label="Mensagem" wide><textarea name="message" maxLength={700} rows={6} placeholder="Escreva uma mensagem clara e curta." required /></Field><FormActions onCancel={() => setModal(null)} submit="Salvar aviso" /></form></Modal>}
 
       {modal === "grade" && selectedStudent && <Modal title="Lançar nota" description={`${selectedStudent.name} · ${classById.get(selectedStudent.classId)?.name ?? "Turma"}`} onClose={() => setModal("student-details")}><form className="form-grid" onSubmit={addGrade}><Field label="Atividade ou avaliação" wide><input name="label" maxLength={80} placeholder="Ex.: Avaliação 1" autoFocus required /></Field><Field label="Etapa"><input name="term" maxLength={40} placeholder="Ex.: 1º bimestre" required /></Field><Field label="Nota de 0 a 10"><input name="score" type="number" min="0" max="10" step="0.1" required /></Field><FormActions onCancel={() => setModal("student-details")} submit="Salvar nota" /></form></Modal>}
 
-      {modal === "student-details" && selectedStudent && <StudentDetails student={selectedStudent} database={database} classItem={classById.get(selectedStudent.classId)} onClose={() => setModal(null)} onGrade={() => setModal("grade")} onInvoice={() => openInvoiceForm(selectedStudent.id)} onDocument={(type) => setPrintable({ type, student: selectedStudent })} onReceipt={(invoice) => setPrintable({ type: "Recibo", student: selectedStudent, invoice })} onToggleInvoice={setInvoicePaid} onDelete={() => deleteStudent(selectedStudent)} />}
+      {modal === "student-details" && selectedStudent && <StudentDetails student={selectedStudent} database={database} classItem={classById.get(selectedStudent.classId)} onClose={() => setModal(null)} onGrade={() => setModal("grade")} onInvoice={() => openInvoiceForm(selectedStudent.id)} onDocument={() => setPrintable({ type: "Declaração", student: selectedStudent })} onCertificate={() => { setCertificateStudentId(selectedStudent.id); setModal(null); }} onReceipt={(invoice) => setPrintable({ type: "Recibo", student: selectedStudent, invoice })} onToggleInvoice={setInvoicePaid} onDelete={() => deleteStudent(selectedStudent)} />}
 
-      {printable && <DocumentModal value={printable} classItem={classById.get(printable.student.classId)} onClose={() => setPrintable(null)} />}
+      {printable && <DocumentModal value={printable} database={database} classItem={classById.get(printable.student.classId)} onClose={() => setPrintable(null)} />}
+      {certificateStudentId && studentById.get(certificateStudentId) && <CertificateManager student={studentById.get(certificateStudentId)!} classItem={classById.get(studentById.get(certificateStudentId)!.classId)} database={database} onClose={() => setCertificateStudentId("")} onCompleted={(restored) => { setDatabase(restored); notify("Conclusão do aluno atualizada a partir da nuvem."); }} />}
+      {confirmation && <ConfirmDialog
+        {...confirmation}
+        onCancel={() => setConfirmation(null)}
+        onConfirm={() => {
+          const action = confirmation.onConfirm;
+          setConfirmation(null);
+          action();
+        }}
+      />}
       {toast && <div className={`toast ${toast.tone}`}>{toast.tone === "success" ? <CheckCircle2 /> : <AlertTriangle />}<span>{toast.message}</span><button onClick={() => setToast(null)}><X size={16} /></button></div>}
     </div>
   );
@@ -641,27 +759,30 @@ function Dashboard({ database, activeStudents, receivedTotal, pendingTotal, over
   const isEmpty = database.classes.length === 0 && database.students.length === 0;
   const recentInvoices = [...database.invoices].sort((a, b) => b.createdAt.localeCompare(a.createdAt)).slice(0, 5);
   return <section className="stack">
-    {isEmpty && <div className="welcome-card"><div><span className="eyebrow">PRONTO PARA COMEÇAR</span><h2>Seu AulaFácil está limpo</h2><p>Nenhum aluno, cobrança ou registro de teste foi incluído. Cadastre a primeira turma e monte o sistema com os dados reais da Shekinah.</p><button className="light-button" onClick={onAddClass}><Plus size={19} /> Cadastrar primeira turma</button></div><div className="welcome-steps"><span className="done"><b>1</b><small>Turma</small></span><i /><span><b>2</b><small>Alunos</small></span><i /><span><b>3</b><small>Mensalidades</small></span></div></div>}
+    {isEmpty && <div className="welcome-card"><div><span className="eyebrow">PRONTO PARA COMEÇAR</span><h2>Seu AulaFácil está limpo</h2><p>Nenhum aluno, cobrança ou registro de teste foi incluído. Cadastre a primeira turma e monte o sistema com os dados reais da sua instituição.</p><button className="light-button" onClick={onAddClass}><Plus size={19} /> Cadastrar primeira turma</button></div><div className="welcome-steps"><span className="done"><b>1</b><small>Turma</small></span><i /><span><b>2</b><small>Alunos</small></span><i /><span><b>3</b><small>Mensalidades</small></span></div></div>}
     <div className="metric-grid"><Metric label="Alunos ativos" value={String(activeStudents)} helper={`${database.classes.length} turma${database.classes.length === 1 ? "" : "s"}`} icon={Users} tone="blue" /><Metric label="Recebido" value={money(receivedTotal)} helper="Pagamentos confirmados" icon={CircleDollarSign} tone="green" /><Metric label="Em aberto" value={money(pendingTotal)} helper={overdueCount ? `${overdueCount} atrasada${overdueCount > 1 ? "s" : ""}` : "Nenhuma atrasada"} icon={Clock3} tone={overdueCount ? "red" : "amber"} /><Metric label="Presença hoje" value={database.attendance.some((item) => item.date === localDate()) ? `${attendanceRate}%` : "—"} helper="Chamadas de hoje" icon={CalendarCheck2} tone="violet" /></div>
     <div className="dashboard-grid"><div className="card quick-card"><div className="section-heading"><div><h2>Ações rápidas</h2><p>Comece pelo que você precisa fazer.</p></div></div><div className="quick-actions"><button onClick={onAddStudent}><span className="blue"><UserPlus /></span><div><strong>Novo aluno</strong><small>Adicionar cadastro</small></div><ChevronRight /></button><button onClick={onAttendance}><span className="violet"><ClipboardCheck /></span><div><strong>Fazer chamada</strong><small>Registrar presença</small></div><ChevronRight /></button><button onClick={onFinance}><span className="green"><WalletCards /></span><div><strong>Mensalidades</strong><small>Ver financeiro</small></div><ChevronRight /></button><button onClick={onAddClass}><span className="amber"><BookOpen /></span><div><strong>Nova turma</strong><small>Criar curso ou horário</small></div><ChevronRight /></button></div></div><div className="card attention-card"><div className="section-heading"><div><h2>Precisa de atenção</h2><p>Pendências financeiras.</p></div>{overdueCount > 0 && <span className="count-badge">{overdueCount}</span>}</div>{database.invoices.filter((item) => effectiveStatus(item) === "overdue").slice(0, 4).map((invoice) => <button key={invoice.id} onClick={() => onStudent(invoice.studentId)}><span className="warning-icon"><AlertTriangle size={18} /></span><div><strong>{studentById.get(invoice.studentId)?.name ?? "Aluno"}</strong><small>{invoice.reference} · venceu {dateLabel(invoice.dueDate)}</small></div><b>{money(invoice.amount)}</b></button>)}{overdueCount === 0 && <div className="compact-empty"><CheckCircle2 /><strong>Nenhuma cobrança atrasada</strong><span>As pendências aparecerão aqui.</span></div>}</div></div>
     <div className="dashboard-grid wide-left"><div className="card recent-card"><div className="section-heading"><div><h2>Movimentações recentes</h2><p>Cobranças adicionadas ao sistema.</p></div></div>{recentInvoices.length ? <div className="simple-list">{recentInvoices.map((invoice) => <button key={invoice.id} onClick={() => onStudent(invoice.studentId)}><span className={`status-dot ${effectiveStatus(invoice)}`} /><div><strong>{studentById.get(invoice.studentId)?.name ?? "Aluno removido"}</strong><small>{invoice.reference}</small></div><span>{money(invoice.amount)}</span><em className={`status ${effectiveStatus(invoice)}`}>{statusText(effectiveStatus(invoice))}</em></button>)}</div> : <div className="compact-empty"><ReceiptText /><strong>Nenhuma movimentação</strong><span>O sistema está pronto para dados reais.</span></div>}</div><div className="card classes-summary"><div className="section-heading"><div><h2>Turmas</h2><p>Distribuição de alunos.</p></div></div>{database.classes.length ? database.classes.slice(0, 5).map((classItem) => { const count = database.students.filter((student) => student.classId === classItem.id).length; return <div key={classItem.id}><span style={{ background: classItem.color }} /><div><strong>{classItem.name}</strong><small>{classItem.schedule}</small></div><b>{count}</b></div>; }) : <div className="compact-empty"><BookOpen /><strong>Nenhuma turma</strong><span>Cadastre a primeira para começar.</span></div>}</div></div>
   </section>;
 }
 
-function StudentDetails({ student, database, classItem, onClose, onGrade, onInvoice, onDocument, onReceipt, onToggleInvoice, onDelete }: {
-  student: Student; database: SchoolDatabase; classItem?: ClassItem; onClose: () => void; onGrade: () => void; onInvoice: () => void; onDocument: (type: "Declaração" | "Certificado") => void; onReceipt: (invoice: Invoice) => void; onToggleInvoice: (invoice: Invoice) => void; onDelete: () => void;
+function StudentDetails({ student, database, classItem, onClose, onGrade, onInvoice, onDocument, onCertificate, onReceipt, onToggleInvoice, onDelete }: {
+  student: Student; database: SchoolDatabase; classItem?: ClassItem; onClose: () => void; onGrade: () => void; onInvoice: () => void; onDocument: () => void; onCertificate: () => void; onReceipt: (invoice: Invoice) => void; onToggleInvoice: (invoice: Invoice) => void; onDelete: () => void;
 }) {
   const grades = database.grades.filter((item) => item.studentId === student.id).sort((a, b) => b.createdAt.localeCompare(a.createdAt));
   const invoices = database.invoices.filter((item) => item.studentId === student.id).sort((a, b) => b.dueDate.localeCompare(a.dueDate));
   const records = database.attendance.filter((item) => item.studentId === student.id);
   const presence = records.length ? Math.round(records.filter((item) => item.status === "present").length / records.length * 100) : null;
   const average = grades.length ? grades.reduce((sum, item) => sum + item.score, 0) / grades.length : null;
-  return <div className="modal-backdrop" role="presentation" onMouseDown={(event) => event.target === event.currentTarget && onClose()}><section className="details-panel"><header className="details-header"><button className="modal-close" onClick={onClose}><X /></button><div className="big-avatar">{initials(student.name)}</div><div><span className="status active">Matrícula ativa</span><h2>{student.name}</h2><p>{classItem?.name ?? "Sem turma"} · {classItem?.schedule ?? "Horário não informado"}</p></div></header><div className="details-body"><div className="student-metrics"><MiniMetric label="Média" value={average === null ? "—" : average.toFixed(1)} icon={GraduationCap} tone="blue" /><MiniMetric label="Frequência" value={presence === null ? "—" : `${presence}%`} icon={CalendarCheck2} tone="green" /><MiniMetric label="Em aberto" value={money(invoices.filter((item) => effectiveStatus(item) !== "paid").reduce((sum, item) => sum + item.amount, 0))} icon={WalletCards} tone="amber" /></div><div className="info-grid"><Info label="Nascimento" value={dateLabel(student.birthDate)} /><StudentExtraInfo student={student} fields={database.settings.studentFields} /></div><div className="details-actions"><button className="primary-button" onClick={onGrade}><Plus size={17} /> Lançar nota</button><button className="secondary-button" onClick={onInvoice}><Plus size={17} /> Nova cobrança</button><button className="secondary-button" onClick={() => onDocument("Declaração")}><FileText size={17} /> Declaração</button><button className="secondary-button" onClick={() => onDocument("Certificado")}><FileCheck2 size={17} /> Certificado</button></div><section className="detail-section"><div className="section-heading"><div><h3>Notas</h3><p>Histórico de avaliações.</p></div></div>{grades.length ? <div className="record-list">{grades.map((grade) => <div key={grade.id}><span className={grade.score >= 7 ? "score good" : "score attention"}>{grade.score.toFixed(1)}</span><div><strong>{grade.label}</strong><small>{grade.term}</small></div></div>)}</div> : <p className="inline-empty">Nenhuma nota lançada.</p>}</section><section className="detail-section"><div className="section-heading"><div><h3>Financeiro</h3><p>Cobranças deste aluno.</p></div></div>{invoices.length ? <div className="invoice-list">{invoices.map((invoice) => { const status = effectiveStatus(invoice); return <div key={invoice.id}><div><strong>{invoice.reference}</strong><small>Vencimento: {dateLabel(invoice.dueDate)}</small></div><b>{money(invoice.amount)}</b><span className={`status ${status}`}>{statusText(status)}</span><button className="text-button" onClick={() => onToggleInvoice(invoice)}>{status === "paid" ? "Reabrir" : "Confirmar"}</button>{status === "paid" && <button className="icon-button small" onClick={() => onReceipt(invoice)} title="Recibo"><ReceiptText size={16} /></button>}</div>; })}</div> : <p className="inline-empty">Nenhuma cobrança cadastrada.</p>}</section><button className="delete-record" onClick={onDelete}><Trash2 size={17} /> Excluir aluno e registros</button></div></section></div>;
+  return <div className="modal-backdrop" role="presentation" onMouseDown={(event) => event.target === event.currentTarget && onClose()}><section className="details-panel"><header className="details-header"><button className="modal-close" onClick={onClose}><X /></button><div className="big-avatar">{initials(student.name)}</div><div><span className={`status ${student.completedAt ? "paid" : student.active ? "active" : "cancelled"}`}>{student.completedAt ? "Curso concluído" : student.active ? "Matrícula ativa" : "Matrícula inativa"}</span><h2>{student.name}</h2><p>{classItem?.name ?? "Sem turma"} · {classItem?.schedule ?? "Horário não informado"}</p></div></header><div className="details-body"><div className="student-metrics"><MiniMetric label="Média" value={average === null ? "—" : average.toFixed(1)} icon={GraduationCap} tone="blue" /><MiniMetric label="Frequência" value={presence === null ? "—" : `${presence}%`} icon={CalendarCheck2} tone="green" /><MiniMetric label="Em aberto" value={money(invoices.filter((item) => { const status = effectiveStatus(item); return status === "pending" || status === "overdue"; }).reduce((sum, item) => sum + item.amount, 0))} icon={WalletCards} tone="amber" /></div><div className="info-grid"><Info label="Nascimento" value={dateLabel(student.birthDate)} /><Info label="Vencimento mensal" value={student.dueDay ? `Dia ${student.dueDay}` : "Padrão da escola"} /><StudentExtraInfo student={student} fields={database.settings.studentFields} /></div><div className="details-actions"><button className="primary-button" onClick={onGrade}><Plus size={17} /> Lançar nota</button><button className="secondary-button" onClick={onInvoice}><Plus size={17} /> Nova cobrança</button><button className="secondary-button" onClick={onDocument}><FileText size={17} /> Declaração</button><button className="secondary-button" onClick={onCertificate}><FileCheck2 size={17} /> Certificado</button></div><section className="detail-section"><div className="section-heading"><div><h3>Notas</h3><p>Histórico de avaliações.</p></div></div>{grades.length ? <div className="record-list">{grades.map((grade) => <div key={grade.id}><span className={grade.score >= 7 ? "score good" : "score attention"}>{grade.score.toFixed(1)}</span><div><strong>{grade.label}</strong><small>{grade.term}</small></div></div>)}</div> : <p className="inline-empty">Nenhuma nota lançada.</p>}</section><section className="detail-section"><div className="section-heading"><div><h3>Financeiro</h3><p>Cobranças deste aluno.</p></div></div>{invoices.length ? <div className="invoice-list">{invoices.map((invoice) => { const status = effectiveStatus(invoice); return <div key={invoice.id}><div><strong>{invoice.reference}</strong><small>Vencimento: {dateLabel(invoice.dueDate)}</small></div><b>{money(invoice.amount)}</b><span className={`status ${status}`}>{statusText(status)}</span><button className="text-button" onClick={() => onToggleInvoice(invoice)}>{status === "paid" ? "Reabrir" : "Confirmar"}</button>{status === "paid" && <button className="icon-button small" onClick={() => onReceipt(invoice)} title="Recibo"><ReceiptText size={16} /></button>}</div>; })}</div> : <p className="inline-empty">Nenhuma cobrança cadastrada.</p>}</section><button className="delete-record" onClick={onDelete}><Trash2 size={17} /> Excluir aluno e registros</button></div></section></div>;
 }
 
-function DocumentModal({ value, classItem, onClose }: { value: NonNullable<Printable>; classItem?: ClassItem; onClose: () => void }) {
+function DocumentModal({ value, database, classItem, onClose }: { value: NonNullable<Printable>; database: SchoolDatabase; classItem?: ClassItem; onClose: () => void }) {
   const today = new Intl.DateTimeFormat("pt-BR", { dateStyle: "long" }).format(new Date());
-  return <div className="modal-backdrop document-backdrop"><section className="document-dialog"><div className="document-toolbar"><div><strong>{value.type}</strong><span>Confira antes de imprimir ou salvar em PDF.</span></div><button className="secondary-button" onClick={onClose}>Fechar</button><button className="primary-button" onClick={() => window.print()}><Printer size={18} /> Imprimir ou PDF</button></div>{value.type === "Recibo" && value.invoice ? <ReceiptDocument student={value.student} invoice={value.invoice} /> : <article id="print-area"><header><div><strong>Centro Educacional Shekinah</strong><span>Barreirinha — Amazonas</span></div><b>S</b></header><h1>{value.type}</h1><p>{value.type === "Certificado" ? <>Certificamos que <strong>{value.student.name}</strong> concluiu as atividades do curso <strong>{classItem?.name ?? "informado pela instituição"}</strong> no Centro Educacional Shekinah.</> : <>Declaramos, para os devidos fins, que <strong>{value.student.name}</strong> encontra-se regularmente matriculado(a) no curso <strong>{classItem?.name ?? "informado pela instituição"}</strong>, com aulas no horário <strong>{classItem?.schedule ?? "registrado pela secretaria"}</strong>.</>}</p><div className="document-date">Barreirinha, {today}.</div><footer><span /><p>Secretaria<br />Centro Educacional Shekinah</p></footer></article>}</section></div>;
+  const institution = database.settings.institution;
+  const schoolName = institution.name || institution.legalName || "Instituição de ensino";
+  const location = [institution.city, institution.state].filter(Boolean).join(" — ");
+  return <div className="modal-backdrop document-backdrop"><section className="document-dialog"><div className="document-toolbar"><div><strong>{value.type}</strong><span>Confira antes de imprimir ou salvar em PDF.</span></div><button className="secondary-button" onClick={onClose}>Fechar</button><button className="primary-button" onClick={() => window.print()}><Printer size={18} /> Imprimir ou PDF</button></div>{value.type === "Recibo" && value.invoice ? <ReceiptDocument student={value.student} invoice={value.invoice} payment={value.payment} institution={institution} settings={database.settings.receipt} classItem={classItem} /> : <article id="print-area"><header><div><strong>{schoolName}</strong><span>{location || institution.address || "Documento institucional"}</span></div><b>AF</b></header><h1>Declaração</h1><p>Declaramos, para os devidos fins, que <strong>{value.student.name}</strong> encontra-se regularmente matriculado(a) no curso <strong>{classItem?.name ?? "informado pela instituição"}</strong>, com aulas no horário <strong>{classItem?.schedule ?? "registrado pela secretaria"}</strong>.</p><div className="document-date">{institution.city ? `${institution.city}, ` : ""}{today}.</div><footer><span /><p>Secretaria<br />{schoolName}</p></footer></article>}</section></div>;
 }
 
 function Modal({ title, description, onClose, children }: { title: string; description: string; onClose: () => void; children: ReactNode }) {
@@ -681,3 +802,4 @@ function Metric({ label, value, helper, icon: Icon, tone }: { label: string; val
 function MiniMetric({ label, value, icon: Icon, tone }: { label: string; value: string; icon: typeof Users; tone: string }) { return <article className={`mini-metric ${tone}`}><span><Icon /></span><div><small>{label}</small><strong>{value}</strong></div></article>; }
 
 function Info({ label, value }: { label: string; value: string }) { return <div className="info-box"><small>{label}</small><strong>{value}</strong></div>; }
+

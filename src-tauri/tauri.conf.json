@@ -1,7 +1,7 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
   "productName": "AulaFácil",
-  "version": "0.2.1",
+  "version": "0.3.0",
   "identifier": "br.com.shekinah.aulafacil",
   "build": {
     "beforeDevCommand": "npm run dev",
@@ -27,12 +27,14 @@
       }
     ],
     "security": {
-      "csp": "default-src 'self'; img-src 'self' data: blob:; style-src 'self' 'unsafe-inline'; font-src 'self' data:"
+      "csp": "default-src 'self'; connect-src 'self' https://fkafrirbitwlsbjpqtcf.supabase.co wss://fkafrirbitwlsbjpqtcf.supabase.co; img-src 'self' data: blob: https://fkafrirbitwlsbjpqtcf.supabase.co; style-src 'self' 'unsafe-inline'; font-src 'self' data:; object-src 'none'; frame-src 'none'; base-uri 'none'"
     }
   },
   "bundle": {
     "active": true,
-    "targets": ["nsis"],
+    "targets": [
+      "nsis"
+    ],
     "publisher": "AulaFácil",
     "category": "Education",
     "shortDescription": "Gestão escolar simples e completa.",
