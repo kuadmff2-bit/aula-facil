@@ -69,4 +69,4 @@ jobs:
           git rebase origin/develop
           git push origin HEAD:develop
 
-# Reexecutado após validação dos testes de backup.
+# Reexecutado em 2026-09-05 após corrigir a integração Cloud.
