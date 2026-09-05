@@ -7,6 +7,8 @@ export type CloudSyncRole = "owner" | "admin" | "finance" | "teacher" | "staff";
 type SyncBaseline = {
   revision: number;
   localUpdatedAt: string;
+  localSignature?: string;
+  role?: CloudSyncRole;
   syncedAt: string;
 };
 
@@ -25,10 +27,48 @@ function readBaseline(schoolId: string): SyncBaseline | null {
   }
 }
 
-function writeBaseline(schoolId: string, revision: number, database: SchoolDatabase) {
+export function localSyncSignature(database: SchoolDatabase, role: CloudSyncRole) {
+  if (role === "owner" || role === "admin") {
+    return JSON.stringify({
+      settings: database.settings,
+      classes: database.classes,
+      students: database.students,
+      invoices: database.invoices,
+      payments: database.payments,
+      attendance: database.attendance,
+      grades: database.grades,
+      notices: database.notices,
+    });
+  }
+  if (role === "finance") {
+    return JSON.stringify({
+      finance: database.settings.finance,
+      invoices: database.invoices,
+      payments: database.payments,
+    });
+  }
+  if (role === "teacher") {
+    return JSON.stringify({
+      classes: database.classes,
+      students: database.students,
+      attendance: database.attendance,
+      grades: database.grades,
+    });
+  }
+  return JSON.stringify({
+    classes: database.classes,
+    students: database.students,
+    attendance: database.attendance,
+    notices: database.notices,
+  });
+}
+
+function writeBaseline(schoolId: string, revision: number, database: SchoolDatabase, role: CloudSyncRole) {
   const baseline: SyncBaseline = {
     revision,
     localUpdatedAt: database.updatedAt,
+    localSignature: localSyncSignature(database, role),
+    role,
     syncedAt: new Date().toISOString(),
   };
   localStorage.setItem(baselineKey(schoolId), JSON.stringify(baseline));
@@ -85,8 +125,11 @@ export async function getCloudRevision(schoolId: string) {
 export async function getCloudSyncStatus(schoolId: string, database: SchoolDatabase): Promise<CloudSyncStatus> {
   const baseline = readBaseline(schoolId);
   if (!baseline) return "not_linked";
-  const cloudRevision = await getCloudRevision(schoolId);
-  const localChanged = database.updatedAt !== baseline.localUpdatedAt;
+  const [cloudRevision, role] = await Promise.all([getCloudRevision(schoolId), getCloudSyncRole(schoolId)]);
+  if (baseline.role && baseline.role !== role) return "not_linked";
+  const localChanged = baseline.localSignature
+    ? localSyncSignature(database, role) !== baseline.localSignature
+    : database.updatedAt !== baseline.localUpdatedAt;
   const cloudChanged = cloudRevision !== baseline.revision;
   if (localChanged && cloudChanged) return "conflict";
   if (localChanged) return "local_changed";
@@ -250,8 +293,8 @@ async function pushSnapshot(schoolId: string, source: SchoolDatabase, role: Clou
 }
 
 export async function establishSyncBaseline(schoolId: string, database: SchoolDatabase) {
-  const revision = await getCloudRevision(schoolId);
-  return writeBaseline(schoolId, revision, database);
+  const [revision, role] = await Promise.all([getCloudRevision(schoolId), getCloudSyncRole(schoolId)]);
+  return writeBaseline(schoolId, revision, database, role);
 }
 
 export async function safePushToCloud(schoolId: string, database: SchoolDatabase) {
@@ -265,12 +308,12 @@ export async function safePushToCloud(schoolId: string, database: SchoolDatabase
     const normalized = ensureUuidDatabase(database);
     await seedEmptyCloudFromLocal(schoolId, normalized);
     const revision = await getCloudRevision(schoolId);
-    writeBaseline(schoolId, revision, normalized);
+    writeBaseline(schoolId, revision, normalized, role);
     return normalized;
   }
 
-  if (!baseline) {
-    throw new Error("Este computador ainda não possui uma base de sincronização. Recupere os dados da nuvem antes de enviar alterações.");
+  if (!baseline || (baseline.role && baseline.role !== role)) {
+    throw new Error("Este computador ainda não possui uma base de sincronização compatível com sua função atual. Recupere os dados da nuvem antes de enviar alterações.");
   }
 
   const currentRevision = await getCloudRevision(schoolId);
@@ -280,14 +323,15 @@ export async function safePushToCloud(schoolId: string, database: SchoolDatabase
 
   const normalized = await pushSnapshot(schoolId, database, role);
   const nextRevision = await getCloudRevision(schoolId);
-  writeBaseline(schoolId, nextRevision, normalized);
+  writeBaseline(schoolId, nextRevision, normalized, role);
   return normalized;
 }
 
 export async function safePullFromCloud(schoolId: string, localAppearance: SchoolDatabase["settings"]["appearance"] = "system") {
+  const role = await getCloudSyncRole(schoolId);
   const database = await downloadCloudDatabase(schoolId, localAppearance);
   const revision = await getCloudRevision(schoolId);
-  writeBaseline(schoolId, revision, database);
+  writeBaseline(schoolId, revision, database, role);
   return database;
 }
 
