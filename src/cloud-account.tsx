@@ -1,7 +1,6 @@
 import { useEffect, useMemo, useState, type FormEvent } from "react";
 import {
   createCloudSchool,
-  downloadCloudDatabase,
   getCloudAuthState,
   getCloudDataSummary,
   listCloudSchools,
@@ -14,6 +13,7 @@ import {
   type CloudDataSummary,
   type CloudSchool,
 } from "./cloud";
+import { establishSyncBaseline, safePullFromCloud } from "./cloud-safe-sync";
 import type { SchoolDatabase } from "./model";
 import { LegalAcceptancePanel } from "./legal-acceptance-panel";
 import { copyCurrentLegalAcceptanceToSchool } from "./legal-acceptance";
@@ -32,22 +32,10 @@ function localRecordCount(database: SchoolDatabase) {
   return database.classes.length
     + database.students.length
     + database.invoices.length
+    + database.payments.length
     + database.attendance.length
     + database.grades.length
     + database.notices.length;
-}
-
-function createLocalBackup(database: SchoolDatabase) {
-  const blob = new Blob([JSON.stringify(database, null, 2)], { type: "application/json" });
-  const url = URL.createObjectURL(blob);
-  const link = document.createElement("a");
-  const stamp = new Date().toISOString().replace(/[:.]/g, "-");
-  link.href = url;
-  link.download = `aulafacil-backup-antes-da-sincronizacao-${stamp}.json`;
-  document.body.appendChild(link);
-  link.click();
-  link.remove();
-  window.setTimeout(() => URL.revokeObjectURL(url), 1_000);
 }
 
 export function CloudAccountPanel({ database, onReplaceDatabase }: Props) {
@@ -146,6 +134,7 @@ export function CloudAccountPanel({ database, onReplaceDatabase }: Props) {
         await signInCloud(email, password);
         setMessage({ tone: "success", text: "Conta conectada com segurança neste dispositivo." });
       } else {
+        if (password.length < 12) throw new Error("Para novas contas, use uma senha com pelo menos 12 caracteres.");
         const result = await signUpCloud(email, password);
         if (result.session) {
           setMessage({ tone: "success", text: "Conta criada. Agora crie ou selecione a instituição." });
@@ -170,11 +159,12 @@ export function CloudAccountPanel({ database, onReplaceDatabase }: Props) {
 
         <form className="cloud-auth-form" onSubmit={submitAuth}>
           <label><span>E-mail</span><input type="email" autoComplete="email" required maxLength={200} value={email} onChange={(e) => setEmail(e.target.value)} /></label>
-          <label><span>Senha</span><input type="password" autoComplete={mode === "signin" ? "current-password" : "new-password"} minLength={8} required value={password} onChange={(e) => setPassword(e.target.value)} /></label>
+          <label><span>Senha</span><input type="password" autoComplete={mode === "signin" ? "current-password" : "new-password"} minLength={mode === "signup" ? 12 : 8} maxLength={256} required value={password} onChange={(e) => setPassword(e.target.value)} /></label>
+          {mode === "signup" && <small>Use pelo menos 12 caracteres e evite reutilizar a senha de outro serviço.</small>}
           {message && <div className={`cloud-message ${message.tone}`} role="status">{message.text}</div>}
           <button className="primary-button" disabled={busy}>{busy ? "Aguarde..." : mode === "signin" ? "Entrar" : "Criar conta"}</button>
         </form>
-        <button className="cloud-mode-button" type="button" onClick={() => { setMode(mode === "signin" ? "signup" : "signin"); setMessage(null); }}>
+        <button className="cloud-mode-button" type="button" onClick={() => { setMode(mode === "signin" ? "signup" : "signin"); setMessage(null); setPassword(""); }}>
           {mode === "signin" ? "Ainda não tenho conta" : "Já tenho uma conta"}
         </button>
       </section>
@@ -241,29 +231,30 @@ export function CloudAccountPanel({ database, onReplaceDatabase }: Props) {
               <h3>Primeiro envio deste computador</h3>
               <p>Por segurança, o AulaFácil só permite esta operação quando a instituição online ainda não possui registros operacionais.</p>
               <button className="primary-button" disabled={busy || !selectedSchoolId || (summary?.totalOperationalRecords ?? 1) > 0} onClick={() => void run(async () => {
-                await seedEmptyCloudFromLocal(selectedSchoolId, database);
+                const normalized = await seedEmptyCloudFromLocal(selectedSchoolId, database);
+                await establishSyncBaseline(selectedSchoolId, normalized);
+                onReplaceDatabase(normalized);
                 setSummary(await getCloudDataSummary(selectedSchoolId));
-                setMessage({ tone: "success", text: "Dados iniciais enviados com sucesso. Nenhum registro online anterior foi sobrescrito." });
+                setMessage({ tone: "success", text: "Dados iniciais enviados e este computador foi vinculado à revisão atual da nuvem." });
               })}>Enviar dados locais para a nuvem</button>
             </div>
 
             <div>
               <h3>Recuperar dados da nuvem</h3>
-              <p>Antes de substituir a cópia deste computador, o AulaFácil baixa automaticamente um backup JSON dos dados locais atuais.</p>
+              <p>A recuperação substitui a cópia local pela versão canônica online. Se quiser uma cópia portátil do estado atual, crie antes um .afbackup na área Backup.</p>
               {!downloadArmed ? (
                 <button className="secondary-button" disabled={busy || !selectedSchoolId || !summary} onClick={() => setDownloadArmed(true)}>Preparar recuperação</button>
               ) : (
                 <div className="cloud-danger-zone">
                   <strong>Confirme a substituição local</strong>
-                  <span>O backup local será baixado primeiro. Depois, os dados online substituirão a cópia deste dispositivo.</span>
+                  <span>O AulaFácil não gera mais backup JSON sem criptografia. Use o .afbackup protegido por senha quando quiser preservar uma cópia portátil.</span>
                   <div>
                     <button className="secondary-button" onClick={() => setDownloadArmed(false)}>Cancelar</button>
                     <button className="danger-button" disabled={busy} onClick={() => void run(async () => {
-                      createLocalBackup(database);
-                      const restored = await downloadCloudDatabase(selectedSchoolId, database.settings.appearance);
+                      const restored = await safePullFromCloud(selectedSchoolId, database.settings.appearance);
                       onReplaceDatabase(restored);
                       setDownloadArmed(false);
-                      setMessage({ tone: "success", text: "Dados da nuvem recuperados neste dispositivo. O backup anterior foi baixado." });
+                      setMessage({ tone: "success", text: "Dados da nuvem recuperados e linha-base de sincronização atualizada." });
                     })}>Baixar e substituir</button>
                   </div>
                 </div>
