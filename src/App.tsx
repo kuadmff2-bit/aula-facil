@@ -48,6 +48,7 @@ import {
   type Grade,
   type Invoice,
   type InvoiceStatus,
+  type Payment,
   type SchoolDatabase,
   type Student,
   type View,
@@ -60,10 +61,14 @@ import { ConfirmDialog, type ConfirmRequest } from "./confirm-dialog";
 import { InstitutionSettingsPanel, FinanceSettingsPanel, DocumentSettingsPanel } from "./professional-settings";
 import { CloudAccountPanel } from "./cloud-account";
 import { PaymentConnectionsPanel } from "./payment-connections-panel";
+import { FinanceUltimate } from "./finance-ultimate";
+import { CloudSyncPanel } from "./cloud-sync-panel";
+import { MessageAutomationsPanel } from "./message-automations-panel";
+import { invoiceAmountDue } from "./finance-utils";
 
 type ModalKind = "student" | "class" | "invoice" | "bulk-invoice" | "notice" | "grade" | "student-details" | null;
 type Toast = { message: string; tone: "success" | "warning" | "danger" };
-type Printable = { type: "Declaração" | "Certificado" | "Recibo"; student: Student; invoice?: Invoice } | null;
+type Printable = { type: "Declaração" | "Certificado" | "Recibo"; student: Student; invoice?: Invoice; payment?: Payment } | null;
 
 const navItems = [
   { id: "dashboard" as View, label: "Início", icon: LayoutDashboard },
@@ -354,14 +359,31 @@ export default function App() {
   };
 
   const setInvoicePaid = (invoice: Invoice) => {
-    const nextPaid = invoice.status !== "paid";
+    if (invoice.status === "paid") {
+      notify("Pagamentos confirmados não são reabertos apagando o histórico. Use o Financeiro para estorno ou ajuste.", "warning");
+      return;
+    }
+    if (invoice.status === "cancelled") {
+      notify("Esta cobrança está cancelada.", "warning");
+      return;
+    }
+    const breakdown = invoiceAmountDue(invoice, database.settings.finance);
+    const now = new Date().toISOString();
     updateDatabase((draft) => {
       const target = draft.invoices.find((item) => item.id === invoice.id);
       if (!target) return;
-      target.status = nextPaid ? "paid" : target.dueDate < localDate() ? "overdue" : "pending";
-      target.paidAt = nextPaid ? new Date().toISOString() : null;
+      target.status = "paid";
+      target.paidAt = now;
+      draft.payments.push({
+        id: makeId("pagamento"), studentId: invoice.studentId, invoiceId: invoice.id,
+        amountReceived: breakdown.totalDue, principalAmount: breakdown.baseAmount,
+        lateFeeAmount: breakdown.lateFee, interestAmount: breakdown.interest,
+        discountAmount: 0, paymentMethod: "manual", status: "confirmed",
+        paidAt: now, receiptNumber: `LOCAL-${now.replace(/\D/g, "").slice(0, 14)}-${Math.random().toString(36).slice(2, 6).toUpperCase()}`,
+        createdAt: now,
+      });
     });
-    notify(nextPaid ? "Pagamento confirmado." : "Pagamento voltou para pendente.");
+    notify(`Pagamento de ${money(breakdown.totalDue)} confirmado e registrado no histórico.`);
   };
 
   const deleteStudent = (student: Student) => {
@@ -627,16 +649,11 @@ export default function App() {
           )}
 
           {view === "finance" && (
-            <section className="stack">
-              <PageHeader title="Mensalidades" subtitle="Valores registrados neste computador." action="Nova cobrança" icon={Plus} onAction={() => openInvoiceForm()} secondaryAction={database.students.length ? "Gerar para todos" : undefined} onSecondary={() => setModal("bulk-invoice")} />
-              <div className="finance-metrics"><MiniMetric label="Recebido" value={money(receivedTotal)} icon={CheckCircle2} tone="green" /><MiniMetric label="Em aberto" value={money(pendingTotal)} icon={Clock3} tone="amber" /><MiniMetric label="Atrasadas" value={String(overdueInvoices.length)} icon={AlertTriangle} tone="red" /></div>
-              <div className="filter-tabs">{(["all", "pending", "overdue", "paid"] as const).map((item) => <button key={item} className={financeFilter === item ? "active" : ""} onClick={() => setFinanceFilter(item)}>{item === "all" ? "Todas" : statusText(item)}</button>)}</div>
-              {filteredInvoices.length ? <div className="card table-card"><table><thead><tr><th>Aluno</th><th>Referência</th><th>Vencimento</th><th>Valor</th><th>Status</th><th>Ações</th></tr></thead><tbody>{filteredInvoices.map((invoice) => {
-                const student = studentById.get(invoice.studentId);
-                const status = effectiveStatus(invoice);
-                return <tr key={invoice.id}><td><strong>{student?.name ?? "Aluno removido"}</strong></td><td>{invoice.reference}</td><td>{dateLabel(invoice.dueDate)}</td><td><strong>{money(invoice.amount)}</strong></td><td><span className={`status ${status}`}>{statusText(status)}</span></td><td><div className="row-actions"><button className={status === "paid" ? "secondary-button small" : "primary-button small"} onClick={() => setInvoicePaid(invoice)}>{status === "paid" ? "Reabrir" : "Confirmar"}</button>{status === "paid" && student && <button className="icon-button small" title="Abrir recibo" onClick={() => setPrintable({ type: "Recibo", student, invoice })}><ReceiptText size={17} /></button>}</div></td></tr>;
-              })}</tbody></table></div> : <EmptyState icon={WalletCards} title={database.invoices.length ? "Nenhuma cobrança neste filtro" : "Nenhuma cobrança cadastrada"} text={database.invoices.length ? "Escolha outro status acima." : "Crie uma cobrança individual ou gere as mensalidades de todos."} action={database.invoices.length ? undefined : "Criar primeira cobrança"} onAction={() => openInvoiceForm()} />}
-            </section>
+            <FinanceUltimate
+              database={database}
+              onChange={setDatabase}
+              onReceipt={(student, invoice, payment) => setPrintable({ type: "Recibo", student, invoice, payment })}
+            />
           )}
 
           {view === "notices" && (
@@ -671,7 +688,9 @@ export default function App() {
                 onCertificateChange={(certificate) => updateDatabase((draft) => { draft.settings.certificate = certificate; })}
               />
               <CloudAccountPanel database={database} onReplaceDatabase={setDatabase} />
+              <CloudSyncPanel database={database} onReplaceDatabase={setDatabase} />
               <PaymentConnectionsPanel />
+              <MessageAutomationsPanel />
             </section>
           )}
 
@@ -703,7 +722,7 @@ export default function App() {
 
       {modal === "student-details" && selectedStudent && <StudentDetails student={selectedStudent} database={database} classItem={classById.get(selectedStudent.classId)} onClose={() => setModal(null)} onGrade={() => setModal("grade")} onInvoice={() => openInvoiceForm(selectedStudent.id)} onDocument={(type) => setPrintable({ type, student: selectedStudent })} onReceipt={(invoice) => setPrintable({ type: "Recibo", student: selectedStudent, invoice })} onToggleInvoice={setInvoicePaid} onDelete={() => deleteStudent(selectedStudent)} />}
 
-      {printable && <DocumentModal value={printable} classItem={classById.get(printable.student.classId)} onClose={() => setPrintable(null)} />}
+      {printable && <DocumentModal value={printable} database={database} classItem={classById.get(printable.student.classId)} onClose={() => setPrintable(null)} />}
       {confirmation && <ConfirmDialog
         {...confirmation}
         onCancel={() => setConfirmation(null)}
@@ -725,7 +744,7 @@ function Dashboard({ database, activeStudents, receivedTotal, pendingTotal, over
   const isEmpty = database.classes.length === 0 && database.students.length === 0;
   const recentInvoices = [...database.invoices].sort((a, b) => b.createdAt.localeCompare(a.createdAt)).slice(0, 5);
   return <section className="stack">
-    {isEmpty && <div className="welcome-card"><div><span className="eyebrow">PRONTO PARA COMEÇAR</span><h2>Seu AulaFácil está limpo</h2><p>Nenhum aluno, cobrança ou registro de teste foi incluído. Cadastre a primeira turma e monte o sistema com os dados reais da Shekinah.</p><button className="light-button" onClick={onAddClass}><Plus size={19} /> Cadastrar primeira turma</button></div><div className="welcome-steps"><span className="done"><b>1</b><small>Turma</small></span><i /><span><b>2</b><small>Alunos</small></span><i /><span><b>3</b><small>Mensalidades</small></span></div></div>}
+    {isEmpty && <div className="welcome-card"><div><span className="eyebrow">PRONTO PARA COMEÇAR</span><h2>Seu AulaFácil está limpo</h2><p>Nenhum aluno, cobrança ou registro de teste foi incluído. Cadastre a primeira turma e monte o sistema com os dados reais da sua instituição.</p><button className="light-button" onClick={onAddClass}><Plus size={19} /> Cadastrar primeira turma</button></div><div className="welcome-steps"><span className="done"><b>1</b><small>Turma</small></span><i /><span><b>2</b><small>Alunos</small></span><i /><span><b>3</b><small>Mensalidades</small></span></div></div>}
     <div className="metric-grid"><Metric label="Alunos ativos" value={String(activeStudents)} helper={`${database.classes.length} turma${database.classes.length === 1 ? "" : "s"}`} icon={Users} tone="blue" /><Metric label="Recebido" value={money(receivedTotal)} helper="Pagamentos confirmados" icon={CircleDollarSign} tone="green" /><Metric label="Em aberto" value={money(pendingTotal)} helper={overdueCount ? `${overdueCount} atrasada${overdueCount > 1 ? "s" : ""}` : "Nenhuma atrasada"} icon={Clock3} tone={overdueCount ? "red" : "amber"} /><Metric label="Presença hoje" value={database.attendance.some((item) => item.date === localDate()) ? `${attendanceRate}%` : "—"} helper="Chamadas de hoje" icon={CalendarCheck2} tone="violet" /></div>
     <div className="dashboard-grid"><div className="card quick-card"><div className="section-heading"><div><h2>Ações rápidas</h2><p>Comece pelo que você precisa fazer.</p></div></div><div className="quick-actions"><button onClick={onAddStudent}><span className="blue"><UserPlus /></span><div><strong>Novo aluno</strong><small>Adicionar cadastro</small></div><ChevronRight /></button><button onClick={onAttendance}><span className="violet"><ClipboardCheck /></span><div><strong>Fazer chamada</strong><small>Registrar presença</small></div><ChevronRight /></button><button onClick={onFinance}><span className="green"><WalletCards /></span><div><strong>Mensalidades</strong><small>Ver financeiro</small></div><ChevronRight /></button><button onClick={onAddClass}><span className="amber"><BookOpen /></span><div><strong>Nova turma</strong><small>Criar curso ou horário</small></div><ChevronRight /></button></div></div><div className="card attention-card"><div className="section-heading"><div><h2>Precisa de atenção</h2><p>Pendências financeiras.</p></div>{overdueCount > 0 && <span className="count-badge">{overdueCount}</span>}</div>{database.invoices.filter((item) => effectiveStatus(item) === "overdue").slice(0, 4).map((invoice) => <button key={invoice.id} onClick={() => onStudent(invoice.studentId)}><span className="warning-icon"><AlertTriangle size={18} /></span><div><strong>{studentById.get(invoice.studentId)?.name ?? "Aluno"}</strong><small>{invoice.reference} · venceu {dateLabel(invoice.dueDate)}</small></div><b>{money(invoice.amount)}</b></button>)}{overdueCount === 0 && <div className="compact-empty"><CheckCircle2 /><strong>Nenhuma cobrança atrasada</strong><span>As pendências aparecerão aqui.</span></div>}</div></div>
     <div className="dashboard-grid wide-left"><div className="card recent-card"><div className="section-heading"><div><h2>Movimentações recentes</h2><p>Cobranças adicionadas ao sistema.</p></div></div>{recentInvoices.length ? <div className="simple-list">{recentInvoices.map((invoice) => <button key={invoice.id} onClick={() => onStudent(invoice.studentId)}><span className={`status-dot ${effectiveStatus(invoice)}`} /><div><strong>{studentById.get(invoice.studentId)?.name ?? "Aluno removido"}</strong><small>{invoice.reference}</small></div><span>{money(invoice.amount)}</span><em className={`status ${effectiveStatus(invoice)}`}>{statusText(effectiveStatus(invoice))}</em></button>)}</div> : <div className="compact-empty"><ReceiptText /><strong>Nenhuma movimentação</strong><span>O sistema está pronto para dados reais.</span></div>}</div><div className="card classes-summary"><div className="section-heading"><div><h2>Turmas</h2><p>Distribuição de alunos.</p></div></div>{database.classes.length ? database.classes.slice(0, 5).map((classItem) => { const count = database.students.filter((student) => student.classId === classItem.id).length; return <div key={classItem.id}><span style={{ background: classItem.color }} /><div><strong>{classItem.name}</strong><small>{classItem.schedule}</small></div><b>{count}</b></div>; }) : <div className="compact-empty"><BookOpen /><strong>Nenhuma turma</strong><span>Cadastre a primeira para começar.</span></div>}</div></div>
@@ -743,9 +762,9 @@ function StudentDetails({ student, database, classItem, onClose, onGrade, onInvo
   return <div className="modal-backdrop" role="presentation" onMouseDown={(event) => event.target === event.currentTarget && onClose()}><section className="details-panel"><header className="details-header"><button className="modal-close" onClick={onClose}><X /></button><div className="big-avatar">{initials(student.name)}</div><div><span className="status active">Matrícula ativa</span><h2>{student.name}</h2><p>{classItem?.name ?? "Sem turma"} · {classItem?.schedule ?? "Horário não informado"}</p></div></header><div className="details-body"><div className="student-metrics"><MiniMetric label="Média" value={average === null ? "—" : average.toFixed(1)} icon={GraduationCap} tone="blue" /><MiniMetric label="Frequência" value={presence === null ? "—" : `${presence}%`} icon={CalendarCheck2} tone="green" /><MiniMetric label="Em aberto" value={money(invoices.filter((item) => effectiveStatus(item) !== "paid").reduce((sum, item) => sum + item.amount, 0))} icon={WalletCards} tone="amber" /></div><div className="info-grid"><Info label="Nascimento" value={dateLabel(student.birthDate)} /><StudentExtraInfo student={student} fields={database.settings.studentFields} /></div><div className="details-actions"><button className="primary-button" onClick={onGrade}><Plus size={17} /> Lançar nota</button><button className="secondary-button" onClick={onInvoice}><Plus size={17} /> Nova cobrança</button><button className="secondary-button" onClick={() => onDocument("Declaração")}><FileText size={17} /> Declaração</button><button className="secondary-button" onClick={() => onDocument("Certificado")}><FileCheck2 size={17} /> Certificado</button></div><section className="detail-section"><div className="section-heading"><div><h3>Notas</h3><p>Histórico de avaliações.</p></div></div>{grades.length ? <div className="record-list">{grades.map((grade) => <div key={grade.id}><span className={grade.score >= 7 ? "score good" : "score attention"}>{grade.score.toFixed(1)}</span><div><strong>{grade.label}</strong><small>{grade.term}</small></div></div>)}</div> : <p className="inline-empty">Nenhuma nota lançada.</p>}</section><section className="detail-section"><div className="section-heading"><div><h3>Financeiro</h3><p>Cobranças deste aluno.</p></div></div>{invoices.length ? <div className="invoice-list">{invoices.map((invoice) => { const status = effectiveStatus(invoice); return <div key={invoice.id}><div><strong>{invoice.reference}</strong><small>Vencimento: {dateLabel(invoice.dueDate)}</small></div><b>{money(invoice.amount)}</b><span className={`status ${status}`}>{statusText(status)}</span><button className="text-button" onClick={() => onToggleInvoice(invoice)}>{status === "paid" ? "Reabrir" : "Confirmar"}</button>{status === "paid" && <button className="icon-button small" onClick={() => onReceipt(invoice)} title="Recibo"><ReceiptText size={16} /></button>}</div>; })}</div> : <p className="inline-empty">Nenhuma cobrança cadastrada.</p>}</section><button className="delete-record" onClick={onDelete}><Trash2 size={17} /> Excluir aluno e registros</button></div></section></div>;
 }
 
-function DocumentModal({ value, classItem, onClose }: { value: NonNullable<Printable>; classItem?: ClassItem; onClose: () => void }) {
+function DocumentModal({ value, database, classItem, onClose }: { value: NonNullable<Printable>; database: SchoolDatabase; classItem?: ClassItem; onClose: () => void }) {
   const today = new Intl.DateTimeFormat("pt-BR", { dateStyle: "long" }).format(new Date());
-  return <div className="modal-backdrop document-backdrop"><section className="document-dialog"><div className="document-toolbar"><div><strong>{value.type}</strong><span>Confira antes de imprimir ou salvar em PDF.</span></div><button className="secondary-button" onClick={onClose}>Fechar</button><button className="primary-button" onClick={() => window.print()}><Printer size={18} /> Imprimir ou PDF</button></div>{value.type === "Recibo" && value.invoice ? <ReceiptDocument student={value.student} invoice={value.invoice} /> : <article id="print-area"><header><div><strong>Centro Educacional Shekinah</strong><span>Barreirinha — Amazonas</span></div><b>S</b></header><h1>{value.type}</h1><p>{value.type === "Certificado" ? <>Certificamos que <strong>{value.student.name}</strong> concluiu as atividades do curso <strong>{classItem?.name ?? "informado pela instituição"}</strong> no Centro Educacional Shekinah.</> : <>Declaramos, para os devidos fins, que <strong>{value.student.name}</strong> encontra-se regularmente matriculado(a) no curso <strong>{classItem?.name ?? "informado pela instituição"}</strong>, com aulas no horário <strong>{classItem?.schedule ?? "registrado pela secretaria"}</strong>.</>}</p><div className="document-date">Barreirinha, {today}.</div><footer><span /><p>Secretaria<br />Centro Educacional Shekinah</p></footer></article>}</section></div>;
+  return <div className="modal-backdrop document-backdrop"><section className="document-dialog"><div className="document-toolbar"><div><strong>{value.type}</strong><span>Confira antes de imprimir ou salvar em PDF.</span></div><button className="secondary-button" onClick={onClose}>Fechar</button><button className="primary-button" onClick={() => window.print()}><Printer size={18} /> Imprimir ou PDF</button></div>{value.type === "Recibo" && value.invoice ? <ReceiptDocument student={value.student} invoice={value.invoice} payment={value.payment} institution={database.settings.institution} settings={database.settings.receipt} /> : <article id="print-area"><header><div><strong>Centro Educacional Shekinah</strong><span>Barreirinha — Amazonas</span></div><b>S</b></header><h1>{value.type}</h1><p>{value.type === "Certificado" ? <>Certificamos que <strong>{value.student.name}</strong> concluiu as atividades do curso <strong>{classItem?.name ?? "informado pela instituição"}</strong> no Centro Educacional Shekinah.</> : <>Declaramos, para os devidos fins, que <strong>{value.student.name}</strong> encontra-se regularmente matriculado(a) no curso <strong>{classItem?.name ?? "informado pela instituição"}</strong>, com aulas no horário <strong>{classItem?.schedule ?? "registrado pela secretaria"}</strong>.</>}</p><div className="document-date">Barreirinha, {today}.</div><footer><span /><p>Secretaria<br />Centro Educacional Shekinah</p></footer></article>}</section></div>;
 }
 
 function Modal({ title, description, onClose, children }: { title: string; description: string; onClose: () => void; children: ReactNode }) {
