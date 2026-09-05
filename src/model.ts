@@ -4,6 +4,8 @@ export type StudentFieldType = "text" | "tel" | "email" | "date" | "number" | "t
 export type StudentFieldVisibility = "always" | "minor" | "adult";
 export type StudentFieldSource = "phone" | "guardianName" | "guardianPhone";
 export type AppearanceMode = "system" | "light" | "dark";
+export type LateFeeMode = "none" | "fixed" | "percent";
+export type InterestMode = "none" | "daily_percent" | "monthly_percent" | "fixed_daily";
 
 export type StudentFieldDefinition = {
   id: string;
@@ -15,10 +17,58 @@ export type StudentFieldDefinition = {
   source?: StudentFieldSource;
 };
 
+export type InstitutionSettings = {
+  name: string;
+  legalName: string;
+  documentNumber: string;
+  address: string;
+  city: string;
+  state: string;
+  phone: string;
+  whatsapp: string;
+  email: string;
+  primaryColor: string;
+  secondaryColor: string;
+  logoDataUrl: string;
+};
+
+export type FinanceSettings = {
+  allowedDueDays: number[];
+  lateFeeMode: LateFeeMode;
+  lateFeeValue: number;
+  interestMode: InterestMode;
+  interestValue: number;
+  graceDays: number;
+  boletoDueText: string;
+  boletoFooter: string;
+  boletoPrimaryColor: string;
+  boletoShowLogo: boolean;
+};
+
+export type ReceiptSettings = {
+  title: string;
+  footer: string;
+  schoolSignatureLabel: string;
+  payerSignatureLabel: string;
+};
+
+export type CertificateSettings = {
+  title: string;
+  bodyTemplate: string;
+  footerText: string;
+  primaryColor: string;
+  secondaryColor: string;
+  signatures: string[];
+  defaultWorkloadHours: number;
+};
+
 export type SchoolSettings = {
   appearance: AppearanceMode;
   studentFields: StudentFieldDefinition[];
-  allowedDueDays: number[];
+  institution: InstitutionSettings;
+  finance: FinanceSettings;
+  receipt: ReceiptSettings;
+  certificate: CertificateSettings;
 };
 
 export type Student = {
@@ -32,6 +82,7 @@ export type Student = {
   classId: string;
   dueDay?: number | null;
   active: boolean;
+  completedAt?: string | null;
   createdAt: string;
 };
 
@@ -42,11 +93,12 @@ export type ClassItem = {
   schedule: string;
   room: string;
   monthlyFee: number;
+  workloadHours?: number | null;
   color: string;
   createdAt: string;
 };
 
-export type InvoiceStatus = "pending" | "paid" | "overdue";
+export type InvoiceStatus = "pending" | "paid" | "overdue" | "cancelled";
 
 export type Invoice = {
   id: string;
@@ -56,6 +108,10 @@ export type Invoice = {
   amount: number;
   status: InvoiceStatus;
   paidAt: string | null;
+  provider?: string | null;
+  providerChargeId?: string | null;
+  pixCopyPaste?: string | null;
+  boletoUrl?: string | null;
   createdAt: string;
 };
 
@@ -101,7 +157,10 @@ const MAX_RECORDS_PER_COLLECTION = 250_000;
 const FIELD_TYPES: StudentFieldType[] = ["text", "tel", "email", "date", "number", "textarea"];
 const FIELD_VISIBILITIES: StudentFieldVisibility[] = ["always", "minor", "adult"];
 const FIELD_SOURCES: StudentFieldSource[] = ["phone", "guardianName", "guardianPhone"];
-const INVOICE_STATUSES: InvoiceStatus[] = ["pending", "paid", "overdue"];
+const INVOICE_STATUSES: InvoiceStatus[] = ["pending", "paid", "overdue", "cancelled"];
+const LATE_FEE_MODES: LateFeeMode[] = ["none", "fixed", "percent"];
+const INTEREST_MODES: InterestMode[] = ["none", "daily_percent", "monthly_percent", "fixed_daily"];
+const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return Boolean(value) && typeof value === "object" && !Array.isArray(value);
@@ -192,6 +251,7 @@ function sanitizeStudent(student: unknown): Student | null {
     classId,
     dueDay,
     active: student.active === undefined ? true : Boolean(student.active),
+    completedAt: student.completedAt === null || student.completedAt === undefined ? null : text(student.completedAt, 48) || null,
     createdAt,
   };
 }
@@ -211,6 +271,7 @@ function sanitizeClass(item: unknown): ClassItem | null {
     schedule: text(item.schedule, 200),
     room: text(item.room, 120),
     monthlyFee,
+    workloadHours: finiteNumber(item.workloadHours, 0, 100_000, null),
     color: text(item.color, 32, "#1649b8"),
     createdAt,
   };
@@ -235,6 +296,10 @@ function sanitizeInvoice(item: unknown): Invoice | null {
     amount,
     status,
     paidAt: item.paidAt === null || item.paidAt === undefined ? null : text(item.paidAt, 48) || null,
+    provider: item.provider === null || item.provider === undefined ? null : text(item.provider, 40) || null,
+    providerChargeId: item.providerChargeId === null || item.providerChargeId === undefined ? null : text(item.providerChargeId, 255) || null,
+    pixCopyPaste: item.pixCopyPaste === null || item.pixCopyPaste === undefined ? null : text(item.pixCopyPaste, 8_000) || null,
+    boletoUrl: item.boletoUrl === null || item.boletoUrl === undefined ? null : text(item.boletoUrl, 2_048) || null,
     createdAt,
   };
 }
@@ -283,10 +348,63 @@ function sanitizeCollection<T>(source: unknown[], sanitizer: (item: unknown) => 
   return result;
 }
 
+function defaultInstitutionSettings(): InstitutionSettings {
+  return {
+    name: "",
+    legalName: "",
+    documentNumber: "",
+    address: "",
+    city: "",
+    state: "",
+    phone: "",
+    whatsapp: "",
+    email: "",
+    primaryColor: "#1649b8",
+    secondaryColor: "#0f766e",
+    logoDataUrl: "",
+  };
+}
+
+export function defaultFinanceSettings(): FinanceSettings {
+  return {
+    allowedDueDays: [5, 10, 15, 20, 25],
+    lateFeeMode: "none",
+    lateFeeValue: 0,
+    interestMode: "none",
+    interestValue: 0,
+    graceDays: 0,
+    boletoDueText: "Após o vencimento, consulte o valor atualizado no AulaFácil.",
+    boletoFooter: "Documento de cobrança emitido pela instituição.",
+    boletoPrimaryColor: "#1649b8",
+    boletoShowLogo: true,
+  };
+}
+
+function defaultReceiptSettings(): ReceiptSettings {
+  return {
+    title: "Recibo de pagamento",
+    footer: "Emitido pelo AulaFácil",
+    schoolSignatureLabel: "Assinatura da escola / responsável pelo recebimento",
+    payerSignatureLabel: "Assinatura do pagador",
+  };
+}
+
+function defaultCertificateSettings(): CertificateSettings {
+  return {
+    title: "Certificado",
+    bodyTemplate: "Certificamos que {aluno} concluiu o curso {curso}, com carga horária de {carga_horaria} horas.",
+    footerText: "Documento emitido pela instituição de ensino.",
+    primaryColor: "#1649b8",
+    secondaryColor: "#0f766e",
+    signatures: ["Direção", "Coordenação"],
+    defaultWorkloadHours: 0,
+  };
+}
+
 export function defaultStudentFields(): StudentFieldDefinition[] {
   return [
     {
-      id: "student-phone",
+      id: "00000000-0000-4000-8000-000000000001",
       label: "Telefone do aluno",
       type: "tel",
       required: false,
@@ -295,7 +413,7 @@ export function defaultStudentFields(): StudentFieldDefinition[] {
       source: "phone",
     },
     {
-      id: "guardian-name",
+      id: "00000000-0000-4000-8000-000000000002",
       label: "Nome do responsável",
       type: "text",
       required: false,
@@ -304,7 +422,7 @@ export function defaultStudentFields(): StudentFieldDefinition[] {
       source: "guardianName",
     },
     {
-      id: "guardian-phone",
+      id: "00000000-0000-4000-8000-000000000003",
       label: "Telefone do responsável",
       type: "tel",
       required: false,
@@ -319,7 +437,10 @@ export function defaultSchoolSettings(): SchoolSettings {
   return {
     appearance: "system",
     studentFields: defaultStudentFields(),
-    allowedDueDays: [5, 10, 15, 20, 25],
+    institution: defaultInstitutionSettings(),
+    finance: defaultFinanceSettings(),
+    receipt: defaultReceiptSettings(),
+    certificate: defaultCertificateSettings(),
   };
 }
 
@@ -337,6 +458,81 @@ export function emptyDatabase(): SchoolDatabase {
   };
 }
 
+function sanitizeSettings(rawSettings: Record<string, unknown>): SchoolSettings | null {
+  const defaults = defaultSchoolSettings();
+  const appearance: AppearanceMode = rawSettings.appearance === "light" || rawSettings.appearance === "dark" || rawSettings.appearance === "system"
+    ? rawSettings.appearance
+    : "system";
+
+  const rawFields = Array.isArray(rawSettings.studentFields) && rawSettings.studentFields.length <= 100
+    ? rawSettings.studentFields
+    : defaultStudentFields();
+  const studentFields = sanitizeCollection(rawFields, sanitizeStudentField);
+  if (!studentFields) return null;
+
+  const rawInstitution = isRecord(rawSettings.institution) ? rawSettings.institution : {};
+  const rawFinance = isRecord(rawSettings.finance) ? rawSettings.finance : {};
+  const rawReceipt = isRecord(rawSettings.receipt) ? rawSettings.receipt : {};
+  const rawCertificate = isRecord(rawSettings.certificate) ? rawSettings.certificate : {};
+
+  const lateFeeMode = LATE_FEE_MODES.includes(rawFinance.lateFeeMode as LateFeeMode)
+    ? rawFinance.lateFeeMode as LateFeeMode
+    : defaults.finance.lateFeeMode;
+  const interestMode = INTEREST_MODES.includes(rawFinance.interestMode as InterestMode)
+    ? rawFinance.interestMode as InterestMode
+    : defaults.finance.interestMode;
+
+  const signatures = Array.isArray(rawCertificate.signatures)
+    ? rawCertificate.signatures.filter((item): item is string => typeof item === "string").map((item) => item.slice(0, 80)).filter(Boolean).slice(0, 6)
+    : defaults.certificate.signatures;
+
+  return {
+    appearance,
+    studentFields,
+    institution: {
+      name: text(rawInstitution.name, 160),
+      legalName: text(rawInstitution.legalName, 200),
+      documentNumber: text(rawInstitution.documentNumber, 40),
+      address: text(rawInstitution.address, 300),
+      city: text(rawInstitution.city, 120),
+      state: text(rawInstitution.state, 80),
+      phone: text(rawInstitution.phone, 40),
+      whatsapp: text(rawInstitution.whatsapp, 40),
+      email: text(rawInstitution.email, 200),
+      primaryColor: text(rawInstitution.primaryColor, 32, defaults.institution.primaryColor),
+      secondaryColor: text(rawInstitution.secondaryColor, 32, defaults.institution.secondaryColor),
+      logoDataUrl: text(rawInstitution.logoDataUrl, 3_000_000),
+    },
+    finance: {
+      allowedDueDays: sanitizeDueDays(rawFinance.allowedDueDays ?? rawSettings.allowedDueDays),
+      lateFeeMode,
+      lateFeeValue: finiteNumber(rawFinance.lateFeeValue, 0, 1_000_000, defaults.finance.lateFeeValue) ?? 0,
+      interestMode,
+      interestValue: finiteNumber(rawFinance.interestValue, 0, 1_000_000, defaults.finance.interestValue) ?? 0,
+      graceDays: Math.round(finiteNumber(rawFinance.graceDays, 0, 365, defaults.finance.graceDays) ?? 0),
+      boletoDueText: text(rawFinance.boletoDueText, 500, defaults.finance.boletoDueText),
+      boletoFooter: text(rawFinance.boletoFooter, 500, defaults.finance.boletoFooter),
+      boletoPrimaryColor: text(rawFinance.boletoPrimaryColor, 32, defaults.finance.boletoPrimaryColor),
+      boletoShowLogo: rawFinance.boletoShowLogo === undefined ? defaults.finance.boletoShowLogo : Boolean(rawFinance.boletoShowLogo),
+    },
+    receipt: {
+      title: text(rawReceipt.title, 120, defaults.receipt.title),
+      footer: text(rawReceipt.footer, 300, defaults.receipt.footer),
+      schoolSignatureLabel: text(rawReceipt.schoolSignatureLabel, 160, defaults.receipt.schoolSignatureLabel),
+      payerSignatureLabel: text(rawReceipt.payerSignatureLabel, 160, defaults.receipt.payerSignatureLabel),
+    },
+    certificate: {
+      title: text(rawCertificate.title, 120, defaults.certificate.title),
+      bodyTemplate: text(rawCertificate.bodyTemplate, 3_000, defaults.certificate.bodyTemplate),
+      footerText: text(rawCertificate.footerText, 500, defaults.certificate.footerText),
+      primaryColor: text(rawCertificate.primaryColor, 32, defaults.certificate.primaryColor),
+      secondaryColor: text(rawCertificate.secondaryColor, 32, defaults.certificate.secondaryColor),
+      signatures: signatures.length ? signatures : defaults.certificate.signatures,
+      defaultWorkloadHours: finiteNumber(rawCertificate.defaultWorkloadHours, 0, 100_000, defaults.certificate.defaultWorkloadHours) ?? 0,
+    },
+  };
+}
+
 export function normalizeDatabase(value: unknown): SchoolDatabase | null {
   if (!isRecord(value)) return null;
   if (value.version !== 1
@@ -347,15 +543,7 @@ export function normalizeDatabase(value: unknown): SchoolDatabase | null {
     || !validArray(value.grades)
     || !validArray(value.notices)) return null;
 
-  const rawSettings = isRecord(value.settings) ? value.settings : {};
-  const appearance: AppearanceMode = rawSettings.appearance === "light" || rawSettings.appearance === "dark" || rawSettings.appearance === "system"
-    ? rawSettings.appearance
-    : "system";
-
-  const rawFields = Array.isArray(rawSettings.studentFields) && rawSettings.studentFields.length <= 100
-    ? rawSettings.studentFields
-    : defaultStudentFields();
-  const studentFields = sanitizeCollection(rawFields, sanitizeStudentField);
+  const settings = sanitizeSettings(isRecord(value.settings) ? value.settings : {});
   const students = sanitizeCollection(value.students, sanitizeStudent);
   const classes = sanitizeCollection(value.classes, sanitizeClass);
   const invoices = sanitizeCollection(value.invoices, sanitizeInvoice);
@@ -363,16 +551,12 @@ export function normalizeDatabase(value: unknown): SchoolDatabase | null {
   const grades = sanitizeCollection(value.grades, sanitizeGrade);
   const notices = sanitizeCollection(value.notices, sanitizeNotice);
 
-  if (!studentFields || !students || !classes || !invoices || !attendance || !grades || !notices) return null;
+  if (!settings || !students || !classes || !invoices || !attendance || !grades || !notices) return null;
 
   return {
     version: 1,
     updatedAt: text(value.updatedAt, 48, new Date().toISOString()),
-    settings: {
-      appearance,
-      studentFields,
-      allowedDueDays: sanitizeDueDays(rawSettings.allowedDueDays),
-    },
+    settings,
     students,
     classes,
     invoices,
@@ -382,9 +566,66 @@ export function normalizeDatabase(value: unknown): SchoolDatabase | null {
   };
 }
 
-export function makeId(prefix: string) {
-  const value = typeof crypto.randomUUID === "function"
-    ? crypto.randomUUID()
-    : `${Date.now()}-${Math.random().toString(16).slice(2)}`;
-  return `${prefix}-${value}`;
+function randomUuid() {
+  if (typeof crypto !== "undefined" && typeof crypto.randomUUID === "function") return crypto.randomUUID();
+  const bytes = new Uint8Array(16);
+  if (typeof crypto !== "undefined" && typeof crypto.getRandomValues === "function") crypto.getRandomValues(bytes);
+  else for (let index = 0; index < bytes.length; index += 1) bytes[index] = Math.floor(Math.random() * 256);
+  bytes[6] = (bytes[6] & 0x0f) | 0x40;
+  bytes[8] = (bytes[8] & 0x3f) | 0x80;
+  const hex = Array.from(bytes, (value) => value.toString(16).padStart(2, "0")).join("");
+  return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-${hex.slice(16, 20)}-${hex.slice(20)}`;
+}
+
+export function makeId(_prefix?: string) {
+  return randomUuid();
+}
+
+export function isUuid(value: string) {
+  return UUID_PATTERN.test(value);
+}
+
+export function ensureUuidDatabase(database: SchoolDatabase): SchoolDatabase {
+  const next = structuredClone(database);
+  let changed = false;
+
+  const mapIds = <T extends { id: string }>(items: T[]) => {
+    const mapping = new Map<string, string>();
+    for (const item of items) {
+      const id = isUuid(item.id) ? item.id : randomUuid();
+      if (id !== item.id) changed = true;
+      mapping.set(item.id, id);
+      item.id = id;
+    }
+    return mapping;
+  };
+
+  const fieldMap = mapIds(next.settings.studentFields);
+  const classMap = mapIds(next.classes);
+  const studentMap = mapIds(next.students);
+  mapIds(next.invoices);
+  mapIds(next.attendance);
+  mapIds(next.grades);
+  mapIds(next.notices);
+
+  for (const student of next.students) {
+    student.classId = classMap.get(student.classId) ?? student.classId;
+    const migratedFields: Record<string, string> = {};
+    for (const [fieldId, value] of Object.entries(student.customFields ?? {})) {
+      migratedFields[fieldMap.get(fieldId) ?? fieldId] = value;
+    }
+    student.customFields = migratedFields;
+  }
+  for (const invoice of next.invoices) invoice.studentId = studentMap.get(invoice.studentId) ?? invoice.studentId;
+  for (const item of next.attendance) {
+    item.studentId = studentMap.get(item.studentId) ?? item.studentId;
+    item.classId = classMap.get(item.classId) ?? item.classId;
+  }
+  for (const grade of next.grades) {
+    grade.studentId = studentMap.get(grade.studentId) ?? grade.studentId;
+    grade.classId = classMap.get(grade.classId) ?? grade.classId;
+  }
+
+  if (changed) next.updatedAt = new Date().toISOString();
+  return next;
 }
