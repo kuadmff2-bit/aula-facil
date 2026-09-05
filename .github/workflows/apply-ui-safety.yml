@@ -10,6 +10,10 @@ on:
 permissions:
   contents: write
 
+concurrency:
+  group: apply-ui-safety
+  cancel-in-progress: true
+
 jobs:
   integrate:
     runs-on: windows-latest
@@ -40,6 +44,9 @@ jobs:
 
       - name: Validar frontend
         run: npm run build
+
+      - name: Gerar recursos exigidos pelo Tauri
+        run: npm run desktop:icons
 
       - name: Validar Tauri
         run: cargo check --manifest-path src-tauri/Cargo.toml
