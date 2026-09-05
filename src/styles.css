@@ -275,10 +275,10 @@ tbody tr:hover { background: #f8fbff; }
 .details-header p { margin: 0; color: rgba(255,255,255,.7); font-size: 13px; }
 .details-body { display: grid; gap: 18px; padding: 22px; }
 .info-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; }
-.info-box { min-width: 0; padding: 13px; border-radius: 12px; background: #f4f6f9; }
+.info-box { min-width: 0; padding: 14px 15px; border: 1.5px solid #c7d2e2; border-radius: 12px; background: #f8fafc; box-shadow: inset 0 0 0 1px rgba(255,255,255,.72), 0 1px 2px rgba(25,45,78,.035); }
 .info-box small, .info-box strong { display: block; overflow: hidden; text-overflow: ellipsis; }
-.info-box small { color: #8490a2; font-size: 12px; }
-.info-box strong { margin-top: 6px; color: #34435a; font-size: 12px; white-space: nowrap; }
+.info-box small { color: #66758b; font-size: 11px; font-weight: 800; letter-spacing: .01em; }
+.info-box strong { margin-top: 6px; color: #22324a; font-size: 13px; font-weight: 750; white-space: nowrap; }
 .details-actions { display: flex; flex-wrap: wrap; gap: 8px; }
 .detail-section { padding: 18px; border: 1px solid #e2e8f0; border-radius: 16px; }
 .record-list { display: grid; grid-template-columns: repeat(2, 1fr); gap: 9px; }

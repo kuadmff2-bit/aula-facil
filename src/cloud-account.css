@@ -6,7 +6,9 @@
 .cloud-auth-form { max-width: 520px; display: grid; gap: 13px; }
 .cloud-auth-form label, .cloud-school-selector label { display: grid; gap: 7px; }
 .cloud-auth-form label > span, .cloud-school-selector label > span { color: var(--text); font-size: 12px; font-weight: 800; }
-.cloud-auth-form input, .cloud-create-row input, .cloud-school-selector select { min-height: 43px; width: 100%; padding: 9px 11px; color: var(--text); border: 1px solid var(--line); border-radius: 11px; background: var(--surface); }
+.cloud-auth-form input, .cloud-create-row input, .cloud-school-selector select { min-height: 44px; width: 100%; padding: 10px 12px; color: var(--text); border: 1.5px solid #b9c7da; border-radius: 11px; background: var(--surface); box-shadow: inset 0 1px 2px rgba(20,42,77,.025); transition: border-color .16s ease, box-shadow .16s ease; }
+.cloud-auth-form input:hover, .cloud-create-row input:hover, .cloud-school-selector select:hover { border-color: #8fa6c7; }
+.cloud-auth-form input:focus, .cloud-create-row input:focus, .cloud-school-selector select:focus { border-color: var(--blue); box-shadow: 0 0 0 3px rgba(22,73,184,.12); outline: none; }
 .cloud-terms-check { grid-template-columns: auto 1fr !important; align-items: flex-start; gap: 9px !important; color: var(--muted); font-size: 12px; line-height: 1.5; }
 .cloud-terms-check input { width: auto; min-height: auto; margin-top: 3px; }
 .cloud-mode-button { margin-top: 12px; padding: 0; color: var(--blue); font-size: 12px; font-weight: 800; background: transparent; }
@@ -22,7 +24,7 @@
 .cloud-school-selector label { min-width: min(560px, 100%); }
 .cloud-role-chip { min-height: 35px; display: inline-flex; align-items: center; padding: 0 11px; color: var(--blue); font-size: 11px; font-weight: 900; border: 1px solid #c5d4ee; border-radius: 999px; background: #f2f6ff; }
 .cloud-summary-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; margin-bottom: 18px; }
-.cloud-summary-grid > div { min-height: 88px; display: grid; align-content: center; gap: 4px; padding: 14px; border: 1px solid var(--line); border-radius: 14px; background: var(--canvas); }
+.cloud-summary-grid > div { min-height: 88px; display: grid; align-content: center; gap: 4px; padding: 14px; border: 1.5px solid #c4d0e0; border-radius: 14px; background: #f8fafc; box-shadow: 0 1px 2px rgba(25,45,78,.035); }
 .cloud-summary-grid strong { color: var(--text); font-size: 20px; }
 .cloud-summary-grid span { color: var(--muted); font-size: 11px; line-height: 1.4; }
 .cloud-sync-actions { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px; margin-top: 18px; }
