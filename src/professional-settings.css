@@ -1,0 +1,38 @@
+.professional-settings-card { padding: 24px; }
+.professional-settings-heading { display: flex; align-items: flex-start; justify-content: space-between; gap: 18px; margin-bottom: 22px; }
+.professional-settings-heading h2 { margin: 0; color: var(--text); font-size: 17px; }
+.professional-settings-heading p { max-width: 760px; margin: 5px 0 0; color: var(--muted); font-size: 13px; line-height: 1.55; }
+.institution-logo-row { display: grid; grid-template-columns: 104px minmax(0, 1fr); gap: 18px; align-items: center; padding: 18px; margin-bottom: 22px; border: 1px solid var(--line); border-radius: 16px; background: var(--canvas); }
+.institution-logo-preview { width: 104px; height: 104px; display: grid; place-items: center; overflow: hidden; color: var(--muted); font-size: 13px; font-weight: 900; border: 1px dashed #b9c8dd; border-radius: 20px; background: var(--surface); }
+.institution-logo-preview img { width: 100%; height: 100%; object-fit: contain; }
+.institution-logo-row strong { color: var(--text); font-size: 14px; }
+.institution-logo-row p { margin: 5px 0 12px; color: var(--muted); font-size: 12px; line-height: 1.5; }
+.settings-inline-actions { display: flex; gap: 8px; flex-wrap: wrap; }
+.settings-form-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 15px; }
+.settings-form-grid label { display: grid; gap: 7px; align-content: start; }
+.settings-form-grid label > span, .settings-block > strong { color: var(--text); font-size: 12px; font-weight: 800; }
+.settings-form-grid input, .settings-form-grid select, .settings-form-grid textarea { width: 100%; min-height: 42px; padding: 9px 11px; color: var(--text); border: 1px solid var(--line); border-radius: 11px; background: var(--surface); }
+.settings-form-grid textarea { resize: vertical; line-height: 1.5; }
+.settings-form-grid input:disabled { opacity: .58; cursor: not-allowed; }
+.settings-form-grid small { color: var(--muted); font-size: 11px; line-height: 1.45; }
+.settings-span-2 { grid-column: span 2; }
+.color-field { display: grid; grid-template-columns: 46px minmax(0, 1fr); gap: 8px; }
+.color-field input[type="color"] { padding: 4px; cursor: pointer; }
+.settings-block { padding: 17px; margin-bottom: 18px; border: 1px solid var(--line); border-radius: 15px; background: var(--canvas); }
+.settings-block p { margin: 5px 0 13px; color: var(--muted); font-size: 12px; line-height: 1.5; }
+.due-day-grid { display: grid; grid-template-columns: repeat(10, minmax(34px, 1fr)); gap: 7px; }
+.due-day-grid button { min-height: 35px; color: var(--muted); font-size: 12px; font-weight: 800; border: 1px solid var(--line); border-radius: 9px; background: var(--surface); }
+.due-day-grid button:hover { color: var(--blue); border-color: #abc0e5; }
+.due-day-grid button.active { color: white; border-color: var(--blue); background: var(--blue); }
+.settings-checkbox { display: flex; align-items: flex-start; gap: 9px; margin-top: 16px; color: var(--text); font-size: 12px; line-height: 1.45; }
+.settings-checkbox input { margin-top: 2px; }
+.settings-subsection + .settings-subsection { padding-top: 22px; margin-top: 22px; border-top: 1px solid var(--line); }
+.settings-subsection h3 { margin: 0 0 15px; color: var(--text); font-size: 14px; }
+.secondary-button, .ghost-danger-button { min-height: 36px; padding: 0 12px; font-size: 12px; font-weight: 800; border-radius: 10px; }
+.secondary-button { color: var(--blue); border: 1px solid #bfd0ec; background: #f4f8ff; }
+.ghost-danger-button { color: var(--red); border: 1px solid #f0c5cd; background: transparent; }
+@media (max-width: 980px) {
+  .settings-form-grid { grid-template-columns: 1fr; }
+  .settings-span-2 { grid-column: span 1; }
+  .due-day-grid { grid-template-columns: repeat(7, 1fr); }
+}
