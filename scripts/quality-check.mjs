@@ -4,9 +4,15 @@ import path from "node:path";
 const root = process.cwd();
 const read = (file) => fs.readFileSync(path.join(root, file), "utf8");
 const json = (file) => JSON.parse(read(file));
+const strictRelease = process.env.AULAFACIL_STRICT_RELEASE === "1";
 
 const failures = [];
 const warnings = [];
+
+function report(message, releaseBlocker = false) {
+  if (strictRelease && releaseBlocker) failures.push(message);
+  else warnings.push(message);
+}
 
 const pkg = json("package.json");
 const tauri = json("src-tauri/tauri.conf.json");
@@ -23,7 +29,7 @@ if (tauri.version !== pkg.version) failures.push(`Versões diferentes: package.j
 if (cargoVersion !== pkg.version) failures.push(`Versões diferentes: package.json=${pkg.version}, Cargo.toml=${cargoVersion ?? "ausente"}.`);
 
 if (lock.version !== pkg.version || lock.packages?.[""]?.version !== pkg.version) {
-  warnings.push(`package-lock.json ainda registra ${lock.version}/${lock.packages?.[""]?.version}; sincronizar antes do próximo lançamento.`);
+  report(`package-lock.json ainda registra ${lock.version}/${lock.packages?.[""]?.version}; sincronizar antes do próximo lançamento.`, true);
 }
 
 if (!mainRs.includes('windows_subsystem = "windows"')) {
@@ -45,12 +51,17 @@ if (!privacy.includes("Política de privacidade")) failures.push("PRIVACY.md nã
 const appSource = read("src/App.tsx");
 const nativeConfirmCount = (appSource.match(/window\.confirm\s*\(/g) ?? []).length;
 if (nativeConfirmCount > 0) {
-  warnings.push(`${nativeConfirmCount} confirmação(ões) nativa(s) ainda existem no App.tsx; substituir pelo diálogo visual antes da versão profissional.`);
+  report(`${nativeConfirmCount} confirmação(ões) nativa(s) ainda existem no App.tsx; substituir pelo diálogo visual antes da versão profissional.`, true);
 }
 
-const nativeAlertCount = (appSource.match(/window\.alert\s*\(/g) ?? []).length + (read("src/storage.ts").match(/window\.alert\s*\(/g) ?? []).length;
+const nativeAlertCount = (appSource.match(/window\.alert\s*\(/g) ?? []).length
+  + (read("src/storage.ts").match(/window\.alert\s*\(/g) ?? []).length;
 if (nativeAlertCount > 0) {
-  warnings.push(`${nativeAlertCount} alerta(s) nativo(s) ainda existe(m); manter apenas se for mecanismo de emergência.`);
+  report(`${nativeAlertCount} alerta(s) nativo(s) ainda existe(m); manter apenas se for mecanismo de emergência.`, false);
+}
+
+if (strictRelease && privacy.includes("Esta política se aplica ao **AulaFácil Desktop 0.2.x**") && !pkg.version.startsWith("0.2.")) {
+  failures.push("A Política de Privacidade ainda está marcada como 0.2.x, mas a versão de lançamento é outra.");
 }
 
 for (const warning of warnings) console.warn(`⚠ ${warning}`);
@@ -60,4 +71,4 @@ if (failures.length) {
   process.exit(1);
 }
 
-console.log("✓ Verificações estruturais concluídas.");
+console.log(`✓ Verificações estruturais concluídas${strictRelease ? " em modo estrito de release" : ""}.`);
