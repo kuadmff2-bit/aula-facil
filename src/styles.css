@@ -365,3 +365,17 @@ tbody tr:hover { background: #f8fbff; }
 }
 
 .status.negotiated{background:rgba(124,58,237,.11);color:#7c3aed}
+
+/* PRINT-FIX-2026 */
+@media print {
+  body * { visibility: hidden !important; }
+  #print-area, #print-area *, #certificate-print-area, #certificate-print-area * { visibility: visible !important; }
+  #print-area, #certificate-print-area { position: absolute !important; left: 0 !important; top: 0 !important; margin: 0 !important; box-shadow: none !important; }
+  #print-area { width: 100% !important; min-height: 0 !important; }
+  #certificate-print-area { width: 297mm !important; height: 210mm !important; max-width: none !important; }
+  .document-backdrop, .certificate-manager { background: #fff !important; }
+}
+@page receipt-page { size: A4 portrait; margin: 7mm; }
+@page certificate-page { size: A4 landscape; margin: 0; }
+#print-area.receipt-two-copies { page: receipt-page; }
+#certificate-print-area { page: certificate-page; }

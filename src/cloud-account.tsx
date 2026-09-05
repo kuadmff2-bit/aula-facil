@@ -8,6 +8,7 @@ import {
   signInCloud,
   signOutCloud,
   signUpCloud,
+  resendCloudSignupConfirmation,
   type CloudAuthState,
   type CloudDataSummary,
   type CloudSchool,
@@ -56,6 +57,7 @@ export function CloudAccountPanel({ database, onReplaceDatabase }: Props) {
   const [downloadArmed, setDownloadArmed] = useState(false);
   const [schoolsLoaded, setSchoolsLoaded] = useState(false);
   const [legalReady, setLegalReady] = useState(false);
+  const [pendingConfirmationEmail, setPendingConfirmationEmail] = useState("");
 
   const selectedSchool = useMemo(
     () => schools.find((school) => school.id === selectedSchoolId) ?? null,
@@ -146,9 +148,11 @@ export function CloudAccountPanel({ database, onReplaceDatabase }: Props) {
         if (password.length < 12) throw new Error("Para novas contas, use uma senha com pelo menos 12 caracteres.");
         const result = await signUpCloud(email, password);
         if (result.session) {
+          setPendingConfirmationEmail("");
           setMessage({ tone: "success", text: "Conta criada. Agora crie ou selecione a instituição." });
         } else {
-          setMessage({ tone: "warning", text: "Conta criada. Confira seu e-mail para confirmar o cadastro e depois faça login." });
+          setPendingConfirmationEmail(email.trim().toLowerCase());
+          setMessage({ tone: "warning", text: "Conta criada. Enviamos a confirmação por e-mail. Confira também Spam, Lixo eletrônico e Promoções. Se não chegar, use o botão de reenvio abaixo." });
         }
       }
       setPassword("");
@@ -173,6 +177,7 @@ export function CloudAccountPanel({ database, onReplaceDatabase }: Props) {
           {message && <div className={`cloud-message ${message.tone}`} role="status">{message.text}</div>}
           <button className="primary-button" disabled={busy}>{busy ? "Aguarde..." : mode === "signin" ? "Entrar" : "Criar conta"}</button>
         </form>
+        {pendingConfirmationEmail && <div className="cloud-resend-box"><strong>Não recebeu o e-mail?</strong><span>Confirme se o endereço está correto e aguarde alguns minutos antes de tentar novamente.</span><button className="secondary-button" type="button" disabled={busy} onClick={() => void run(async () => { await resendCloudSignupConfirmation(pendingConfirmationEmail); setMessage({ tone: "success", text: `Novo e-mail de confirmação enviado para ${pendingConfirmationEmail}. Confira também as pastas de spam e promoções.` }); })}>Reenviar confirmação</button></div>}
         <button className="cloud-mode-button" type="button" onClick={() => { setMode(mode === "signin" ? "signup" : "signin"); setMessage(null); setPassword(""); }}>
           {mode === "signin" ? "Ainda não tenho conta" : "Já tenho uma conta"}
         </button>

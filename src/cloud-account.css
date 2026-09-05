@@ -38,3 +38,6 @@
   .cloud-account-heading, .cloud-school-selector { align-items: stretch; flex-direction: column; }
   .cloud-create-row, .cloud-summary-grid, .cloud-sync-actions { grid-template-columns: 1fr; }
 }
+
+/* CLOUD-RESEND-2026 */
+.cloud-resend-box{display:grid;gap:7px;margin-top:12px;padding:14px;border:1px solid var(--border,var(--line));border-radius:12px;background:var(--surface-soft,var(--canvas))}.cloud-resend-box strong{color:var(--text);font-size:.86rem}.cloud-resend-box span{color:var(--text-muted,var(--muted));font-size:.78rem;line-height:1.5}.cloud-resend-box .secondary-button{justify-self:start}

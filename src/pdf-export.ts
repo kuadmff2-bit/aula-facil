@@ -30,7 +30,7 @@ export async function exportElementToPdf(elementId: string, filename: string, or
   const options = {
     margin: 0,
     filename: safeFilename(filename.replace(/\.pdf$/i, "")),
-    image: { type: "jpeg", quality: 0.98 },
+    image: { type: "jpeg" as const, quality: 0.98 },
     html2canvas: {
       scale: 2,
       useCORS: true,

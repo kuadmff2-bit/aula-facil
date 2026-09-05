@@ -217,3 +217,44 @@
     max-width: none;
   }
 }
+
+/* UX-HARDENING-2026 */
+@media screen {
+  html, body, #root { width: 100%; max-width: 100%; min-width: 0 !important; overflow-x: clip !important; overscroll-behavior-x: none; }
+  body { touch-action: pan-y; }
+  .app-shell, .workspace, .page-content, .stack, .card { min-width: 0; max-width: 100%; }
+  .table-card, .roster-sheet { max-width: 100%; overflow-x: auto; overscroll-behavior-x: contain; }
+  .table-card table { width: max-content; min-width: 100%; max-width: none; }
+  p, span, small, strong, td, th, code, .generated-charge { overflow-wrap: anywhere; word-break: normal; }
+  img { max-width: 100%; height: auto; }
+  .mobile-menu-button, .mobile-menu-close, .mobile-menu-scrim { display: none; }
+  .topbar-title-wrap { min-width: 0; display: flex; align-items: center; gap: 10px; }
+}
+@media screen and (max-width: 640px) {
+  .app-shell { display: block; }
+  .sidebar { position: fixed; inset: 0 auto 0 0; z-index: 70; width: min(84vw, 300px) !important; height: 100dvh; align-items: stretch !important; transform: translateX(-105%); transition: transform .22s ease; }
+  .mobile-menu-open .sidebar { transform: translateX(0); }
+  .sidebar .brand { justify-content: flex-start !important; padding: 18px 16px !important; }
+  .sidebar .brand > span:last-child, .sidebar .nav-label, .sidebar .main-nav button span, .sidebar .sidebar-foot { display: initial !important; }
+  .sidebar .main-nav { width: 100%; padding: 12px !important; }
+  .sidebar .main-nav button { justify-content: flex-start !important; padding: 0 13px !important; min-height: 48px; }
+  .mobile-menu-button { display: inline-grid; flex: 0 0 auto; }
+  .mobile-menu-close { display: grid; place-items: center; position: absolute; z-index: 2; right: 10px; top: 10px; width: 40px; height: 40px; border-radius: 11px; color: white; background: rgba(255,255,255,.1); }
+  .mobile-menu-scrim { display: block; position: fixed; inset: 0; z-index: 65; pointer-events: none; opacity: 0; background: rgba(7,15,29,.52); transition: opacity .2s ease; }
+  .mobile-menu-open .mobile-menu-scrim { pointer-events: auto; opacity: 1; }
+  .topbar { min-height: 68px; }
+  .topbar p { display: none; }
+  .page-content { padding: 16px 12px 34px !important; }
+  .metric-grid, .class-grid, .dashboard-grid, .finance-ultimate-metrics, .info-grid { grid-template-columns: 1fr !important; }
+  .form-grid { grid-template-columns: 1fr !important; padding-left: 16px; padding-right: 16px; }
+  .wide { grid-column: auto !important; }
+  button, .primary-button, .secondary-button, input, select { min-height: 44px; }
+  input, select, textarea { font-size: 16px !important; }
+  .document-toolbar { flex-wrap: wrap; }
+  .document-toolbar > div:first-child { width: 100%; }
+}
+@media screen and (max-width: 420px) {
+  .topbar { padding-left: 10px !important; padding-right: 10px !important; }
+  .page-content { padding-left: 10px !important; padding-right: 10px !important; }
+  .card { border-radius: 14px; }
+}

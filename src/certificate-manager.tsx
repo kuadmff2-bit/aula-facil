@@ -1,10 +1,11 @@
 import { useEffect, useMemo, useState } from "react";
-import { CheckCircle2, FileCheck2, Palette, Printer, ShieldCheck, X } from "lucide-react";
+import { CheckCircle2, Download, FileCheck2, Palette, Printer, ShieldCheck, X } from "lucide-react";
 import { CertificateDocument } from "./certificate-document";
 import { issueCertificate, listStudentCertificates, type IssuedCertificate } from "./certificate-service";
 import { CERTIFICATE_VISUAL_STYLES, normalizeCertificateVisualStyle, type CertificateVisualStyle } from "./certificate-visuals";
 import { getCloudSyncStatus, safePullFromCloud } from "./cloud-safe-sync";
 import type { CertificateSettings, ClassItem, InstitutionSettings, SchoolDatabase, Student } from "./model";
+import { exportElementToPdf } from "./pdf-export";
 import "./certificate-manager.css";
 
 type Props = {
@@ -134,7 +135,7 @@ export function CertificateManager({ student, classItem, database, onClose, onCo
         <div><span className="certificate-manager-eyebrow">CONCLUSÃO DO ALUNO</span><strong>Certificados</strong><small>{student.name} · {classItem?.name ?? "Curso"}</small></div>
         <div className="certificate-manager-actions">
           <button className="secondary-button" onClick={onClose}><X size={17}/> Fechar</button>
-          {(selected || isDraftPreview) && <button className="primary-button" onClick={() => window.print()} title="Imprimir certificado ou salvar em PDF"><Printer size={17}/> Imprimir prévia</button>}
+          {(selected || isDraftPreview) && <><button className="secondary-button" onClick={() => void exportElementToPdf("certificate-print-area", `certificado-${student.name}-${selected?.certificateNumber ?? "previa"}`, "landscape")}><Download size={17}/> Baixar PDF</button><button className="primary-button" onClick={() => window.print()} title="Imprimir certificado"><Printer size={17}/> Imprimir</button></>}
           <button className={armed ? "danger-button" : "primary-button"} disabled={busy} onClick={() => void emit()}><FileCheck2 size={17}/>{busy ? "Emitindo..." : armed ? "Confirmar e emitir" : "Emitir novo certificado"}</button>
         </div>
       </div>
