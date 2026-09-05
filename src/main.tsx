@@ -3,13 +3,16 @@ import { createRoot } from "react-dom/client";
 import App from "./AppNext";
 import { initializeSecureStorage } from "./storage";
 import { installGlobalInputGuards } from "./input-guards";
+import { installDesktopInteractions } from "./desktop-interactions";
 import "./styles.css";
 import "./theme.css";
 import "./layout-safety.css";
+import "./desktop-interactions.css";
 
 const root = createRoot(document.getElementById("root")!);
 
 installGlobalInputGuards();
+installDesktopInteractions();
 
 async function start() {
   try {
