@@ -24,6 +24,10 @@ export type PaymentProviderDefinition = {
   notes?: string;
 };
 
+// A interface da versão 0.3.0 expõe apenas conectores que possuem fluxo de
+// geração/conciliação implementado no backend. Novos provedores só devem entrar
+// nesta lista depois que credenciais, cobrança, idempotência e conciliação
+// estiverem implementados e testados de ponta a ponta.
 export const PAYMENT_PROVIDERS: PaymentProviderDefinition[] = [
   {
     key: "manual_pix",
@@ -31,57 +35,37 @@ export const PAYMENT_PROVIDERS: PaymentProviderDefinition[] = [
     description: "Recebimento por chave Pix da própria escola, sem integração bancária automática.",
     capabilities: ["pix"],
     credentialFields: [],
-    notes: "A baixa do pagamento é manual, pois não há webhook bancário.",
+    notes: "A baixa do pagamento é manual, pois não há conciliação bancária automática.",
   },
   {
     key: "asaas",
     name: "Asaas",
     description: "Cobranças e recebimentos integrados pelo Asaas.",
-    capabilities: ["pix", "boleto", "card"],
+    capabilities: ["pix", "boleto"],
     credentialFields: [
       { key: "api_key", label: "API Key", secret: true, required: true },
     ],
+    notes: "Pix e boleto são gerados pelo backend seguro. Cartão não é coletado diretamente pelo AulaFácil.",
   },
   {
     key: "mercado_pago",
     name: "Mercado Pago",
-    description: "Checkout e cobranças usando a API do Mercado Pago.",
-    capabilities: ["pix", "boleto", "card"],
+    description: "Cobranças Pix e boleto usando a API do Mercado Pago.",
+    capabilities: ["pix", "boleto"],
     credentialFields: [
       { key: "access_token", label: "Access Token", secret: true, required: true },
     ],
-    notes: "A disponibilidade dos meios de pagamento depende da conta e da região.",
-  },
-  {
-    key: "efi",
-    name: "Efí Bank",
-    description: "Integração com APIs Pix e Cobranças da Efí.",
-    capabilities: ["pix", "boleto", "card"],
-    credentialFields: [
-      { key: "client_id", label: "Client ID", secret: true, required: true },
-      { key: "client_secret", label: "Client Secret", secret: true, required: true },
-      { key: "certificate", label: "Certificado / referência do certificado", secret: true, required: false },
-    ],
-    notes: "Alguns produtos da API Pix exigem certificado mTLS; a configuração será mantida somente no servidor.",
+    notes: "A disponibilidade efetiva de cada meio também depende da conta do Mercado Pago.",
   },
   {
     key: "pagarme",
     name: "Pagar.me",
-    description: "Pedidos e cobranças via Pagar.me.",
-    capabilities: ["pix", "boleto", "card"],
+    description: "Cobranças Pix e boleto via Pagar.me.",
+    capabilities: ["pix", "boleto"],
     credentialFields: [
       { key: "secret_key", label: "Secret Key", secret: true, required: true },
     ],
-  },
-  {
-    key: "stripe",
-    name: "Stripe",
-    description: "Pagamentos por Stripe quando a conta da instituição tiver os meios habilitados.",
-    capabilities: ["pix", "boleto", "card"],
-    credentialFields: [
-      { key: "secret_key", label: "Secret Key", secret: true, required: true },
-    ],
-    notes: "Pix pode depender de disponibilidade/convite na conta; o AulaFácil verifica capacidades antes de usar.",
+    notes: "A cobrança é criada no servidor e conciliada sem expor a chave secreta ao aplicativo.",
   },
 ];
 
