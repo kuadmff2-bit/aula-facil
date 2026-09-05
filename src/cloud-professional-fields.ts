@@ -36,7 +36,7 @@ export async function hydrateProfessionalCloudFields(schoolId: string, source: S
     if (!row) continue;
     item.groupName = text(row.group_name);
     item.meetingDays = Array.isArray(row.meeting_days)
-      ? row.meeting_days.map(String).filter((day): day is Weekday => WEEKDAYS.has(day as Weekday))
+      ? row.meeting_days.map(String).filter((day: string): day is Weekday => WEEKDAYS.has(day as Weekday))
       : [];
     item.startTime = timeValue(row.start_time);
     item.endTime = timeValue(row.end_time);
