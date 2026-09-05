@@ -1,11 +1,12 @@
 import { useMemo, useState } from "react";
 import { AlertTriangle, CheckCircle2, Copy, ExternalLink, Plus, ReceiptText, WalletCards, X } from "lucide-react";
 import { emptyBillingProfile, generateProviderCharge, getBillingProfile, saveBillingProfile, type BillingProfile, type GeneratedCharge } from "./billing";
-import { dueDateForMonth, invoiceAmountDue, referenceMonthFromDate } from "./finance-utils";
+import { invoiceAmountDue, referenceMonthFromDate } from "./finance-utils";
+import { ensureOpenEndedInvoiceForMonth } from "./enrollment-plan";
 import { makeId, type Invoice, type Payment, type SchoolDatabase, type Student } from "./model";
 import { DebtNegotiationPanel } from "./debt-negotiation-panel";
 import { getCloudSyncStatus, safePullFromCloud } from "./cloud-safe-sync";
-import { confirmManualInvoicePayment } from "./manual-payment";
+import { confirmManualInvoicePayment, reopenInvoicePayment } from "./manual-payment";
 import "./finance-ultimate.css";
 
 const SELECTED_SCHOOL_KEY = "aulafacil.cloud.selected-school";
@@ -18,7 +19,6 @@ type Props = {
 
 type Filter = "all" | "pending" | "overdue" | "paid" | "cancelled" | "negotiated";
 type Modal = { kind: "pay" | "charge"; invoice: Invoice; student: Student } | null;
-
 type Notice = { tone: "success" | "warning" | "danger"; text: string } | null;
 
 function localDate() {
@@ -79,6 +79,7 @@ export function FinanceUltimate({ database, onChange, onReceipt }: Props) {
   const [billing, setBilling] = useState<BillingProfile>(emptyBillingProfile());
   const [chargeMethod, setChargeMethod] = useState<"pix" | "boleto">("pix");
   const [generatedCharge, setGeneratedCharge] = useState<GeneratedCharge | null>(null);
+  const [reopenArmed, setReopenArmed] = useState("");
 
   const students = useMemo(() => new Map(database.students.map((item) => [item.id, item])), [database.students]);
   const visibleInvoices = useMemo(() => database.invoices
@@ -105,24 +106,30 @@ export function FinanceUltimate({ database, onChange, onReceipt }: Props) {
       return;
     }
     let created = 0;
+    let fixedSkipped = 0;
     const next = replaceDatabase(database, (draft) => {
-      for (const student of draft.students.filter((item) => item.active)) {
-        if (draft.invoices.some((item) => item.studentId === student.id && item.reference === referenceMonth)) continue;
+      for (const student of draft.students.filter((item) => item.active && (item.enrollmentStatus ?? "active") === "active")) {
         const classItem = draft.classes.find((item) => item.id === student.classId);
         if (!classItem || classItem.monthlyFee <= 0) continue;
-        const fallbackDay = draft.settings.finance.allowedDueDays[0] ?? 10;
-        const dueDay = student.dueDay && draft.settings.finance.allowedDueDays.includes(student.dueDay) ? student.dueDay : fallbackDay;
-        const dueDate = dueDateForMonth(referenceMonth, dueDay);
-        draft.invoices.push({
-          id: makeId("cobranca"), studentId: student.id, reference: referenceMonth, dueDate,
-          amount: classItem.monthlyFee, status: dueDate < localDate() ? "overdue" : "pending",
-          paidAt: null, createdAt: new Date().toISOString(),
-        });
+        if ((classItem.durationType ?? "open_ended") === "fixed") {
+          fixedSkipped += 1;
+          continue;
+        }
+        const invoice = ensureOpenEndedInvoiceForMonth(draft, student, classItem, referenceMonth);
+        if (!invoice) continue;
+        draft.invoices.push(invoice);
         created += 1;
       }
     });
     onChange(next);
-    setNotice({ tone: created ? "success" : "warning", text: created ? `${created} mensalidade${created === 1 ? "" : "s"} gerada${created === 1 ? "" : "s"}, respeitando o vencimento individual.` : "Nenhuma mensalidade nova foi necessária." });
+    setNotice({
+      tone: created ? "success" : "warning",
+      text: created
+        ? `${created} mensalidade${created === 1 ? "" : "s"} de curso contínuo gerada${created === 1 ? "" : "s"}. Cursos com duração definida já usam o plano criado na matrícula.`
+        : fixedSkipped
+          ? "Nenhuma mensalidade contínua nova foi necessária. Cursos com duração definida já têm todas as parcelas do plano."
+          : "Nenhuma mensalidade nova foi necessária.",
+    });
   };
 
   const openPayment = (invoice: Invoice) => {
@@ -151,24 +158,17 @@ export function FinanceUltimate({ database, onChange, onReceipt }: Props) {
       setNotice(null);
       try {
         const syncStatus = await getCloudSyncStatus(schoolId, database);
-        if (syncStatus !== "synced") {
-          throw new Error("Sincronize este computador antes de registrar o pagamento. A baixa foi bloqueada para evitar recibos ou saldos divergentes.");
-        }
-        const payment = await confirmManualInvoicePayment({
-          schoolId, invoiceId: currentModal.invoice.id, method: paymentMethod, discount: safeDiscount,
-        });
+        if (syncStatus !== "synced") throw new Error("Sincronize este computador antes de registrar o pagamento. A baixa foi bloqueada para evitar recibos ou saldos divergentes.");
+        const payment = await confirmManualInvoicePayment({ schoolId, invoiceId: currentModal.invoice.id, method: paymentMethod, discount: safeDiscount });
         const restored = await safePullFromCloud(schoolId, database.settings.appearance);
         onChange(restored);
-        const syncedInvoice = restored.invoices.find((item) => item.id === currentModal.invoice.id)
-          ?? { ...currentModal.invoice, status: "paid" as const, paidAt: payment.paidAt };
+        const syncedInvoice = restored.invoices.find((item) => item.id === currentModal.invoice.id) ?? { ...currentModal.invoice, status: "paid" as const, paidAt: payment.paidAt };
         setModal(null);
         setNotice({ tone: "success", text: `Pagamento de ${money(payment.amountReceived)} confirmado no servidor. Recibo ${payment.receiptNumber ?? payment.id}.` });
         onReceipt(currentModal.student, syncedInvoice, payment);
       } catch (error) {
         setNotice({ tone: "danger", text: error instanceof Error ? error.message : "Não foi possível confirmar o pagamento." });
-      } finally {
-        setBusy(false);
-      }
+      } finally { setBusy(false); }
       return;
     }
 
@@ -178,7 +178,7 @@ export function FinanceUltimate({ database, onChange, onReceipt }: Props) {
       amountReceived, principalAmount: breakdown.baseAmount, lateFeeAmount: breakdown.lateFee,
       interestAmount: breakdown.interest, discountAmount: safeDiscount, paymentMethod,
       status: "confirmed", paidAt: now, receiptNumber: localReceiptNumber(),
-      notes: "Pagamento registrado em modo local/offline.", createdAt: now,
+      notes: "Pagamento registrado em modo local/offline.", reversedAt: null, reversalReason: "", createdAt: now,
     };
     const next = replaceDatabase(database, (draft) => {
       const invoice = draft.invoices.find((item) => item.id === currentModal.invoice.id);
@@ -191,6 +191,43 @@ export function FinanceUltimate({ database, onChange, onReceipt }: Props) {
     setModal(null);
     setNotice({ tone: "warning", text: `Pagamento registrado apenas neste dispositivo. Recibo ${payment.receiptNumber}. Ative o Cloud para recibos oficiais sincronizados.` });
     onReceipt(currentModal.student, { ...currentModal.invoice, status: "paid", paidAt: now }, payment);
+  })();
+
+  const reopenPayment = (invoice: Invoice) => void (async () => {
+    if (busy) return;
+    if (reopenArmed !== invoice.id) {
+      setReopenArmed(invoice.id);
+      setNotice({ tone: "warning", text: `Clique novamente em “Confirmar reabertura” para reabrir ${invoice.reference}. A baixa anterior ficará preservada no histórico.` });
+      return;
+    }
+    setBusy(true);
+    try {
+      const schoolId = localStorage.getItem(SELECTED_SCHOOL_KEY) ?? "";
+      if (schoolId) {
+        const syncStatus = await getCloudSyncStatus(schoolId, database);
+        if (syncStatus !== "synced") throw new Error("Sincronize este computador antes de reabrir o pagamento.");
+        await reopenInvoicePayment({ schoolId, invoiceId: invoice.id, reason: "Pagamento marcado como pago por engano" });
+        onChange(await safePullFromCloud(schoolId, database.settings.appearance));
+      } else {
+        onChange(replaceDatabase(database, (draft) => {
+          const target = draft.invoices.find((item) => item.id === invoice.id);
+          if (!target) return;
+          const payment = draft.payments.filter((item) => item.invoiceId === invoice.id && item.status === "confirmed").sort((a, b) => (b.paidAt ?? b.createdAt).localeCompare(a.paidAt ?? a.createdAt))[0];
+          if (payment) {
+            payment.status = "cancelled";
+            payment.reversedAt = new Date().toISOString();
+            payment.reversalReason = "Pagamento marcado como pago por engano";
+            payment.notes = `${payment.notes ? `${payment.notes} | ` : ""}Baixa reaberta; histórico preservado.`;
+          }
+          target.status = target.dueDate < localDate() ? "overdue" : "pending";
+          target.paidAt = null;
+        }));
+      }
+      setReopenArmed("");
+      setNotice({ tone: "warning", text: "Pagamento reaberto. A baixa anterior continua no histórico para auditoria." });
+    } catch (error) {
+      setNotice({ tone: "danger", text: error instanceof Error ? error.message : "Não foi possível reabrir o pagamento." });
+    } finally { setBusy(false); }
   })();
 
   const openCharge = async (invoice: Invoice) => {
@@ -208,9 +245,7 @@ export function FinanceUltimate({ database, onChange, onReceipt }: Props) {
       setModal({ kind: "charge", invoice, student });
     } catch (error) {
       setNotice({ tone: "danger", text: error instanceof Error ? error.message : "Não foi possível carregar o faturamento." });
-    } finally {
-      setBusy(false);
-    }
+    } finally { setBusy(false); }
   };
 
   const generateCharge = async () => {
@@ -225,21 +260,21 @@ export function FinanceUltimate({ database, onChange, onReceipt }: Props) {
       await saveBillingProfile(schoolId, modal.student.id, billing);
       const charge = await generateProviderCharge({ invoiceId: modal.invoice.id, method: chargeMethod, billingProfile: billing });
       setGeneratedCharge(charge);
-      const restored = await safePullFromCloud(schoolId, database.settings.appearance);
-      onChange(restored);
+      onChange(await safePullFromCloud(schoolId, database.settings.appearance));
       setNotice({ tone: "success", text: charge.reused ? "Cobrança já existente recuperada e sincronizada com segurança." : "Cobrança bancária gerada e sincronizada com sucesso." });
     } catch (error) {
       setNotice({ tone: "danger", text: error instanceof Error ? error.message : "Não foi possível gerar a cobrança." });
-    } finally {
-      setBusy(false);
-    }
+    } finally { setBusy(false); }
   };
 
   const cancelInvoice = (invoice: Invoice) => {
     if (invoice.status === "paid") return;
     onChange(replaceDatabase(database, (draft) => {
       const target = draft.invoices.find((item) => item.id === invoice.id);
-      if (target) target.status = "cancelled";
+      if (!target) return;
+      target.status = "cancelled";
+      target.cancelledAt = new Date().toISOString();
+      target.cancellationReason = "Cancelada manualmente no financeiro";
     }));
     setNotice({ tone: "warning", text: "Cobrança cancelada. O histórico foi preservado." });
   };
@@ -247,7 +282,7 @@ export function FinanceUltimate({ database, onChange, onReceipt }: Props) {
   return <section className="finance-ultimate stack">
     <div className="finance-ultimate-head">
       <div><span>FINANCEIRO</span><h2>Recebimentos e mensalidades</h2><p>Juros, pagamentos, recibos e cobranças bancárias no mesmo lugar.</p></div>
-      <div className="monthly-generator"><label><span>Mês</span><input type="month" value={referenceMonth} onChange={(event) => setReferenceMonth(event.target.value)} /></label><button className="primary-button" onClick={generateMonthly}><Plus size={17}/> Gerar mensalidades</button></div>
+      <div className="monthly-generator"><label><span>Mês</span><input type="month" value={referenceMonth} onChange={(event) => setReferenceMonth(event.target.value)} /></label><button className="primary-button" onClick={generateMonthly}><Plus size={17}/> Gerar cursos contínuos</button></div>
     </div>
 
     <div className="finance-ultimate-metrics">
@@ -256,7 +291,7 @@ export function FinanceUltimate({ database, onChange, onReceipt }: Props) {
       <article className="danger"><AlertTriangle/><div><small>Inadimplentes</small><strong>{metrics.overdue}</strong></div></article>
     </div>
 
-    {notice && <div className={`finance-notice ${notice.tone}`}><span>{notice.text}</span><button onClick={() => setNotice(null)}><X size={15}/></button></div>}
+    {notice && <div className={`finance-notice ${notice.tone}`}><span>{notice.text}</span><button onClick={() => { setNotice(null); setReopenArmed(""); }}><X size={15}/></button></div>}
 
     <div className="filter-tabs">{(["all","pending","overdue","negotiated","paid","cancelled"] as Filter[]).map((item) => <button key={item} className={filter === item ? "active" : ""} onClick={() => setFilter(item)}>{statusLabel(item)}</button>)}</div>
 
@@ -272,18 +307,17 @@ export function FinanceUltimate({ database, onChange, onReceipt }: Props) {
         <td><span className={`status ${status}`}>{statusLabel(status)}</span></td>
         <td><div className="finance-actions">
           {(status === "pending" || status === "overdue") && <><button className="primary-button small" onClick={() => openPayment(invoice)}>Receber</button><button className="secondary-button small" disabled={busy} onClick={() => void openCharge(invoice)}>Pix / boleto</button><button className="text-button" onClick={() => cancelInvoice(invoice)}>Cancelar</button></>}
-          {status === "paid" && student && payment && <button className="secondary-button small" onClick={() => onReceipt(student, invoice, payment)}><ReceiptText size={16}/> Recibo</button>}
+          {status === "paid" && student && payment && <><button className="secondary-button small" onClick={() => onReceipt(student, invoice, payment)}><ReceiptText size={16}/> Recibo</button><button className="text-button" disabled={busy} onClick={() => reopenPayment(invoice)}>{reopenArmed === invoice.id ? "Confirmar reabertura" : "Reabrir"}</button></>}
           {invoice.pixCopyPaste && <button className="icon-button small" title="Copiar Pix" onClick={() => void navigator.clipboard.writeText(invoice.pixCopyPaste ?? "")}><Copy size={16}/></button>}
           {invoice.boletoUrl && <button className="icon-button small" title="Abrir cobrança" onClick={() => window.open(invoice.boletoUrl ?? "", "_blank", "noopener,noreferrer")}><ExternalLink size={16}/></button>}
         </div></td>
       </tr>;
-    })}</tbody></table></div> : <div className="card finance-empty"><WalletCards/><h3>Nenhuma cobrança</h3><p>Gere as mensalidades do mês ou altere o filtro.</p></div>}
+    })}</tbody></table></div> : <div className="card finance-empty"><WalletCards/><h3>Nenhuma cobrança</h3><p>Gere as mensalidades de cursos contínuos ou altere o filtro.</p></div>}
 
     <DebtNegotiationPanel database={database} onChange={onChange} />
 
     {modal?.kind === "pay" && <div className="modal-backdrop"><section className="modal finance-modal"><header><div><h2>Registrar pagamento</h2><p>{modal.student.name} · {modal.invoice.reference}</p></div><button className="modal-close" onClick={() => setModal(null)}><X/></button></header>{(() => { const b = invoiceAmountDue(modal.invoice, database.settings.finance); const final = Math.max(0, b.totalDue - discount); return <div className="finance-payment-body"><div className="payment-breakdown"><div><span>Mensalidade</span><b>{money(b.baseAmount)}</b></div><div><span>Multa</span><b>{money(b.lateFee)}</b></div><div><span>Juros</span><b>{money(b.interest)}</b></div><div><span>Desconto</span><b>- {money(discount)}</b></div><div className="total"><span>Total recebido</span><strong>{money(final)}</strong></div></div><label><span>Desconto concedido</span><input type="number" min={0} max={b.totalDue} step="0.01" value={discount} onChange={(event) => setDiscount(Math.max(0, Number(event.target.value) || 0))}/></label><label><span>Forma de pagamento</span><select value={paymentMethod} onChange={(event) => setPaymentMethod(event.target.value)}><option value="dinheiro">Dinheiro</option><option value="pix_manual">Pix manual</option><option value="cartao">Cartão/maquininha</option><option value="transferencia">Transferência</option><option value="outro">Outro</option></select></label><div className="form-actions"><button className="secondary-button" onClick={() => setModal(null)}>Cancelar</button><button className="primary-button" onClick={confirmPayment}>Confirmar e gerar recibo</button></div></div>; })()}</section></div>}
 
-    {modal?.kind === "charge" && <div className="modal-backdrop"><section className="modal finance-modal charge-modal"><header><div><h2>Gerar cobrança bancária</h2><p>{modal.student.name} · os dados abaixo são usados somente quando o provedor exigir.</p></div><button className="modal-close" onClick={() => setModal(null)}><X/></button></header><div className="billing-grid"><label><span>Método</span><select value={chargeMethod} onChange={(event) => setChargeMethod(event.target.value as "pix"|"boleto")}><option value="pix">Pix</option><option value="boleto">Boleto</option></select></label><label><span>CPF/CNPJ</span><input value={billing.documentNumber} onChange={(e) => setBilling({...billing, documentNumber:e.target.value})}/></label><label><span>E-mail</span><input type="email" value={billing.email} onChange={(e) => setBilling({...billing, email:e.target.value})}/></label><label><span>Telefone</span><input value={billing.phone} onChange={(e) => setBilling({...billing, phone:e.target.value})}/></label><label><span>CEP</span><input value={billing.postalCode} onChange={(e) => setBilling({...billing, postalCode:e.target.value})}/></label><label><span>Rua</span><input value={billing.streetName} onChange={(e) => setBilling({...billing, streetName:e.target.value})}/></label><label><span>Número</span><input value={billing.streetNumber} onChange={(e) => setBilling({...billing, streetNumber:e.target.value})}/></label><label><span>Bairro</span><input value={billing.neighborhood} onChange={(e) => setBilling({...billing, neighborhood:e.target.value})}/></label><label><span>Cidade</span><input value={billing.city} onChange={(e) => setBilling({...billing, city:e.target.value})}/></label><label><span>UF</span><input maxLength={2} value={billing.state} onChange={(e) => setBilling({...billing, state:e.target.value.toUpperCase()})}/></label></div>{generatedCharge && <div className="generated-charge"><strong>{generatedCharge.reused ? "Cobrança recuperada" : "Cobrança criada"} · {generatedCharge.provider}</strong>{generatedCharge.pixCopyPaste && <div><code>{generatedCharge.pixCopyPaste}</code><button onClick={() => void navigator.clipboard.writeText(generatedCharge.pixCopyPaste)}><Copy size={16}/> Copiar Pix</button></div>}{!generatedCharge.pixCopyPaste && typeof generatedCharge.metadata.manualPixKey === "string" && generatedCharge.metadata.manualPixKey && <div><div><small>Chave Pix manual{typeof generatedCharge.metadata.recipientName === "string" && generatedCharge.metadata.recipientName ? ` · ${generatedCharge.metadata.recipientName}` : ""}</small><code>{String(generatedCharge.metadata.manualPixKey)}</code></div><button onClick={() => void navigator.clipboard.writeText(String(generatedCharge.metadata.manualPixKey))}><Copy size={16}/> Copiar chave Pix</button></div>}{(generatedCharge.boletoUrl || generatedCharge.paymentUrl) && <button className="secondary-button" onClick={() => window.open(generatedCharge.boletoUrl || generatedCharge.paymentUrl, "_blank", "noopener,noreferrer")}><ExternalLink size={16}/> Abrir cobrança</button>}</div>}<div className="form-actions"><button className="secondary-button" onClick={() => setModal(null)}>Fechar</button><button className="primary-button" disabled={busy} onClick={() => void generateCharge()}>{busy ? "Gerando..." : `Gerar ${chargeMethod === "pix" ? "Pix" : "boleto"}`}</button></div></section></div>}
+    {modal?.kind === "charge" && <div className="modal-backdrop"><section className="modal finance-modal charge-modal"><header><div><h2>Gerar cobrança bancária</h2><p>{modal.student.name} · os dados abaixo são usados somente quando o provedor exigir.</p></div><button className="modal-close" onClick={() => setModal(null)}><X/></button></header><div className="billing-grid"><label><span>Método</span><select value={chargeMethod} onChange={(event) => setChargeMethod(event.target.value as "pix"|"boleto")}><option value="pix">Pix</option><option value="boleto">Boleto</option></select></label><label><span>CPF/CNPJ</span><input value={billing.documentNumber} onChange={(e) => setBilling({...billing, documentNumber:e.target.value})}/></label><label><span>E-mail</span><input type="email" value={billing.email} onChange={(e) => setBilling({...billing, email:e.target.value})}/></label><label><span>Telefone</span><input type="tel" inputMode="tel" maxLength={19} value={billing.phone} onChange={(e) => setBilling({...billing, phone:e.target.value})}/></label><label><span>CEP</span><input inputMode="numeric" maxLength={9} value={billing.postalCode} onChange={(e) => setBilling({...billing, postalCode:e.target.value})}/></label><label><span>Rua</span><input value={billing.streetName} onChange={(e) => setBilling({...billing, streetName:e.target.value})}/></label><label><span>Número</span><input value={billing.streetNumber} onChange={(e) => setBilling({...billing, streetNumber:e.target.value})}/></label><label><span>Bairro</span><input value={billing.neighborhood} onChange={(e) => setBilling({...billing, neighborhood:e.target.value})}/></label><label><span>Cidade</span><input value={billing.city} onChange={(e) => setBilling({...billing, city:e.target.value})}/></label><label><span>UF</span><input maxLength={2} value={billing.state} onChange={(e) => setBilling({...billing, state:e.target.value.toUpperCase()})}/></label></div>{generatedCharge && <div className="generated-charge"><strong>{generatedCharge.reused ? "Cobrança recuperada" : "Cobrança criada"} · {generatedCharge.provider}</strong>{generatedCharge.pixCopyPaste && <div><code>{generatedCharge.pixCopyPaste}</code><button onClick={() => void navigator.clipboard.writeText(generatedCharge.pixCopyPaste)}><Copy size={16}/> Copiar Pix</button></div>}{!generatedCharge.pixCopyPaste && typeof generatedCharge.metadata.manualPixKey === "string" && generatedCharge.metadata.manualPixKey && <div><div><small>Chave Pix manual{typeof generatedCharge.metadata.recipientName === "string" && generatedCharge.metadata.recipientName ? ` · ${generatedCharge.metadata.recipientName}` : ""}</small><code>{String(generatedCharge.metadata.manualPixKey)}</code></div><button onClick={() => void navigator.clipboard.writeText(String(generatedCharge.metadata.manualPixKey))}><Copy size={16}/> Copiar chave Pix</button></div>}{(generatedCharge.boletoUrl || generatedCharge.paymentUrl) && <button className="secondary-button" onClick={() => window.open(generatedCharge.boletoUrl || generatedCharge.paymentUrl, "_blank", "noopener,noreferrer")}><ExternalLink size={16}/> Abrir cobrança</button>}</div>}<div className="form-actions"><button className="secondary-button" onClick={() => setModal(null)}>Fechar</button><button className="primary-button" disabled={busy} onClick={() => void generateCharge()}>{busy ? "Gerando..." : `Gerar ${chargeMethod === "pix" ? "Pix" : "boleto"}`}</button></div></section></div>}
   </section>;
 }
-
