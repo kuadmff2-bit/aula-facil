@@ -1,4 +1,5 @@
 import { createClient, type Session, type User } from "@supabase/supabase-js";
+import { secureAuthStorage } from "./secure-auth-storage";
 import {
   defaultSchoolSettings,
   ensureUuidDatabase,
@@ -16,6 +17,7 @@ export const cloud = createClient(SUPABASE_URL, SUPABASE_PUBLISHABLE_KEY, {
     persistSession: true,
     autoRefreshToken: true,
     detectSessionInUrl: false,
+    storage: secureAuthStorage,
   },
 });
 
