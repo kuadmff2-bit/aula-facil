@@ -1,0 +1,109 @@
+name: Finalizar AulaFácil 0.3.0
+
+on:
+  push:
+    branches: [develop]
+    paths:
+      - ".github/workflows/finalize-030.yml"
+
+permissions:
+  contents: write
+
+concurrency:
+  group: finalize-030
+  cancel-in-progress: true
+
+jobs:
+  finalize:
+    runs-on: windows-latest
+    steps:
+      - name: Baixar develop
+        uses: actions/checkout@v4
+        with:
+          ref: develop
+          fetch-depth: 0
+
+      - name: Preparar Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Preparar Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Atualizar versão Node e lockfile
+        shell: pwsh
+        run: npm version 0.3.0 --no-git-tag-version --allow-same-version
+
+      - name: Atualizar Tauri, Cargo e referências visuais
+        shell: pwsh
+        run: |
+          $tauriPath = "src-tauri/tauri.conf.json"
+          $tauri = Get-Content $tauriPath -Raw | ConvertFrom-Json
+          $tauri.version = "0.3.0"
+          $tauri | ConvertTo-Json -Depth 30 | Set-Content $tauriPath -Encoding utf8
+
+          $cargoPath = "src-tauri/Cargo.toml"
+          $cargo = Get-Content $cargoPath -Raw
+          $cargo = $cargo -replace '(?m)^version = "[^"]+"', 'version = "0.3.0"'
+          $cargo = $cargo -replace 'authors = \["Centro Educacional Shekinah"\]', 'authors = ["AulaFácil"]'
+          Set-Content $cargoPath $cargo -Encoding utf8
+
+          $appPath = "src/App.tsx"
+          $app = Get-Content $appPath -Raw
+          $app = $app.Replace('AulaFácil Desktop <span>v0.2.1</span>', 'AulaFácil Desktop <span>v0.3.0</span>')
+          Set-Content $appPath $app -Encoding utf8
+
+          $manifestPath = "src-tauri/msix/AppxManifest.xml"
+          $manifest = Get-Content $manifestPath -Raw
+          $manifest = $manifest.Replace('Version="0.2.0.0"', 'Version="0.3.0.0"')
+          $manifest = $manifest.Replace('Gestão escolar local, simples e completa.', 'Gestão escolar segura, sincronizada e completa.')
+          Set-Content $manifestPath $manifest -Encoding utf8
+
+      - name: Atualizar Cargo.lock sem alterar dependências desnecessariamente
+        run: cargo check --manifest-path src-tauri/Cargo.toml
+
+      - name: Instalar dependências pelo lockfile final
+        run: npm ci
+
+      - name: Validar requisitos estritos de lançamento
+        env:
+          AULAFACIL_STRICT_RELEASE: "1"
+        run: node scripts/quality-check.mjs
+
+      - name: Executar todos os testes automáticos
+        run: npm test
+
+      - name: Validar TypeScript e frontend
+        run: npm run build
+
+      - name: Gerar ícones
+        run: npm run desktop:icons
+
+      - name: Validar Rust com lockfile congelado
+        run: cargo check --locked --manifest-path src-tauri/Cargo.toml
+
+      - name: Garantir que não restou versão antiga em arquivos de runtime
+        shell: pwsh
+        run: |
+          $targets = @("package.json", "package-lock.json", "src-tauri/tauri.conf.json", "src-tauri/Cargo.toml", "src/App.tsx", "src-tauri/msix/AppxManifest.xml")
+          foreach ($target in $targets) {
+            $content = Get-Content $target -Raw
+            if ($content -match '0\.2\.1') { throw "Referência 0.2.1 restante em $target" }
+          }
+
+      - name: Publicar somente se tudo passou
+        shell: bash
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add package.json package-lock.json src-tauri/tauri.conf.json src-tauri/Cargo.toml src-tauri/Cargo.lock src/App.tsx src-tauri/msix/AppxManifest.xml
+          if git diff --cached --quiet; then
+            echo "Versão já finalizada."
+            exit 0
+          fi
+          git commit -m "Finalizar versão 0.3.0"
+          git fetch origin develop
+          git rebase origin/develop
+          git push origin HEAD:develop
