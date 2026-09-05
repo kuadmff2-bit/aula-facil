@@ -126,12 +126,17 @@ replace_once(
     '            accept="image/png,image/jpeg,image/webp"',
 )
 
-for path in ("src/cloud.ts", "src/cloud-safe-sync.ts"):
-    replace_once(
-        path,
-        '      document_number: institution.documentNumber || null,\n      primary_color: institution.primaryColor,',
-        '      document_number: institution.documentNumber || null,\n      logo_url: institution.logoDataUrl || null,\n      primary_color: institution.primaryColor,',
-    )
+replace_once(
+    "src/cloud.ts",
+    '    document_number: institution.documentNumber || null,\n    primary_color: institution.primaryColor,',
+    '    document_number: institution.documentNumber || null,\n    logo_url: institution.logoDataUrl || null,\n    primary_color: institution.primaryColor,',
+)
+
+replace_once(
+    "src/cloud-safe-sync.ts",
+    '      document_number: institution.documentNumber || null,\n      primary_color: institution.primaryColor,',
+    '      document_number: institution.documentNumber || null,\n      logo_url: institution.logoDataUrl || null,\n      primary_color: institution.primaryColor,',
+)
 
 replace_once(
     "src/certificate-manager.tsx",
