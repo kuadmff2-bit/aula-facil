@@ -525,8 +525,11 @@ export default function App() {
   const paidInvoices = database.invoices.filter((item) => effectiveStatus(item) === "paid");
   const openInvoices = database.invoices.filter((item) => { const status = effectiveStatus(item); return status === "pending" || status === "overdue"; });
   const overdueInvoices = database.invoices.filter((item) => effectiveStatus(item) === "overdue");
-  const receivedTotal = paidInvoices.reduce((sum, item) => sum + item.amount, 0);
-  const pendingTotal = openInvoices.reduce((sum, item) => sum + item.amount, 0);
+  const confirmedPayments = database.payments.filter((item) => item.status === "confirmed");
+  const invoiceIdsWithConfirmedPayment = new Set(confirmedPayments.map((item) => item.invoiceId).filter((id): id is string => Boolean(id)));
+  const receivedTotal = confirmedPayments.reduce((sum, item) => sum + item.amountReceived, 0)
+    + paidInvoices.filter((invoice) => !invoiceIdsWithConfirmedPayment.has(invoice.id)).reduce((sum, invoice) => sum + invoice.amount, 0);
+  const pendingTotal = openInvoices.reduce((sum, item) => sum + invoiceAmountDue(item, database.settings.finance).totalDue, 0);
   const attendanceToday = database.attendance.filter((item) => item.date === localDate());
   const presentToday = attendanceToday.filter((item) => item.status === "present").length;
   const attendanceRate = attendanceToday.length ? Math.round((presentToday / attendanceToday.length) * 100) : 0;
@@ -566,7 +569,7 @@ export default function App() {
 
         <div className="sidebar-foot">
           <div className="local-status"><HardDrive size={18} /><span><strong>Cópia local protegida</strong><small>Criptografada no Windows</small></span><CheckCircle2 size={17} /></div>
-          <div className="version">AulaFácil Desktop <span>v0.2.1</span></div>
+          <div className="version">AulaFácil Desktop <span>v0.3.0</span></div>
         </div>
       </aside>
 
@@ -799,3 +802,4 @@ function Metric({ label, value, helper, icon: Icon, tone }: { label: string; val
 function MiniMetric({ label, value, icon: Icon, tone }: { label: string; value: string; icon: typeof Users; tone: string }) { return <article className={`mini-metric ${tone}`}><span><Icon /></span><div><small>{label}</small><strong>{value}</strong></div></article>; }
 
 function Info({ label, value }: { label: string; value: string }) { return <div className="info-box"><small>{label}</small><strong>{value}</strong></div>; }
+
