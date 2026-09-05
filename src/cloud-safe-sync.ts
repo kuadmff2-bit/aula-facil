@@ -2,6 +2,7 @@ import { cloud, downloadCloudDatabase, getCloudDataSummary, seedEmptyCloudFromLo
 import { ensureUuidDatabase, type SchoolDatabase } from "./model";
 
 export type CloudSyncStatus = "not_linked" | "synced" | "local_changed" | "cloud_changed" | "conflict";
+export type CloudSyncRole = "owner" | "admin" | "finance" | "teacher" | "staff";
 
 type SyncBaseline = {
   revision: number;
@@ -42,6 +43,33 @@ export function invalidateCloudSyncBaseline(schoolId: string) {
 export function invalidateSelectedSchoolSyncBaseline() {
   const schoolId = localStorage.getItem(SELECTED_SCHOOL_KEY) ?? "";
   invalidateCloudSyncBaseline(schoolId);
+}
+
+export async function getCloudSyncRole(schoolId: string): Promise<CloudSyncRole> {
+  const { data, error } = await cloud
+    .from("school_members")
+    .select("role,active")
+    .eq("school_id", schoolId)
+    .eq("active", true)
+    .single();
+  if (error || !data?.role) throw new Error("Não foi possível validar sua função nesta instituição.");
+  const role = String(data.role) as CloudSyncRole;
+  if (!["owner", "admin", "finance", "teacher", "staff"].includes(role)) {
+    throw new Error("Sua função de acesso não é reconhecida pelo AulaFácil.");
+  }
+  return role;
+}
+
+function isAdmin(role: CloudSyncRole) {
+  return role === "owner" || role === "admin";
+}
+
+function canWriteFinance(role: CloudSyncRole) {
+  return isAdmin(role) || role === "finance";
+}
+
+function canWriteAcademicCore(role: CloudSyncRole) {
+  return isAdmin(role) || role === "teacher" || role === "staff";
 }
 
 export async function getCloudRevision(schoolId: string) {
@@ -86,123 +114,137 @@ async function softDeleteMissing(table: string, schoolId: string, keepIds: strin
   if (deleteError) throw new Error(`Não foi possível sincronizar exclusões de ${table}: ${deleteError.message}`);
 }
 
-async function pushSnapshot(schoolId: string, source: SchoolDatabase) {
+async function pushSnapshot(schoolId: string, source: SchoolDatabase, role: CloudSyncRole) {
   const database = ensureUuidDatabase(source);
   const institution = database.settings.institution;
   const finance = database.settings.finance;
 
-  const { error: schoolError } = await cloud.from("schools").update({
-    name: institution.name || undefined,
-    legal_name: institution.legalName || null,
-    document_number: institution.documentNumber || null,
-    primary_color: institution.primaryColor,
-    secondary_color: institution.secondaryColor,
-    address: institution.address || null,
-    city: institution.city || null,
-    state: institution.state || null,
-    phone: institution.phone || null,
-    whatsapp: institution.whatsapp || null,
-    email: institution.email || null,
-    receipt_settings: database.settings.receipt,
-  }).eq("id", schoolId);
-  if (schoolError) throw new Error(`Não foi possível sincronizar a instituição: ${schoolError.message}`);
-
-  const { error: financeError } = await cloud.from("finance_settings").upsert({
-    school_id: schoolId,
-    late_fee_mode: finance.lateFeeMode,
-    late_fee_value: finance.lateFeeValue,
-    interest_mode: finance.interestMode,
-    interest_value: finance.interestValue,
-    grace_days: finance.graceDays,
-    boleto_due_text: finance.boletoDueText,
-    boleto_footer: finance.boletoFooter,
-    boleto_show_logo: finance.boletoShowLogo,
-    boleto_primary_color: finance.boletoPrimaryColor,
-    allowed_due_days: finance.allowedDueDays,
-  }, { onConflict: "school_id" });
-  if (financeError) throw new Error(`Não foi possível sincronizar as regras financeiras: ${financeError.message}`);
-
-  const { data: templates, error: templateReadError } = await cloud
-    .from("certificate_templates")
-    .select("id")
-    .eq("school_id", schoolId)
-    .eq("is_default", true)
-    .is("deleted_at", null)
-    .limit(1);
-  if (templateReadError) throw new Error(`Não foi possível localizar o modelo de certificado: ${templateReadError.message}`);
-  if (templates?.[0]?.id) {
-    const { error } = await cloud.from("certificate_templates").update({ settings: database.settings.certificate }).eq("id", templates[0].id);
-    if (error) throw new Error(`Não foi possível sincronizar o certificado: ${error.message}`);
+  if (isAdmin(role)) {
+    const { error: schoolError } = await cloud.from("schools").update({
+      name: institution.name || undefined,
+      legal_name: institution.legalName || null,
+      document_number: institution.documentNumber || null,
+      primary_color: institution.primaryColor,
+      secondary_color: institution.secondaryColor,
+      address: institution.address || null,
+      city: institution.city || null,
+      state: institution.state || null,
+      phone: institution.phone || null,
+      whatsapp: institution.whatsapp || null,
+      email: institution.email || null,
+      receipt_settings: database.settings.receipt,
+    }).eq("id", schoolId);
+    if (schoolError) throw new Error(`Não foi possível sincronizar a instituição: ${schoolError.message}`);
   }
 
-  await upsertRows("student_fields", database.settings.studentFields.map((field, index) => ({
-    id: field.id,
-    school_id: schoolId,
-    label: field.label,
-    field_type: field.type,
-    required: field.required,
-    visibility: field.visibility,
-    placeholder: field.placeholder,
-    source_key: field.source ?? null,
-    sort_order: (index + 1) * 10,
-    active: true,
-    deleted_at: null,
-  })));
-  await softDeleteMissing("student_fields", schoolId, database.settings.studentFields.map((item) => item.id));
+  if (canWriteFinance(role)) {
+    const { error: financeError } = await cloud.from("finance_settings").upsert({
+      school_id: schoolId,
+      late_fee_mode: finance.lateFeeMode,
+      late_fee_value: finance.lateFeeValue,
+      interest_mode: finance.interestMode,
+      interest_value: finance.interestValue,
+      grace_days: finance.graceDays,
+      boleto_due_text: finance.boletoDueText,
+      boleto_footer: finance.boletoFooter,
+      boleto_show_logo: finance.boletoShowLogo,
+      boleto_primary_color: finance.boletoPrimaryColor,
+      allowed_due_days: finance.allowedDueDays,
+    }, { onConflict: "school_id" });
+    if (financeError) throw new Error(`Não foi possível sincronizar as regras financeiras: ${financeError.message}`);
+  }
 
-  await upsertRows("classes", database.classes.map((item) => ({
-    id: item.id, school_id: schoolId, name: item.name, teacher: item.teacher, schedule: item.schedule,
-    room: item.room, monthly_fee: item.monthlyFee, workload_hours: item.workloadHours ?? null,
-    color: item.color, active: true, created_at: item.createdAt, deleted_at: null,
-  })));
-  await softDeleteMissing("classes", schoolId, database.classes.map((item) => item.id));
+  if (isAdmin(role)) {
+    const { data: templates, error: templateReadError } = await cloud
+      .from("certificate_templates")
+      .select("id")
+      .eq("school_id", schoolId)
+      .eq("is_default", true)
+      .is("deleted_at", null)
+      .limit(1);
+    if (templateReadError) throw new Error(`Não foi possível localizar o modelo de certificado: ${templateReadError.message}`);
+    if (templates?.[0]?.id) {
+      const { error } = await cloud.from("certificate_templates").update({ settings: database.settings.certificate }).eq("id", templates[0].id);
+      if (error) throw new Error(`Não foi possível sincronizar o certificado: ${error.message}`);
+    }
 
-  await upsertRows("students", database.students.map((item) => ({
-    id: item.id, school_id: schoolId, class_id: item.classId || null, name: item.name,
-    birth_date: item.birthDate, phone: item.phone, guardian_name: item.guardianName,
-    guardian_phone: item.guardianPhone, custom_fields: item.customFields, preferred_due_day: item.dueDay ?? null,
-    active: item.active, completed_at: item.completedAt ? item.completedAt.slice(0, 10) : null,
-    created_at: item.createdAt, deleted_at: null,
-  })));
-  await softDeleteMissing("students", schoolId, database.students.map((item) => item.id));
+    await upsertRows("student_fields", database.settings.studentFields.map((field, index) => ({
+      id: field.id,
+      school_id: schoolId,
+      label: field.label,
+      field_type: field.type,
+      required: field.required,
+      visibility: field.visibility,
+      placeholder: field.placeholder,
+      source_key: field.source ?? null,
+      sort_order: (index + 1) * 10,
+      active: true,
+      deleted_at: null,
+    })));
+    await softDeleteMissing("student_fields", schoolId, database.settings.studentFields.map((item) => item.id));
+  }
 
-  await upsertRows("invoices", database.invoices.map((item) => ({
-    id: item.id, school_id: schoolId, student_id: item.studentId, reference: item.reference,
-    due_date: item.dueDate, amount: item.amount, status: item.status, paid_at: item.paidAt,
-    provider: item.provider ?? null, provider_charge_id: item.providerChargeId ?? null,
-    pix_copy_paste: item.pixCopyPaste ?? null, boleto_url: item.boletoUrl ?? null,
-    created_at: item.createdAt, deleted_at: null,
-  })));
-  await softDeleteMissing("invoices", schoolId, database.invoices.map((item) => item.id));
+  if (canWriteAcademicCore(role)) {
+    await upsertRows("classes", database.classes.map((item) => ({
+      id: item.id, school_id: schoolId, name: item.name, teacher: item.teacher, schedule: item.schedule,
+      room: item.room, monthly_fee: item.monthlyFee, workload_hours: item.workloadHours ?? null,
+      color: item.color, active: true, created_at: item.createdAt, deleted_at: null,
+    })));
+    await softDeleteMissing("classes", schoolId, database.classes.map((item) => item.id));
 
-  // Pagamentos são registros de auditoria financeira. Nunca removemos registros remotos porque não aparecem localmente.
-  await upsertRows("payments", database.payments.map((item) => ({
-    id: item.id, school_id: schoolId, student_id: item.studentId,
-    invoice_id: item.invoiceId ?? null, negotiation_installment_id: item.negotiationInstallmentId ?? null,
-    amount_received: item.amountReceived, principal_amount: item.principalAmount,
-    late_fee_amount: item.lateFeeAmount, interest_amount: item.interestAmount, discount_amount: item.discountAmount,
-    payment_method: item.paymentMethod, provider: item.provider ?? null, provider_payment_id: item.providerPaymentId ?? null,
-    status: item.status, paid_at: item.paidAt, receipt_number: item.receiptNumber ?? null,
-    notes: item.notes ?? null, created_at: item.createdAt,
-  })));
+    await upsertRows("students", database.students.map((item) => ({
+      id: item.id, school_id: schoolId, class_id: item.classId || null, name: item.name,
+      birth_date: item.birthDate, phone: item.phone, guardian_name: item.guardianName,
+      guardian_phone: item.guardianPhone, custom_fields: item.customFields, preferred_due_day: item.dueDay ?? null,
+      active: item.active, completed_at: item.completedAt ? item.completedAt.slice(0, 10) : null,
+      created_at: item.createdAt, deleted_at: null,
+    })));
+    await softDeleteMissing("students", schoolId, database.students.map((item) => item.id));
 
-  await upsertRows("attendance", database.attendance.map((item) => ({
-    id: item.id, school_id: schoolId, student_id: item.studentId, class_id: item.classId,
-    attendance_date: item.date, status: item.status, deleted_at: null,
-  })));
-  await softDeleteMissing("attendance", schoolId, database.attendance.map((item) => item.id));
+    await upsertRows("attendance", database.attendance.map((item) => ({
+      id: item.id, school_id: schoolId, student_id: item.studentId, class_id: item.classId,
+      attendance_date: item.date, status: item.status, deleted_at: null,
+    })));
+    await softDeleteMissing("attendance", schoolId, database.attendance.map((item) => item.id));
+  }
 
-  await upsertRows("grades", database.grades.map((item) => ({
-    id: item.id, school_id: schoolId, student_id: item.studentId, class_id: item.classId,
-    label: item.label, term: item.term, score: item.score, created_at: item.createdAt, deleted_at: null,
-  })));
-  await softDeleteMissing("grades", schoolId, database.grades.map((item) => item.id));
+  if (isAdmin(role) || role === "teacher") {
+    await upsertRows("grades", database.grades.map((item) => ({
+      id: item.id, school_id: schoolId, student_id: item.studentId, class_id: item.classId,
+      label: item.label, term: item.term, score: item.score, created_at: item.createdAt, deleted_at: null,
+    })));
+    await softDeleteMissing("grades", schoolId, database.grades.map((item) => item.id));
+  }
 
-  await upsertRows("notices", database.notices.map((item) => ({
-    id: item.id, school_id: schoolId, title: item.title, message: item.message,
-    audience: item.audience, published_at: item.publishedAt, deleted_at: null,
-  })));
-  await softDeleteMissing("notices", schoolId, database.notices.map((item) => item.id));
+  if (isAdmin(role) || role === "staff") {
+    await upsertRows("notices", database.notices.map((item) => ({
+      id: item.id, school_id: schoolId, title: item.title, message: item.message,
+      audience: item.audience, published_at: item.publishedAt, deleted_at: null,
+    })));
+    await softDeleteMissing("notices", schoolId, database.notices.map((item) => item.id));
+  }
+
+  if (canWriteFinance(role)) {
+    await upsertRows("invoices", database.invoices.map((item) => ({
+      id: item.id, school_id: schoolId, student_id: item.studentId, reference: item.reference,
+      due_date: item.dueDate, amount: item.amount, status: item.status, paid_at: item.paidAt,
+      provider: item.provider ?? null, provider_charge_id: item.providerChargeId ?? null,
+      pix_copy_paste: item.pixCopyPaste ?? null, boleto_url: item.boletoUrl ?? null,
+      created_at: item.createdAt, deleted_at: null,
+    })));
+    await softDeleteMissing("invoices", schoolId, database.invoices.map((item) => item.id));
+
+    // Pagamentos são registros de auditoria financeira. Nunca removemos registros remotos porque não aparecem localmente.
+    await upsertRows("payments", database.payments.map((item) => ({
+      id: item.id, school_id: schoolId, student_id: item.studentId,
+      invoice_id: item.invoiceId ?? null, negotiation_installment_id: item.negotiationInstallmentId ?? null,
+      amount_received: item.amountReceived, principal_amount: item.principalAmount,
+      late_fee_amount: item.lateFeeAmount, interest_amount: item.interestAmount, discount_amount: item.discountAmount,
+      payment_method: item.paymentMethod, provider: item.provider ?? null, provider_payment_id: item.providerPaymentId ?? null,
+      status: item.status, paid_at: item.paidAt, receipt_number: item.receiptNumber ?? null,
+      notes: item.notes ?? null, created_at: item.createdAt,
+    })));
+  }
 
   return database;
 }
@@ -213,10 +255,13 @@ export async function establishSyncBaseline(schoolId: string, database: SchoolDa
 }
 
 export async function safePushToCloud(schoolId: string, database: SchoolDatabase) {
-  const summary = await getCloudDataSummary(schoolId);
+  const [summary, role] = await Promise.all([getCloudDataSummary(schoolId), getCloudSyncRole(schoolId)]);
   const baseline = readBaseline(schoolId);
 
   if (summary.totalOperationalRecords === 0 && !baseline) {
+    if (!isAdmin(role)) {
+      throw new Error("Somente proprietário ou administrador pode realizar o primeiro envio de dados para uma instituição vazia.");
+    }
     const normalized = ensureUuidDatabase(database);
     await seedEmptyCloudFromLocal(schoolId, normalized);
     const revision = await getCloudRevision(schoolId);
@@ -233,7 +278,7 @@ export async function safePushToCloud(schoolId: string, database: SchoolDatabase
     throw new Error("A nuvem mudou desde a última sincronização. O envio foi bloqueado para não sobrescrever dados de outro dispositivo.");
   }
 
-  const normalized = await pushSnapshot(schoolId, database);
+  const normalized = await pushSnapshot(schoolId, database, role);
   const nextRevision = await getCloudRevision(schoolId);
   writeBaseline(schoolId, nextRevision, normalized);
   return normalized;
