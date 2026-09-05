@@ -90,15 +90,30 @@ function observationText(template: string, value: ReturnType<typeof normalizedPr
   return Object.entries(replacements).reduce((text, [key, replacement]) => text.split(key).join(replacement), template || "").trim();
 }
 
+function visibleReceiptFields(value: ReturnType<typeof normalizedProps>) {
+  return value.settings.fields
+    .filter((field) => field.visible)
+    .map((field) => ({ ...field, value: fieldValue(field.id, value) }))
+    .filter((field) => field.value);
+}
+
+function receiptDensity(value: ReturnType<typeof normalizedProps>) {
+  const fields = visibleReceiptFields(value);
+  const observation = observationText(value.settings.observation, value);
+  const institutionText = `${value.institution.name} ${value.institution.legalName} ${value.institution.address} ${value.institution.city} ${value.institution.state} ${value.institution.email}`;
+  const fieldText = fields.map((field) => `${field.label}${field.value}`).join(" ");
+  const load = fields.length * 20 + observation.length + institutionText.length * .35 + fieldText.length * .18;
+  if (fields.length >= 9 || load > 360) return "ultra";
+  if (fields.length >= 6 || load > 235) return "compact";
+  return "normal";
+}
+
 function ReceiptCopy({ label, ...value }: ReturnType<typeof normalizedProps> & { label: string }) {
   const { student, payment, institution, settings } = value;
   const location = [institution.city, institution.state].filter(Boolean).join(" — ");
   const address = [institution.address, location].filter(Boolean).join(" · ");
   const contact = [institution.phone, institution.whatsapp && institution.whatsapp !== institution.phone ? `WhatsApp ${institution.whatsapp}` : "", institution.email].filter(Boolean).join(" · ");
-  const fields = settings.fields
-    .filter((field) => field.visible)
-    .map((field) => ({ ...field, value: fieldValue(field.id, value) }))
-    .filter((field) => field.value);
+  const fields = visibleReceiptFields(value);
   const observation = observationText(settings.observation, value);
   const receiptNumber = payment.receiptNumber || payment.id.toUpperCase();
 
@@ -131,5 +146,6 @@ function ReceiptCopy({ label, ...value }: ReturnType<typeof normalizedProps> & {
 
 export function ReceiptDocument(props: ReceiptDocumentProps) {
   const value = normalizedProps(props);
-  return <div id="print-area" className="receipt-two-copies"><ReceiptCopy label="VIA DO PAGANTE" {...value} /><div className="receipt-cut-line"><span>✂</span><i /></div><ReceiptCopy label="VIA DA ESCOLA" {...value} /></div>;
+  const density = receiptDensity(value);
+  return <div id="print-area" className={`receipt-two-copies receipt-density-${density}`} data-paper-size="a4" data-page-orientation="portrait"><ReceiptCopy label="VIA DO PAGANTE" {...value} /><div className="receipt-cut-line"><span>✂</span><i /></div><ReceiptCopy label="VIA DA ESCOLA" {...value} /></div>;
 }
