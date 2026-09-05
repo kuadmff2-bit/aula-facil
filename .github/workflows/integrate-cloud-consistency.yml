@@ -1,6 +1,7 @@
 name: Integrar certificados e consistência Cloud
 
 on:
+  workflow_dispatch:
   push:
     branches: [develop]
     paths:
