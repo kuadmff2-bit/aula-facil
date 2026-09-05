@@ -57,6 +57,9 @@ import { collectStudentFields, StudentExtraFieldsForm, StudentExtraInfo, Student
 import { ReceiptDocument } from "./receipt-document";
 import { AppearanceSettings } from "./appearance-settings";
 import { ConfirmDialog, type ConfirmRequest } from "./confirm-dialog";
+import { InstitutionSettingsPanel, FinanceSettingsPanel, DocumentSettingsPanel } from "./professional-settings";
+import { CloudAccountPanel } from "./cloud-account";
+import { PaymentConnectionsPanel } from "./payment-connections-panel";
 
 type ModalKind = "student" | "class" | "invoice" | "bulk-invoice" | "notice" | "grade" | "student-details" | null;
 type Toast = { message: string; tone: "success" | "warning" | "danger" };
@@ -112,12 +115,15 @@ function initials(name: string) {
 }
 
 function effectiveStatus(invoice: Invoice): InvoiceStatus {
-  if (invoice.status === "paid") return "paid";
+  if (invoice.status === "paid" || invoice.status === "cancelled") return invoice.status;
   return invoice.dueDate < localDate() ? "overdue" : "pending";
 }
 
 function statusText(status: InvoiceStatus) {
-  return status === "paid" ? "Pago" : status === "overdue" ? "Atrasado" : "Pendente";
+  if (status === "paid") return "Pago";
+  if (status === "overdue") return "Atrasado";
+  if (status === "cancelled") return "Cancelado";
+  return "Pendente";
 }
 
 function formValue(form: FormData, name: string) {
@@ -508,7 +514,7 @@ export default function App() {
       <aside className="sidebar">
         <button className="brand" onClick={() => changeView("dashboard")}>
           <span className="brand-mark">A<i /></span>
-          <span><strong>AulaFácil</strong><small>Centro Shekinah</small></span>
+          <span><strong>AulaFácil</strong><small>{database.settings.institution.name || "Sua instituição"}</small></span>
         </button>
 
         <div className="nav-label">GESTÃO</div>
@@ -523,7 +529,7 @@ export default function App() {
         </nav>
 
         <div className="sidebar-foot">
-          <div className="local-status"><HardDrive size={18} /><span><strong>Dados locais</strong><small>Salvos neste computador</small></span><CheckCircle2 size={17} /></div>
+          <div className="local-status"><HardDrive size={18} /><span><strong>Cópia local protegida</strong><small>Criptografada no Windows</small></span><CheckCircle2 size={17} /></div>
           <div className="version">AulaFácil Desktop <span>v0.2.1</span></div>
         </div>
       </aside>
@@ -535,7 +541,7 @@ export default function App() {
             <p>{viewCopy[view].description}</p>
           </div>
           <div className="top-actions">
-            <span className="offline-pill"><ShieldCheck size={16} /> Sistema local</span>
+            <span className="offline-pill"><ShieldCheck size={16} /> Dados protegidos</span>
             <button className="icon-button" onClick={() => changeView("notices")} aria-label="Abrir avisos"><Bell size={20} />{database.notices.length > 0 && <i />}</button>
             <div className="avatar">CA</div>
           </div>
@@ -642,6 +648,10 @@ export default function App() {
 
           {view === "settings" && (
             <section className="stack">
+              <InstitutionSettingsPanel
+                value={database.settings.institution}
+                onChange={(institution) => updateDatabase((draft) => { draft.settings.institution = institution; })}
+              />
               <AppearanceSettings
                 value={database.settings.appearance}
                 onChange={(appearance) => updateDatabase((draft) => { draft.settings.appearance = appearance; })}
@@ -650,12 +660,24 @@ export default function App() {
                 fields={database.settings.studentFields}
                 onChange={(fields) => updateDatabase((draft) => { draft.settings.studentFields = fields; })}
               />
+              <FinanceSettingsPanel
+                value={database.settings.finance}
+                onChange={(finance) => updateDatabase((draft) => { draft.settings.finance = finance; })}
+              />
+              <DocumentSettingsPanel
+                receipt={database.settings.receipt}
+                certificate={database.settings.certificate}
+                onReceiptChange={(receipt) => updateDatabase((draft) => { draft.settings.receipt = receipt; })}
+                onCertificateChange={(certificate) => updateDatabase((draft) => { draft.settings.certificate = certificate; })}
+              />
+              <CloudAccountPanel database={database} onReplaceDatabase={setDatabase} />
+              <PaymentConnectionsPanel />
             </section>
           )}
 
           {view === "backup" && (
             <section className="stack">
-              <div className="security-hero card"><span><ShieldCheck size={30} /></span><div><h2>Seus dados ficam neste computador</h2><p>O AulaFácil Desktop não envia cadastros para sites nem exige conta do ChatGPT. Faça backups frequentes para não perder informações se o computador for formatado ou danificado.</p></div></div>
+              <div className="security-hero card"><span><ShieldCheck size={30} /></span><div><h2>Proteção local + nuvem opcional</h2><p>O AulaFácil mantém uma cópia local protegida no Windows. Quando a instituição ativa o AulaFácil Cloud, os dados autorizados também podem ser sincronizados para recuperação em outros dispositivos. Backups independentes continuam recomendados.</p></div></div>
               <div className="backup-grid">
                 <article className="card backup-card"><span className="backup-icon blue"><Download /></span><h3>Criar backup</h3><p>Baixa uma cópia completa de alunos, turmas, notas, chamadas, cobranças e avisos.</p><button className="primary-button" onClick={exportBackup}><Download size={18} /> Salvar backup</button></article>
                 <article className="card backup-card"><span className="backup-icon green"><Upload /></span><h3>Restaurar backup</h3><p>Recupera os dados a partir de um arquivo criado anteriormente pelo AulaFácil.</p><input ref={importRef} hidden type="file" accept="application/json,.json" onChange={(event) => { const file = event.target.files?.[0]; if (file) void importBackup(file); }} /><button className="secondary-button" onClick={() => importRef.current?.click()}><Upload size={18} /> Escolher arquivo</button></article>
