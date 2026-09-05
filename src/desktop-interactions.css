@@ -3,6 +3,19 @@
 @page aulafacil-a4-landscape{size:A4 landscape;margin:0}
 @page aulafacil-letter-portrait{size:Letter portrait;margin:0}
 @page aulafacil-letter-landscape{size:Letter landscape;margin:0}
+
+@media screen{
+  .message-section,.message-form-grid,.message-form-grid label,.message-form-grid label>span,.message-variable-help,.message-age-rule,.message-credential-box,.certificate-layout-editor,.cloud-resend-box,.cloud-resend-actions{min-width:0;max-width:100%}
+  .message-section,.message-credential-box,.message-age-rule,.cloud-resend-box{overflow:hidden}
+  .message-form-grid label>span,.message-form-grid small,.message-variable-help,.message-age-rule span,.message-age-rule strong,.message-credential-box p,.cloud-resend-box span,.cloud-message{overflow-wrap:anywhere;word-break:normal;line-height:1.45}
+  .message-form-grid input,.message-form-grid select,.message-form-grid textarea,.cloud-auth-form input,.cloud-create-row input,.cloud-school-selector select{width:100%;min-width:0;max-width:100%;padding-left:12px;padding-right:12px}
+  .message-form-grid label>span,.cloud-auth-form label>span,.cloud-school-selector label>span{display:block;padding-inline:1px}
+  .message-template-list article,.automation-list article,.message-channel-item{min-width:0;overflow:hidden}
+  .message-template-list article>div,.automation-list article>div:first-child,.message-channel-item>div:first-child{min-width:0}
+  .cloud-resend-actions{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+  .cloud-resend-actions .secondary-button{justify-self:auto}
+}
+
 @media print{
   body.aulafacil-printing{margin:0!important;padding:0!important;background:#fff!important}
   body.aulafacil-printing>#root{display:none!important}
@@ -12,5 +25,10 @@
   #aulafacil-print-root[data-paper-size="a4"][data-page-orientation="landscape"]{page:aulafacil-a4-landscape}
   #aulafacil-print-root[data-paper-size="letter"][data-page-orientation="portrait"]{page:aulafacil-letter-portrait}
   #aulafacil-print-root[data-paper-size="letter"][data-page-orientation="landscape"]{page:aulafacil-letter-landscape}
-  #aulafacil-print-root>#print-area,#aulafacil-print-root>#certificate-print-area{position:static!important;left:auto!important;top:auto!important;inset:auto!important;margin:0!important;transform:none!important}
+  #aulafacil-print-root>#print-area,#aulafacil-print-root>#certificate-print-area{position:static!important;left:auto!important;top:auto!important;inset:auto!important;margin:0!important;transform:none!important;max-width:none!important;min-height:0!important}
+  #aulafacil-print-root[data-paper-size="a4"][data-page-orientation="portrait"]>#certificate-print-area{width:210mm!important;height:297mm!important}
+  #aulafacil-print-root[data-paper-size="a4"][data-page-orientation="landscape"]>#certificate-print-area{width:297mm!important;height:210mm!important}
+  #aulafacil-print-root[data-paper-size="letter"][data-page-orientation="portrait"]>#certificate-print-area{width:215.9mm!important;height:279.4mm!important}
+  #aulafacil-print-root[data-paper-size="letter"][data-page-orientation="landscape"]>#certificate-print-area{width:279.4mm!important;height:215.9mm!important}
+  #aulafacil-print-root>#print-area{width:100%!important;height:auto!important}
 }
