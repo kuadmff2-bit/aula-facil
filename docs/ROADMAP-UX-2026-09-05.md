@@ -41,6 +41,8 @@ Este arquivo registra as mudanças pedidas durante os testes reais do aplicativo
 - [ ] Reduzir botões e caixas excessivamente grandes nas áreas de Configurações, Pagamentos e Automações.
 - [ ] Usar botões compactos com largura proporcional ao conteúdo, exceto ações principais que realmente precisem ocupar a linha.
 - [ ] Corrigir textos que encostam ou quase saem das caixas/cards.
+- [ ] Corrigir especificamente títulos, subtítulos, avisos e botões das áreas “Sincronização segura” e “Bancos e provedores de pagamento” que estão sendo cortados em janelas estreitas.
+- [ ] Fazer cards e cabeçalhos reduzirem/reorganizarem conteúdo de forma responsiva, com quebra de linha real, sem ocultar finais de frases ou títulos.
 - [ ] Aplicar `min-width: 0`, quebra de linha e limites adequados de largura nos grids e cards para impedir vazamentos.
 - [ ] Revisar toda a interface para evitar rolagem horizontal e comportamento de “site largo” dentro do aplicativo desktop.
 - [ ] Manter boa legibilidade nos modos claro e escuro, com fundos suaves/cinzas e contraste suficiente.
