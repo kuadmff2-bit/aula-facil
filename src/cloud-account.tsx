@@ -19,6 +19,7 @@ import { copyCurrentLegalAcceptanceToSchool } from "./legal-acceptance";
 import "./cloud-account.css";
 
 const SELECTED_SCHOOL_KEY = "aulafacil.cloud.selected-school";
+const CLOUD_SCHOOL_CHANGE_EVENT = "aulafacil:cloud-school-change";
 
 type Props = {
   database: SchoolDatabase;
@@ -35,6 +36,10 @@ function localRecordCount(database: SchoolDatabase) {
     + database.attendance.length
     + database.grades.length
     + database.notices.length;
+}
+
+function announceSchoolChange() {
+  window.dispatchEvent(new Event(CLOUD_SCHOOL_CHANGE_EVENT));
 }
 
 export function CloudAccountPanel({ database, onReplaceDatabase }: Props) {
@@ -56,6 +61,7 @@ export function CloudAccountPanel({ database, onReplaceDatabase }: Props) {
     () => schools.find((school) => school.id === selectedSchoolId) ?? null,
     [schools, selectedSchoolId],
   );
+  const canSeedCloud = selectedSchool?.role === "owner" || selectedSchool?.role === "admin";
 
   const refreshSchools = async () => {
     const next = await listCloudSchools();
@@ -89,6 +95,8 @@ export function CloudAccountPanel({ database, onReplaceDatabase }: Props) {
         setSelectedSchoolId("");
         setSchoolsLoaded(false);
         setLegalReady(false);
+        localStorage.removeItem(SELECTED_SCHOOL_KEY);
+        announceSchoolChange();
         return;
       }
       setSchoolsLoaded(false);
@@ -106,9 +114,11 @@ export function CloudAccountPanel({ database, onReplaceDatabase }: Props) {
     setLegalReady(false);
     if (!selectedSchoolId || !auth.user) {
       setSummary(null);
+      announceSchoolChange();
       return;
     }
     localStorage.setItem(SELECTED_SCHOOL_KEY, selectedSchoolId);
+    announceSchoolChange();
     void getCloudDataSummary(selectedSchoolId)
       .then(setSummary)
       .catch((error) => setMessage({ tone: "danger", text: error instanceof Error ? error.message : "Não foi possível conferir a nuvem." }));
@@ -219,7 +229,7 @@ export function CloudAccountPanel({ database, onReplaceDatabase }: Props) {
 
           <div className="cloud-summary-grid">
             <div><strong>{localRecordCount(database)}</strong><span>registros operacionais neste computador</span></div>
-            <div><strong>{summary?.totalOperationalRecords ?? "—"}</strong><span>registros operacionais na nuvem</span></div>
+            <div><strong>{summary?.totalOperationalRecords ?? "—"}</strong><span>registros operacionais visíveis na nuvem</span></div>
             <div><strong>{navigator.onLine ? "Online" : "Offline"}</strong><span>estado atual da conexão</span></div>
           </div>
 
@@ -228,8 +238,8 @@ export function CloudAccountPanel({ database, onReplaceDatabase }: Props) {
           <div className="cloud-sync-actions">
             <div>
               <h3>Primeiro envio deste computador</h3>
-              <p>Por segurança, o AulaFácil só permite esta operação quando a instituição online ainda não possui registros operacionais.</p>
-              <button className="primary-button" disabled={busy || !selectedSchoolId || (summary?.totalOperationalRecords ?? 1) > 0} onClick={() => void run(async () => {
+              <p>{canSeedCloud ? "Por segurança, o primeiro envio só é aceito quando a instituição online ainda não possui registros operacionais." : "Somente proprietário ou administrador pode inicializar uma instituição vazia com os dados deste computador."}</p>
+              <button className="primary-button" disabled={busy || !selectedSchoolId || !canSeedCloud || (summary?.totalOperationalRecords ?? 1) > 0} onClick={() => void run(async () => {
                 const normalized = await safePushToCloud(selectedSchoolId, database);
                 onReplaceDatabase(normalized);
                 setSummary(await getCloudDataSummary(selectedSchoolId));
@@ -239,7 +249,7 @@ export function CloudAccountPanel({ database, onReplaceDatabase }: Props) {
 
             <div>
               <h3>Recuperar dados da nuvem</h3>
-              <p>A recuperação substitui a cópia local pela versão canônica online. Se quiser uma cópia portátil do estado atual, crie antes um .afbackup na área Backup.</p>
+              <p>A recuperação substitui a cópia local pelos dados que sua função tem permissão para acessar. Se quiser preservar a cópia atual, crie antes um .afbackup na área Backup.</p>
               {!downloadArmed ? (
                 <button className="secondary-button" disabled={busy || !selectedSchoolId || !summary} onClick={() => setDownloadArmed(true)}>Preparar recuperação</button>
               ) : (
@@ -252,7 +262,7 @@ export function CloudAccountPanel({ database, onReplaceDatabase }: Props) {
                       const restored = await safePullFromCloud(selectedSchoolId, database.settings.appearance);
                       onReplaceDatabase(restored);
                       setDownloadArmed(false);
-                      setMessage({ tone: "success", text: "Dados da nuvem recuperados e linha-base de sincronização atualizada." });
+                      setMessage({ tone: "success", text: "Dados autorizados da nuvem recuperados e linha-base de sincronização atualizada." });
                     })}>Baixar e substituir</button>
                   </div>
                 </div>
