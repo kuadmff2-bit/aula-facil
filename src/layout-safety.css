@@ -110,11 +110,17 @@
   .topbar {
     width: 100%;
     max-width: 100%;
+    overflow: hidden;
   }
 
   .top-actions {
     min-width: 0;
+    max-width: 100%;
     flex: 0 1 auto;
+  }
+
+  .top-actions .avatar {
+    display: none !important;
   }
 
   .offline-pill {
