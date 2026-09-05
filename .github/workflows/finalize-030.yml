@@ -1,3 +1,4 @@
+# Finalização executada somente na branch develop e validada antes do commit.
 name: Finalizar AulaFácil 0.3.0
 
 on:
