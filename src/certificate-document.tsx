@@ -1,3 +1,4 @@
+import type { CSSProperties } from "react";
 import type { CertificateSettings, ClassItem, InstitutionSettings, Student } from "./model";
 import "./certificate-document.css";
 
@@ -52,7 +53,7 @@ export function CertificateDocument({
       style={{
         "--certificate-primary": settings.primaryColor,
         "--certificate-secondary": settings.secondaryColor,
-      } as React.CSSProperties}
+      } as CSSProperties}
     >
       <div className="professional-certificate-frame">
         <header className="professional-certificate-header">
