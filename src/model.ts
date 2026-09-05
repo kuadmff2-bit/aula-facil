@@ -3,6 +3,7 @@ export type View = "dashboard" | "students" | "classes" | "attendance" | "financ
 export type StudentFieldType = "text" | "tel" | "email" | "date" | "number" | "textarea";
 export type StudentFieldVisibility = "always" | "minor" | "adult";
 export type StudentFieldSource = "phone" | "guardianName" | "guardianPhone";
+export type AppearanceMode = "system" | "light" | "dark";
 
 export type StudentFieldDefinition = {
   id: string;
@@ -15,6 +16,7 @@ export type StudentFieldDefinition = {
 };
 
 export type SchoolSettings = {
+  appearance: AppearanceMode;
   studentFields: StudentFieldDefinition[];
 };
 
@@ -126,7 +128,7 @@ export function defaultStudentFields(): StudentFieldDefinition[] {
 }
 
 export function defaultSchoolSettings(): SchoolSettings {
-  return { studentFields: defaultStudentFields() };
+  return { appearance: "system", studentFields: defaultStudentFields() };
 }
 
 export function emptyDatabase(): SchoolDatabase {
@@ -158,10 +160,15 @@ export function normalizeDatabase(value: unknown): SchoolDatabase | null {
     ? item.settings
     : defaultSchoolSettings();
 
+  const appearance: AppearanceMode = settings.appearance === "light" || settings.appearance === "dark" || settings.appearance === "system"
+    ? settings.appearance
+    : "system";
+
   return {
     version: 1,
     updatedAt: typeof item.updatedAt === "string" ? item.updatedAt : new Date().toISOString(),
     settings: {
+      appearance,
       studentFields: settings.studentFields
         .filter((field): field is StudentFieldDefinition => Boolean(field && typeof field.id === "string" && typeof field.label === "string"))
         .map((field) => ({
