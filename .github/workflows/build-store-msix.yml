@@ -1,18 +1,6 @@
 name: Preparar pacote da Microsoft Store
 
 on:
-  push:
-    branches: [main]
-    paths:
-      - ".github/workflows/build-store-msix.yml"
-      - "scripts/build-msix.ps1"
-      - "src/**"
-      - "src-tauri/**"
-      - "index.html"
-      - "package.json"
-      - "package-lock.json"
-      - "tsconfig.json"
-      - "vite.config.ts"
   workflow_dispatch:
     inputs:
       identity_name:
@@ -71,6 +59,12 @@ jobs:
 
       - name: Instalar dependências
         run: npm ci
+
+      - name: Validar estrutura e configurações críticas
+        run: node scripts/quality-check.mjs
+
+      - name: Validar TypeScript e frontend
+        run: npm run build
 
       - name: Gerar ícones da Microsoft Store
         run: npm run desktop:icons
