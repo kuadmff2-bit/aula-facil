@@ -1,4 +1,4 @@
-import { emptyDatabase, type SchoolDatabase } from "./model";
+import { emptyDatabase, normalizeDatabase, type SchoolDatabase } from "./model";
 
 const LEGACY_STORAGE_KEY = "aulafacil.desktop.database.v1";
 const MAX_DATABASE_CHARS = 64 * 1024 * 1024;
@@ -21,19 +21,6 @@ function internals() {
   return (window as TauriWindow).__TAURI_INTERNALS__;
 }
 
-function isDatabase(value: unknown): value is SchoolDatabase {
-  if (!value || typeof value !== "object") return false;
-  const item = value as Partial<SchoolDatabase>;
-  return item.version === 1
-    && typeof item.updatedAt === "string"
-    && Array.isArray(item.students)
-    && Array.isArray(item.classes)
-    && Array.isArray(item.invoices)
-    && Array.isArray(item.attendance)
-    && Array.isArray(item.grades)
-    && Array.isArray(item.notices);
-}
-
 function parseDatabaseText(content: string): SchoolDatabase {
   if (content.length > MAX_DATABASE_CHARS) {
     throw new Error("O banco de dados excede o limite de segurança permitido.");
@@ -46,10 +33,11 @@ function parseDatabaseText(content: string): SchoolDatabase {
     throw new Error("O banco de dados está corrompido e não será sobrescrito.");
   }
 
-  if (!isDatabase(parsed)) {
+  const normalized = normalizeDatabase(parsed);
+  if (!normalized) {
     throw new Error("O banco de dados possui uma estrutura inválida e não será sobrescrito.");
   }
-  return parsed;
+  return normalized;
 }
 
 function readLegacyDatabase(): SchoolDatabase | null {
@@ -80,6 +68,7 @@ export async function initializeSecureStorage() {
     if (protectedContent) {
       cachedDatabase = parseDatabaseText(protectedContent);
       localStorage.removeItem(LEGACY_STORAGE_KEY);
+      await invoke<void>("secure_storage_save", { payload: JSON.stringify(cachedDatabase) });
     } else if (legacy) {
       await invoke<void>("secure_storage_save", { payload: JSON.stringify(legacy) });
       cachedDatabase = structuredClone(legacy);
@@ -88,8 +77,6 @@ export async function initializeSecureStorage() {
       cachedDatabase = emptyDatabase();
     }
   } else {
-    // Fallback exclusivo para desenvolvimento no navegador. A versão desktop
-    // empacotada nunca usa localStorage como banco principal.
     cachedDatabase = legacy ?? emptyDatabase();
   }
 
@@ -98,8 +85,6 @@ export async function initializeSecureStorage() {
 
 export function loadDatabase(): SchoolDatabase {
   if (!initialized) {
-    // Mantém testes e preview web funcionais; o main.tsx inicializa o
-    // armazenamento protegido antes de montar o aplicativo desktop.
     return readLegacyDatabase() ?? emptyDatabase();
   }
   return structuredClone(cachedDatabase);
