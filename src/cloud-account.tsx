@@ -143,16 +143,29 @@ export function CloudAccountPanel({ database, onReplaceDatabase }: Props) {
     void run(async () => {
       if (mode === "signin") {
         await signInCloud(email, password);
+        setPendingConfirmationEmail("");
         setMessage({ tone: "success", text: "Conta conectada com segurança neste dispositivo." });
       } else {
         if (password.length < 12) throw new Error("Para novas contas, use uma senha com pelo menos 12 caracteres.");
-        const result = await signUpCloud(email, password);
+        const normalizedEmail = email.trim().toLowerCase();
+        const result = await signUpCloud(normalizedEmail, password);
         if (result.session) {
           setPendingConfirmationEmail("");
-          setMessage({ tone: "success", text: "Conta criada. Agora crie ou selecione a instituição." });
+          setMessage({ tone: "success", text: "Conta criada e conectada. Agora crie ou selecione a instituição." });
         } else {
-          setPendingConfirmationEmail(email.trim().toLowerCase());
-          setMessage({ tone: "warning", text: "Conta criada. Enviamos a confirmação por e-mail. Confira também Spam, Lixo eletrônico e Promoções. Se não chegar, use o botão de reenvio abaixo." });
+          try {
+            const existing = await signInCloud(normalizedEmail, password);
+            if (existing.session) {
+              setPendingConfirmationEmail("");
+              setMessage({ tone: "success", text: "Este e-mail já possuía uma conta confirmada. O AulaFácil conectou a conta em vez de esperar outro e-mail." });
+              setPassword("");
+              return;
+            }
+          } catch {
+            // Conta nova ainda não confirmada ou conta existente com outra senha.
+          }
+          setPendingConfirmationEmail(normalizedEmail);
+          setMessage({ tone: "warning", text: "A conta ainda não abriu uma sessão. Se este e-mail for novo, confira a confirmação em Spam, Lixo eletrônico e Promoções. Se você já confirmou esse e-mail antes, use ‘Já confirmei / entrar’ abaixo em vez de esperar outro link." });
         }
       }
       setPassword("");
@@ -177,8 +190,8 @@ export function CloudAccountPanel({ database, onReplaceDatabase }: Props) {
           {message && <div className={`cloud-message ${message.tone}`} role="status">{message.text}</div>}
           <button className="primary-button" disabled={busy}>{busy ? "Aguarde..." : mode === "signin" ? "Entrar" : "Criar conta"}</button>
         </form>
-        {pendingConfirmationEmail && <div className="cloud-resend-box"><strong>Não recebeu o e-mail?</strong><span>Confirme se o endereço está correto e aguarde alguns minutos antes de tentar novamente.</span><button className="secondary-button" type="button" disabled={busy} onClick={() => void run(async () => { await resendCloudSignupConfirmation(pendingConfirmationEmail); setMessage({ tone: "success", text: `Novo e-mail de confirmação enviado para ${pendingConfirmationEmail}. Confira também as pastas de spam e promoções.` }); })}>Reenviar confirmação</button></div>}
-        <button className="cloud-mode-button" type="button" onClick={() => { setMode(mode === "signin" ? "signup" : "signin"); setMessage(null); setPassword(""); }}>
+        {pendingConfirmationEmail && <div className="cloud-resend-box"><strong>Não recebeu o e-mail?</strong><span>Se a conta for realmente nova, você pode solicitar outro link. Se já confirmou esse endereço alguma vez, não precisa receber outro e-mail: entre com sua senha.</span><div className="cloud-resend-actions"><button className="secondary-button" type="button" disabled={busy} onClick={() => void run(async () => { await resendCloudSignupConfirmation(pendingConfirmationEmail); setMessage({ tone: "success", text: `Solicitamos um novo e-mail para ${pendingConfirmationEmail}. Se a conta já estiver confirmada, use o botão de entrar ao lado.` }); })}>Reenviar confirmação</button><button className="secondary-button" type="button" disabled={busy} onClick={() => { setMode("signin"); setEmail(pendingConfirmationEmail); setPendingConfirmationEmail(""); setPassword(""); setMessage({ tone: "warning", text: "Digite a senha da conta já confirmada e clique em Entrar." }); }}>Já confirmei / entrar</button></div></div>}
+        <button className="cloud-mode-button" type="button" onClick={() => { setMode(mode === "signin" ? "signup" : "signin"); setMessage(null); setPendingConfirmationEmail(""); setPassword(""); }}>
           {mode === "signin" ? "Ainda não tenho conta" : "Já tenho uma conta"}
         </button>
       </section>
