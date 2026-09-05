@@ -32,6 +32,20 @@ jobs:
       - name: Aplicar melhorias
         run: python scripts/apply-release-hardening.py
 
+      - name: Ajustar tipagem do gerador PDF
+        shell: bash
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          path = Path('src/pdf-export.ts')
+          text = path.read_text(encoding='utf-8')
+          old = 'image: { type: "jpeg", quality: 0.98 },'
+          new = 'image: { type: "jpeg" as const, quality: 0.98 },'
+          if old not in text:
+              raise SystemExit('Trecho esperado do PDF não encontrado')
+          path.write_text(text.replace(old, new, 1), encoding='utf-8')
+          PY
+
       - name: Validar frontend
         run: npm run build
 
