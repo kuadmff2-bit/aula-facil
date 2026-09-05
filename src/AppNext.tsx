@@ -15,9 +15,9 @@ import {
   FileText,
   HardDrive,
   LayoutDashboard,
-  List,
+  Download,
   Megaphone,
-  PanelsTopLeft,
+  Menu,
   Plus,
   Printer,
   ReceiptText,
@@ -59,6 +59,7 @@ import { CertificateManager } from "./certificate-manager";
 import { BackupPanel } from "./backup-panel";
 import { SchoolBrand } from "./school-brand";
 import { ClassRosterBoard } from "./class-roster-board";
+import { ClassOverviewPanel } from "./class-overview-panel";
 import { StudentDetailsPanel } from "./student-details-panel";
 import {
   buildFixedCoursePlan,
@@ -70,6 +71,7 @@ import {
 import { confirmManualInvoicePayment, reopenInvoicePayment } from "./manual-payment";
 import { getCloudSyncStatus, safePullFromCloud } from "./cloud-safe-sync";
 import { birthDateError, genericDateError, localTodayIso, MIN_REASONABLE_DATE, phoneError } from "./validation";
+import { exportElementToPdf } from "./pdf-export";
 import "./app-next.css";
 
 type ModalKind = "student" | "student-edit" | "class" | "invoice" | "notice" | "pause" | null;
@@ -77,7 +79,6 @@ type Toast = { message: string; tone: "success" | "warning" | "danger" };
 type Printable = { type: "Declaração" | "Recibo"; student: Student; invoice?: Invoice; payment?: Payment } | null;
 type BatchPayment = { studentId: string; invoiceIds: string[] } | null;
 
-type ClassLayout = "cards" | "table";
 
 const navItems = [
   { id: "dashboard" as View, label: "Início", icon: LayoutDashboard },
@@ -164,7 +165,6 @@ export default function AppNext() {
   const [selectedStudentId, setSelectedStudentId] = useState("");
   const [search, setSearch] = useState("");
   const [classFilter, setClassFilter] = useState("all");
-  const [classLayout, setClassLayout] = useState<ClassLayout>("table");
   const [attendanceDate, setAttendanceDate] = useState(localTodayIso());
   const [toast, setToast] = useState<Toast | null>(null);
   const [confirmation, setConfirmation] = useState<(ConfirmRequest & { onConfirm: () => void }) | null>(null);
@@ -176,8 +176,14 @@ export default function AppNext() {
   const [batchPayment, setBatchPayment] = useState<BatchPayment>(null);
   const [batchMethod, setBatchMethod] = useState("dinheiro");
   const [busy, setBusy] = useState(false);
+  const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
 
   useEffect(() => saveDatabase(database), [database]);
+  useEffect(() => {
+    document.title = `${viewCopy[view].title} | AulaFácil`;
+    const meta = document.querySelector<HTMLMetaElement>('meta[name="description"]');
+    if (meta) meta.content = `${viewCopy[view].description} AulaFácil.`.slice(0, 155);
+  }, [view]);
   useEffect(() => {
     const media = window.matchMedia("(prefers-color-scheme: dark)");
     const apply = () => {
@@ -228,6 +234,7 @@ export default function AppNext() {
   const changeView = (next: View) => {
     setView(next);
     setModal(null);
+    setMobileMenuOpen(false);
     window.scrollTo({ top: 0, behavior: "smooth" });
   };
 
@@ -535,16 +542,18 @@ export default function AppNext() {
   const currentPaymentInvoices = batchPayment?.invoiceIds.map((id) => database.invoices.find((item) => item.id === id)).filter((item): item is Invoice => Boolean(item)) ?? [];
   const currentPaymentTotal = currentPaymentInvoices.reduce((sum, item) => sum + invoiceAmountDue(item, database.settings.finance).totalDue, 0);
 
-  return <div className="app-shell">
+  return <div className={`app-shell ${mobileMenuOpen ? "mobile-menu-open" : ""}`}>
     <aside className="sidebar">
+      <button className="mobile-menu-close" aria-label="Fechar menu" onClick={() => setMobileMenuOpen(false)}><X size={20}/></button>
       <button className="brand" onClick={() => changeView("dashboard")} aria-label="Ir para o início"><SchoolBrand institution={database.settings.institution}/></button>
       <div className="nav-label">GESTÃO</div>
       <nav className="main-nav">{navItems.map((item) => <button key={item.id} className={view === item.id ? "active" : ""} onClick={() => changeView(item.id)}><item.icon size={20}/><span>{item.label}</span>{item.id === "finance" && overdueInvoices.length > 0 && <b>{overdueInvoices.length}</b>}</button>)}</nav>
       <div className="sidebar-foot"><div className="local-status"><HardDrive size={18}/><span><strong>Cópia local protegida</strong><small>Criptografada no Windows</small></span><CheckCircle2 size={17}/></div><div className="version">AulaFácil Desktop <span>v0.3.0</span></div></div>
     </aside>
+    <button className="mobile-menu-scrim" aria-label="Fechar menu" onClick={() => setMobileMenuOpen(false)}/>
 
     <main className="workspace">
-      <header className="topbar"><div><h1>{viewCopy[view].title}</h1><p>{viewCopy[view].description}</p></div><div className="top-actions"><span className="offline-pill"><ShieldCheck size={16}/> Dados protegidos</span><button className="icon-button" onClick={() => changeView("notices")} aria-label="Abrir avisos"><Bell size={20}/>{database.notices.length > 0 && <i/>}</button></div></header>
+      <header className="topbar"><div className="topbar-title-wrap"><button className="mobile-menu-button icon-button" aria-label="Abrir menu" onClick={() => setMobileMenuOpen(true)}><Menu size={20}/></button><div><h1>{viewCopy[view].title}</h1><p>{viewCopy[view].description}</p></div></div><div className="top-actions"><span className="offline-pill"><ShieldCheck size={16}/> Dados protegidos</span><button className="icon-button" onClick={() => changeView("notices")} aria-label="Abrir avisos"><Bell size={20}/>{database.notices.length > 0 && <i/>}</button></div></header>
       <div className="page-content">
         {view === "dashboard" && <section className="stack">
           <div className="metric-grid"><Metric label="Alunos ativos" value={String(activeStudents.length)} helper={`${database.classes.length} turma${database.classes.length === 1 ? "" : "s"}`} icon={Users} tone="blue"/><Metric label="Recebido" value={money(receivedTotal)} helper="Pagamentos confirmados" icon={CircleDollarSign} tone="green"/><Metric label="Em aberto" value={money(pendingTotal)} helper={`${overdueInvoices.length} atrasada${overdueInvoices.length === 1 ? "" : "s"}`} icon={Clock3} tone={overdueInvoices.length ? "red" : "amber"}/><Metric label="Presença hoje" value={attendanceRate === null ? "—" : `${attendanceRate}%`} helper="Chamadas registradas" icon={CalendarCheck2} tone="violet"/></div>
@@ -560,13 +569,12 @@ export default function AppNext() {
           })}</tbody></table></div> : <EmptyState icon={Users} title={database.students.length ? "Nenhum resultado" : "Nenhum aluno cadastrado"} text={database.students.length ? "Tente outra busca." : "Cadastre o primeiro aluno para começar."} action={database.students.length ? undefined : "Cadastrar primeiro aluno"} onAction={openStudentForm}/>} 
         </section>}
 
-        {view === "classes" && <section className="stack">
-          <PageHeader title={`${database.classes.length} turma${database.classes.length === 1 ? "" : "s"}`} subtitle="Organize várias turmas do mesmo curso por dias e horários." action="Nova turma" icon={Plus} onAction={() => { setClassDurationType("open_ended"); setModal("class"); }} secondaryAction={classLayout === "table" ? "Ver cartões" : "Ver planilha"} onSecondary={() => setClassLayout((current) => current === "table" ? "cards" : "table")}/>
-          {database.classes.length ? classLayout === "table" ? <div className="card table-card class-sheet"><table><thead><tr><th>Curso / turma</th><th>Dias</th><th>Horário</th><th>Professor</th><th>Alunos</th><th>Duração</th><th>Mensalidade</th><th/></tr></thead><tbody>{database.classes.slice().sort((a,b) => `${a.startTime ?? "99:99"}${a.name}`.localeCompare(`${b.startTime ?? "99:99"}${b.name}`)).map((item) => {
-            const count = database.students.filter((student) => student.classId === item.id && student.active).length;
-            return <tr key={item.id}><td><strong>{item.name}</strong><small className="table-sub">{item.groupName || item.room}</small></td><td>{(item.meetingDays ?? []).map((day) => WEEKDAYS.find((d) => d.id === day)?.label).filter(Boolean).join(", ") || "—"}</td><td>{item.startTime && item.endTime ? `${item.startTime}–${item.endTime}` : item.schedule}</td><td>{item.teacher}</td><td>{count}</td><td>{classDurationLabel(item)}</td><td>{money(item.monthlyFee)}</td><td><button className="quiet-danger" onClick={() => deleteClass(item)} title="Excluir turma"><Trash2 size={16}/></button></td></tr>;
-          })}</tbody></table></div> : <div className="class-grid">{database.classes.map((item) => { const count = database.students.filter((student) => student.classId === item.id && student.active).length; return <article className="class-card card" key={item.id}><div className="class-stripe" style={{ background:item.color }}/><div className="class-top"><span className="class-icon" style={{ color:item.color,background:`${item.color}12` }}><BookOpen size={22}/></span><button className="quiet-danger" onClick={() => deleteClass(item)}><Trash2 size={17}/></button></div><h3>{item.name}</h3><p>{item.groupName || item.teacher}</p><dl><div><dt>Horário</dt><dd>{item.schedule}</dd></div><div><dt>Alunos</dt><dd>{count}</dd></div><div><dt>Duração</dt><dd>{classDurationLabel(item)}</dd></div><div><dt>Mensalidade</dt><dd>{money(item.monthlyFee)}</dd></div></dl><button className="card-link" onClick={() => { setAttendanceDate(localTodayIso()); changeView("attendance"); }}>Abrir chamada <ChevronRight size={17}/></button></article>; })}</div> : <EmptyState icon={BookOpen} title="Nenhuma turma" text="Cadastre curso, horário, duração e mensalidade." action="Cadastrar primeira turma" onAction={() => setModal("class")}/>} 
-        </section>}
+        {view === "classes" && <ClassOverviewPanel
+          database={database}
+          onNewClass={() => { setClassDurationType("open_ended"); setModal("class"); }}
+          onDeleteClass={deleteClass}
+          onAttendance={() => { setAttendanceDate(localTodayIso()); changeView("attendance"); }}
+        />}
 
         {view === "attendance" && <ClassRosterBoard database={database} date={attendanceDate} onDateChange={setAttendanceDate} onSaveAttendance={saveClassAttendance}/>} 
         {view === "finance" && <FinanceUltimate database={database} onChange={setDatabase} onReceipt={(student,invoice,payment) => setPrintable({ type:"Recibo", student, invoice, payment })}/>} 
@@ -603,7 +611,9 @@ function DocumentModal({ value, database, classItem, onClose }: { value: NonNull
   const institution = database.settings.institution;
   const schoolName = institution.name || institution.legalName || "Instituição de ensino";
   const today = new Intl.DateTimeFormat("pt-BR", { dateStyle: "long" }).format(new Date());
-  return <div className="modal-backdrop document-backdrop"><section className="document-dialog"><div className="document-toolbar"><div><strong>{value.type}</strong><span>Confira antes de imprimir ou salvar em PDF.</span></div><button className="secondary-button" onClick={onClose}>Fechar</button><button className="primary-button" onClick={() => window.print()}><Printer size={18}/> Imprimir ou PDF</button></div>{value.type === "Recibo" && value.invoice ? <ReceiptDocument student={value.student} invoice={value.invoice} payment={value.payment} institution={institution} settings={database.settings.receipt} classItem={classItem}/> : <article id="print-area"><header><div><strong>{schoolName}</strong><span>{[institution.city,institution.state].filter(Boolean).join(" — ") || institution.address}</span></div><b>AF</b></header><h1>Declaração</h1><p>Declaramos, para os devidos fins, que <strong>{value.student.name}</strong> encontra-se regularmente matriculado(a) no curso <strong>{classItem?.name ?? "informado pela instituição"}</strong>, na turma <strong>{classItem?.groupName || classItem?.schedule || "registrada pela secretaria"}</strong>.</p><div className="document-date">{institution.city ? `${institution.city}, ` : ""}{today}.</div><footer><span/><p>Secretaria<br/>{schoolName}</p></footer></article>}</section></div>;
+  const filename = `${value.type}-${value.student.name}`;
+  const downloadPdf = () => void exportElementToPdf("print-area", filename, "portrait");
+  return <div className="modal-backdrop document-backdrop"><section className="document-dialog"><div className="document-toolbar"><div><strong>{value.type}</strong><span>Confira antes de imprimir ou baixar em PDF.</span></div><button className="secondary-button" onClick={onClose}>Fechar</button><button className="secondary-button" onClick={downloadPdf}><Download size={18}/> Baixar PDF</button><button className="primary-button" onClick={() => window.print()}><Printer size={18}/> Imprimir</button></div>{value.type === "Recibo" && value.invoice ? <ReceiptDocument student={value.student} invoice={value.invoice} payment={value.payment} institution={institution} settings={database.settings.receipt} classItem={classItem}/> : <article id="print-area" className="printable-declaration"><header><div><strong>{schoolName}</strong><span>{[institution.city,institution.state].filter(Boolean).join(" — ") || institution.address}</span></div><b>AF</b></header><h1>Declaração</h1><p>Declaramos, para os devidos fins, que <strong>{value.student.name}</strong> encontra-se regularmente matriculado(a) no curso <strong>{classItem?.name ?? "informado pela instituição"}</strong>, na turma <strong>{classItem?.groupName || classItem?.schedule || "registrada pela secretaria"}</strong>.</p><div className="document-date">{institution.city ? `${institution.city}, ` : ""}{today}.</div><footer><span/><p>Secretaria<br/>{schoolName}</p></footer></article>}</section></div>;
 }
 
 function Modal({ title, description, onClose, children }: { title: string; description: string; onClose: () => void; children: ReactNode }) {
@@ -612,6 +622,6 @@ function Modal({ title, description, onClose, children }: { title: string; descr
 
 function Field({ label, children, wide=false }: { label: string; children: ReactNode; wide?: boolean }) { return <label className={wide ? "field wide" : "field"}><span>{label}</span>{children}</label>; }
 function FormActions({ onCancel, submit }: { onCancel: () => void; submit: string }) { return <div className="form-actions wide"><button type="button" className="secondary-button" onClick={onCancel}>Cancelar</button><button type="submit" className="primary-button"><Check size={18}/>{submit}</button></div>; }
-function PageHeader({ title, subtitle, action, icon: Icon, onAction, secondaryAction, onSecondary }: { title: string; subtitle: string; action: string; icon: typeof Plus; onAction: () => void; secondaryAction?: string; onSecondary?: () => void }) { return <div className="page-heading"><div><h2>{title}</h2><p>{subtitle}</p></div><div>{secondaryAction && <button className="secondary-button" onClick={onSecondary}>{secondaryAction === "Ver planilha" ? <List size={17}/> : <PanelsTopLeft size={17}/>} {secondaryAction}</button>}<button className="primary-button" onClick={onAction}><Icon size={18}/>{action}</button></div></div>; }
+function PageHeader({ title, subtitle, action, icon: Icon, onAction }: { title: string; subtitle: string; action: string; icon: typeof Plus; onAction: () => void }) { return <div className="page-heading"><div><h2>{title}</h2><p>{subtitle}</p></div><div><button className="primary-button" onClick={onAction}><Icon size={18}/>{action}</button></div></div>; }
 function EmptyState({ icon: Icon, title, text, action, onAction }: { icon: typeof Users; title: string; text: string; action?: string; onAction?: () => void }) { return <div className="card empty-state"><span><Icon/></span><h2>{title}</h2><p>{text}</p>{action && <button className="primary-button" onClick={onAction}><Plus size={18}/>{action}</button>}</div>; }
 function Metric({ label, value, helper, icon: Icon, tone }: { label: string; value: string; helper: string; icon: typeof Users; tone: string }) { return <article className="metric card"><span className={tone}><Icon/></span><div><small>{label}</small><strong>{value}</strong><p>{helper}</p></div></article>; }

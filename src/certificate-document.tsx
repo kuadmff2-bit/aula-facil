@@ -53,6 +53,7 @@ export function CertificateDocument({
 
   return (
     <article
+      id="certificate-print-area"
       className={`professional-certificate certificate-style-${resolvedStyle}`}
       style={{
         "--certificate-primary": settings.primaryColor || institution.primaryColor,

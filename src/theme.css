@@ -231,3 +231,53 @@ html[data-theme="dark"] .receipt-data-grid > div { background: #fff; }
 @media (max-width: 950px) {
   .appearance-options { grid-template-columns: 1fr; }
 }
+
+/* CONTRAST-HARDENING-2026 */
+html[data-theme="light"] {
+  --text: #202938;
+  --muted: #5d6979;
+  --line: #cbd3de;
+  --surface: #f8f9fb;
+  --canvas: #eef1f5;
+  --text-muted: #5d6979;
+  --border: #cbd3de;
+  --surface-soft: #eef2f6;
+  --primary: var(--blue);
+}
+html[data-theme="light"] body,
+html[data-theme="light"] .workspace { background: #eef1f5; }
+html[data-theme="light"] .card,
+html[data-theme="light"] .modal,
+html[data-theme="light"] .details-panel { background: #f8f9fb; border-color: #cbd3de; }
+html[data-theme="light"] input,
+html[data-theme="light"] select,
+html[data-theme="light"] textarea { background: #f2f4f7; border-color: #b9c4d2; color: #202938; }
+html[data-theme="dark"] {
+  --text: #f1f5fb;
+  --muted: #b6c1d1;
+  --line: #3e4c60;
+  --surface: #1c2634;
+  --canvas: #121923;
+  --text-muted: #b6c1d1;
+  --border: #3e4c60;
+  --surface-soft: #16202c;
+  --primary: #8fb5ff;
+}
+html[data-theme="dark"] .card,
+html[data-theme="dark"] .modal,
+html[data-theme="dark"] .details-panel,
+html[data-theme="dark"] .professional-settings-card { background: #1c2634; border-color: #3e4c60; color: #f1f5fb; }
+html[data-theme="dark"] input,
+html[data-theme="dark"] select,
+html[data-theme="dark"] textarea { color: #f5f8fd; background: #121a24; border-color: #4a5a70; }
+html[data-theme="dark"] input::placeholder,
+html[data-theme="dark"] textarea::placeholder { color: #9aa7b9; opacity: 1; }
+html[data-theme="dark"] .info-box,
+html[data-theme="dark"] .record-list > div,
+html[data-theme="dark"] .batch-payment-list,
+html[data-theme="dark"] .payment-breakdown { background: #16202c; border-color: #3e4c60; }
+html[data-theme="dark"] .info-box strong,
+html[data-theme="dark"] .record-list strong,
+html[data-theme="dark"] .class-overview-student strong { color: #f1f5fb; }
+html[data-theme="dark"] .info-box small,
+html[data-theme="dark"] .record-list small { color: #b6c1d1; }

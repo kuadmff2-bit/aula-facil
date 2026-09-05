@@ -1,0 +1,10 @@
+{
+  "name": "AulaFácil",
+  "short_name": "AulaFácil",
+  "description": "Gestão escolar simples, segura e organizada.",
+  "start_url": ".",
+  "display": "standalone",
+  "background_color": "#eef1f5",
+  "theme_color": "#0d2d73",
+  "icons": [{ "src": "/favicon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any maskable" }]
+}

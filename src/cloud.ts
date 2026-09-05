@@ -103,6 +103,13 @@ export async function signUpCloud(email: string, password: string) {
   return data;
 }
 
+export async function resendCloudSignupConfirmation(email: string) {
+  const normalizedEmail = email.trim().toLowerCase();
+  if (!normalizedEmail || !normalizedEmail.includes("@")) throw new Error("Informe um e-mail válido para reenviar a confirmação.");
+  const { error } = await cloud.auth.resend({ type: "signup", email: normalizedEmail });
+  if (error) fail("Não foi possível reenviar o e-mail de confirmação", error);
+}
+
 export async function signOutCloud() {
   const { error } = await cloud.auth.signOut({ scope: "local" });
   if (error) fail("Não foi possível sair da conta neste dispositivo", error);

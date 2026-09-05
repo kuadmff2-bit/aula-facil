@@ -1,5 +1,5 @@
 import { useMemo, useState } from "react";
-import { AlertTriangle, CheckCircle2, Copy, ExternalLink, Plus, ReceiptText, WalletCards, X } from "lucide-react";
+import { AlertTriangle, CheckCircle2, Copy, ExternalLink, Plus, ReceiptText, Search, WalletCards, X } from "lucide-react";
 import { emptyBillingProfile, generateProviderCharge, getBillingProfile, saveBillingProfile, type BillingProfile, type GeneratedCharge } from "./billing";
 import { invoiceAmountDue, referenceMonthFromDate } from "./finance-utils";
 import { ensureOpenEndedInvoiceForMonth } from "./enrollment-plan";
@@ -80,11 +80,20 @@ export function FinanceUltimate({ database, onChange, onReceipt }: Props) {
   const [chargeMethod, setChargeMethod] = useState<"pix" | "boleto">("pix");
   const [generatedCharge, setGeneratedCharge] = useState<GeneratedCharge | null>(null);
   const [reopenArmed, setReopenArmed] = useState("");
+  const [query, setQuery] = useState("");
 
   const students = useMemo(() => new Map(database.students.map((item) => [item.id, item])), [database.students]);
-  const visibleInvoices = useMemo(() => database.invoices
-    .filter((invoice) => filter === "all" || effectiveStatus(invoice) === filter)
-    .sort((a, b) => a.dueDate.localeCompare(b.dueDate)), [database.invoices, filter]);
+  const visibleInvoices = useMemo(() => {
+    const normalized = query.trim().toLocaleLowerCase("pt-BR");
+    return database.invoices
+      .filter((invoice) => filter === "all" || effectiveStatus(invoice) === filter)
+      .filter((invoice) => {
+        if (!normalized) return true;
+        const student = students.get(invoice.studentId);
+        return `${student?.name ?? ""} ${student?.documentNumber ?? ""} ${student?.phone ?? ""} ${student?.guardianName ?? ""} ${student?.guardianPhone ?? ""} ${invoice.reference} ${invoice.dueDate} ${statusLabel(effectiveStatus(invoice))}`.toLocaleLowerCase("pt-BR").includes(normalized);
+      })
+      .sort((a, b) => a.dueDate.localeCompare(b.dueDate));
+  }, [database.invoices, filter, query, students]);
 
   const metrics = useMemo(() => {
     const received = database.payments.filter((item) => item.status === "confirmed").reduce((sum, item) => sum + item.amountReceived, 0);
@@ -292,6 +301,8 @@ export function FinanceUltimate({ database, onChange, onReceipt }: Props) {
     </div>
 
     {notice && <div className={`finance-notice ${notice.tone}`}><span>{notice.text}</span><button onClick={() => { setNotice(null); setReopenArmed(""); }}><X size={15}/></button></div>}
+
+    <label className="finance-search"><Search size={18}/><input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Buscar aluno, mensalidade, CPF, telefone ou vencimento"/></label>
 
     <div className="filter-tabs">{(["all","pending","overdue","negotiated","paid","cancelled"] as Filter[]).map((item) => <button key={item} className={filter === item ? "active" : ""} onClick={() => setFilter(item)}>{statusLabel(item)}</button>)}</div>
 
