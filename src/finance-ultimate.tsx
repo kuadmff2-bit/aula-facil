@@ -4,6 +4,7 @@ import { emptyBillingProfile, generateProviderCharge, getBillingProfile, saveBil
 import { dueDateForMonth, invoiceAmountDue, referenceMonthFromDate } from "./finance-utils";
 import { makeId, type Invoice, type Payment, type SchoolDatabase, type Student } from "./model";
 import { DebtNegotiationPanel } from "./debt-negotiation-panel";
+import { getCloudSyncStatus, safePullFromCloud } from "./cloud-safe-sync";
 import "./finance-ultimate.css";
 
 const SELECTED_SCHOOL_KEY = "aulafacil.cloud.selected-school";
@@ -188,18 +189,14 @@ export function FinanceUltimate({ database, onChange, onReceipt }: Props) {
     setBusy(true);
     setNotice(null);
     try {
+      const syncStatus = await getCloudSyncStatus(schoolId, database);
+      if (syncStatus !== "synced") throw new Error("Sincronize este computador antes de gerar Pix ou boleto. Isso evita misturar uma cobrança antiga com alterações locais ainda não enviadas.");
       await saveBillingProfile(schoolId, modal.student.id, billing);
       const charge = await generateProviderCharge({ invoiceId: modal.invoice.id, method: chargeMethod, billingProfile: billing });
       setGeneratedCharge(charge);
-      onChange(replaceDatabase(database, (draft) => {
-        const invoice = draft.invoices.find((item) => item.id === modal.invoice.id);
-        if (!invoice) return;
-        invoice.provider = charge.provider;
-        invoice.providerChargeId = charge.providerChargeId;
-        invoice.pixCopyPaste = charge.pixCopyPaste || null;
-        invoice.boletoUrl = charge.boletoUrl || charge.paymentUrl || null;
-      }));
-      setNotice({ tone: "success", text: charge.reused ? "Cobrança já existente recuperada com segurança." : "Cobrança bancária gerada com sucesso." });
+      const restored = await safePullFromCloud(schoolId, database.settings.appearance);
+      onChange(restored);
+      setNotice({ tone: "success", text: charge.reused ? "Cobrança já existente recuperada e sincronizada com segurança." : "Cobrança bancária gerada e sincronizada com sucesso." });
     } catch (error) {
       setNotice({ tone: "danger", text: error instanceof Error ? error.message : "Não foi possível gerar a cobrança." });
     } finally {
@@ -251,7 +248,7 @@ export function FinanceUltimate({ database, onChange, onReceipt }: Props) {
       </tr>;
     })}</tbody></table></div> : <div className="card finance-empty"><WalletCards/><h3>Nenhuma cobrança</h3><p>Gere as mensalidades do mês ou altere o filtro.</p></div>}
 
-    <DebtNegotiationPanel database={database} />
+    <DebtNegotiationPanel database={database} onChange={onChange} />
 
     {modal?.kind === "pay" && <div className="modal-backdrop"><section className="modal finance-modal"><header><div><h2>Registrar pagamento</h2><p>{modal.student.name} · {modal.invoice.reference}</p></div><button className="modal-close" onClick={() => setModal(null)}><X/></button></header>{(() => { const b = invoiceAmountDue(modal.invoice, database.settings.finance); const final = Math.max(0, b.totalDue - discount); return <div className="finance-payment-body"><div className="payment-breakdown"><div><span>Mensalidade</span><b>{money(b.baseAmount)}</b></div><div><span>Multa</span><b>{money(b.lateFee)}</b></div><div><span>Juros</span><b>{money(b.interest)}</b></div><div><span>Desconto</span><b>- {money(discount)}</b></div><div className="total"><span>Total recebido</span><strong>{money(final)}</strong></div></div><label><span>Desconto concedido</span><input type="number" min={0} max={b.totalDue} step="0.01" value={discount} onChange={(event) => setDiscount(Math.max(0, Number(event.target.value) || 0))}/></label><label><span>Forma de pagamento</span><select value={paymentMethod} onChange={(event) => setPaymentMethod(event.target.value)}><option value="dinheiro">Dinheiro</option><option value="pix_manual">Pix manual</option><option value="cartao">Cartão/maquininha</option><option value="transferencia">Transferência</option><option value="outro">Outro</option></select></label><div className="form-actions"><button className="secondary-button" onClick={() => setModal(null)}>Cancelar</button><button className="primary-button" onClick={confirmPayment}>Confirmar e gerar recibo</button></div></div>; })()}</section></div>}
 

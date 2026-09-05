@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import { CheckCircle2, FileCheck2, Printer, ShieldCheck, X } from "lucide-react";
 import { CertificateDocument } from "./certificate-document";
 import { issueCertificate, listStudentCertificates, type IssuedCertificate } from "./certificate-service";
+import { getCloudSyncStatus, safePullFromCloud } from "./cloud-safe-sync";
 import type { CertificateSettings, ClassItem, InstitutionSettings, SchoolDatabase, Student } from "./model";
 import "./certificate-manager.css";
 
@@ -10,7 +11,7 @@ type Props = {
   classItem?: ClassItem;
   database: SchoolDatabase;
   onClose: () => void;
-  onCompleted: (issuedAt: string) => void;
+  onCompleted: (database: SchoolDatabase) => void;
 };
 
 type Message = { tone: "success" | "warning" | "danger"; text: string } | null;
@@ -87,6 +88,10 @@ export function CertificateManager({ student, classItem, database, onClose, onCo
     setBusy(true);
     setMessage(null);
     try {
+      const schoolId = localStorage.getItem("aulafacil.cloud.selected-school") ?? "";
+      if (!schoolId) throw new Error("Selecione uma instituição no AulaFácil Cloud para emitir o certificado.");
+      const syncStatus = await getCloudSyncStatus(schoolId, database);
+      if (syncStatus !== "synced") throw new Error("Sincronize este computador antes de emitir o certificado. A conclusão não será registrada sobre uma cópia antiga.");
       const certificate = await issueCertificate({
         student,
         classItem,
@@ -96,8 +101,13 @@ export function CertificateManager({ student, classItem, database, onClose, onCo
       setCertificates((current) => [certificate, ...current.filter((item) => item.id !== certificate.id)]);
       setSelectedId(certificate.id);
       setArmed(false);
-      onCompleted(certificate.issuedAt);
-      setMessage({ tone: "success", text: `Certificado ${certificate.certificateNumber} emitido e salvo no histórico da instituição.` });
+      try {
+        const restored = await safePullFromCloud(schoolId, database.settings.appearance);
+        onCompleted(restored);
+        setMessage({ tone: "success", text: `Certificado ${certificate.certificateNumber} emitido, salvo no histórico e sincronizado.` });
+      } catch (syncError) {
+        setMessage({ tone: "warning", text: `O certificado ${certificate.certificateNumber} foi emitido, mas a cópia local não pôde ser atualizada agora: ${syncError instanceof Error ? syncError.message : "sincronização indisponível"}.` });
+      }
     } catch (error) {
       setMessage({ tone: "danger", text: error instanceof Error ? error.message : "Não foi possível emitir o certificado." });
     } finally {

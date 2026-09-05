@@ -15,6 +15,8 @@ import {
   type CloudSchool,
 } from "./cloud";
 import type { SchoolDatabase } from "./model";
+import { LegalAcceptancePanel } from "./legal-acceptance-panel";
+import { copyCurrentLegalAcceptanceToSchool } from "./legal-acceptance";
 import "./cloud-account.css";
 
 const SELECTED_SCHOOL_KEY = "aulafacil.cloud.selected-school";
@@ -57,10 +59,11 @@ export function CloudAccountPanel({ database, onReplaceDatabase }: Props) {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [schoolName, setSchoolName] = useState("");
-  const [acceptedTerms, setAcceptedTerms] = useState(false);
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState<Message>(null);
   const [downloadArmed, setDownloadArmed] = useState(false);
+  const [schoolsLoaded, setSchoolsLoaded] = useState(false);
+  const [legalReady, setLegalReady] = useState(false);
 
   const selectedSchool = useMemo(
     () => schools.find((school) => school.id === selectedSchoolId) ?? null,
@@ -77,6 +80,7 @@ export function CloudAccountPanel({ database, onReplaceDatabase }: Props) {
       else localStorage.removeItem(SELECTED_SCHOOL_KEY);
       return selected;
     });
+    setSchoolsLoaded(true);
   };
 
   useEffect(() => {
@@ -96,8 +100,11 @@ export function CloudAccountPanel({ database, onReplaceDatabase }: Props) {
         setSchools([]);
         setSummary(null);
         setSelectedSchoolId("");
+        setSchoolsLoaded(false);
+        setLegalReady(false);
         return;
       }
+      setSchoolsLoaded(false);
       void refreshSchools().catch((error) => setMessage({ tone: "danger", text: error instanceof Error ? error.message : "Não foi possível atualizar as instituições." }));
     });
 
@@ -109,6 +116,7 @@ export function CloudAccountPanel({ database, onReplaceDatabase }: Props) {
 
   useEffect(() => {
     setDownloadArmed(false);
+    setLegalReady(false);
     if (!selectedSchoolId || !auth.user) {
       setSummary(null);
       return;
@@ -134,7 +142,6 @@ export function CloudAccountPanel({ database, onReplaceDatabase }: Props) {
   const submitAuth = (event: FormEvent) => {
     event.preventDefault();
     void run(async () => {
-      if (mode === "signup" && !acceptedTerms) throw new Error("Leia e aceite os Termos de Uso e a Política de Privacidade para criar a conta.");
       if (mode === "signin") {
         await signInCloud(email, password);
         setMessage({ tone: "success", text: "Conta conectada com segurança neste dispositivo." });
@@ -164,12 +171,6 @@ export function CloudAccountPanel({ database, onReplaceDatabase }: Props) {
         <form className="cloud-auth-form" onSubmit={submitAuth}>
           <label><span>E-mail</span><input type="email" autoComplete="email" required maxLength={200} value={email} onChange={(e) => setEmail(e.target.value)} /></label>
           <label><span>Senha</span><input type="password" autoComplete={mode === "signin" ? "current-password" : "new-password"} minLength={8} required value={password} onChange={(e) => setPassword(e.target.value)} /></label>
-          {mode === "signup" && (
-            <label className="cloud-terms-check">
-              <input type="checkbox" checked={acceptedTerms} onChange={(e) => setAcceptedTerms(e.target.checked)} />
-              <span>Li e aceito os Termos de Uso e a Política de Privacidade aplicáveis à versão online.</span>
-            </label>
-          )}
           {message && <div className={`cloud-message ${message.tone}`} role="status">{message.text}</div>}
           <button className="primary-button" disabled={busy}>{busy ? "Aguarde..." : mode === "signin" ? "Entrar" : "Criar conta"}</button>
         </form>
@@ -178,6 +179,14 @@ export function CloudAccountPanel({ database, onReplaceDatabase }: Props) {
         </button>
       </section>
     );
+  }
+
+  if (!schoolsLoaded) {
+    return <section className="card cloud-account-card"><div className="cloud-account-heading"><div><span className="cloud-eyebrow">AULAFÁCIL CLOUD</span><h2>Carregando conta</h2><p>Conferindo instituições e permissões...</p></div></div></section>;
+  }
+
+  if (!legalReady) {
+    return <LegalAcceptancePanel schoolId={selectedSchoolId || null} onReady={() => setLegalReady(true)} />;
   }
 
   return (
@@ -199,6 +208,7 @@ export function CloudAccountPanel({ database, onReplaceDatabase }: Props) {
             <input maxLength={160} value={schoolName} onChange={(e) => setSchoolName(e.target.value)} placeholder={database.settings.institution.name || "Nome da instituição"} />
             <button className="primary-button" disabled={busy} onClick={() => void run(async () => {
               const id = await createCloudSchool(schoolName || database.settings.institution.name);
+              await copyCurrentLegalAcceptanceToSchool(id);
               await refreshSchools();
               setSelectedSchoolId(id);
               setSchoolName("");
