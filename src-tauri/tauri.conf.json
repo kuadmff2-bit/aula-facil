@@ -13,7 +13,7 @@
     "windows": [
       {
         "label": "main",
-        "title": "AulaFácil — Centro Educacional Shekinah",
+        "title": "AulaFácil",
         "width": 1280,
         "height": 800,
         "minWidth": 880,
@@ -33,10 +33,10 @@
   "bundle": {
     "active": true,
     "targets": ["nsis"],
-    "publisher": "Centro Educacional Shekinah",
+    "publisher": "AulaFácil",
     "category": "Education",
     "shortDescription": "Gestão escolar simples e completa.",
-    "longDescription": "Aplicativo desktop do AulaFácil para a gestão do Centro Educacional Shekinah.",
+    "longDescription": "Aplicativo desktop do AulaFácil para gestão de alunos, turmas, frequência, notas, mensalidades e documentos escolares.",
     "icon": [
       "icons/32x32.png",
       "icons/128x128.png",
