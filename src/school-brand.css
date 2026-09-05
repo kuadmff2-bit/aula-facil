@@ -1,0 +1,84 @@
+:root {
+  --school-primary: #1649b8;
+  --school-secondary: #0f766e;
+  --school-on-primary: #ffffff;
+}
+
+.brand {
+  min-height: 92px;
+  border-bottom-color: color-mix(in srgb, var(--school-secondary) 42%, rgba(255,255,255,.14));
+}
+
+.school-brand-mark {
+  width: 52px;
+  height: 52px;
+  flex-basis: 52px;
+  overflow: hidden;
+  border: 2px solid color-mix(in srgb, var(--school-secondary) 55%, white 45%);
+  border-radius: 15px;
+}
+
+.school-brand-mark img {
+  width: 100%;
+  height: 100%;
+  display: block;
+  object-fit: contain;
+  background: #fff;
+}
+
+.school-brand-mark b {
+  font-size: 17px;
+  letter-spacing: -.5px;
+}
+
+.school-brand-copy {
+  min-width: 0;
+}
+
+.school-brand-copy strong {
+  max-width: 150px;
+  overflow: hidden;
+  color: #fff;
+  font-size: 18px;
+  line-height: 1.15;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.school-brand-copy small {
+  margin-top: 5px;
+  color: rgba(255,255,255,.64);
+  font-size: 12px;
+  font-weight: 750;
+  letter-spacing: .35px;
+}
+
+.primary-button {
+  color: var(--school-on-primary) !important;
+  background: var(--school-primary) !important;
+}
+
+.primary-button:hover:not(:disabled) {
+  filter: brightness(.94);
+}
+
+.main-nav button.active {
+  box-shadow: inset 3px 0 0 var(--school-secondary), 0 8px 24px rgba(3, 23, 65, .18);
+}
+
+.text-button,
+.card-link {
+  color: var(--school-primary);
+}
+
+.topbar {
+  box-shadow: inset 0 -2px 0 color-mix(in srgb, var(--school-primary) 14%, transparent);
+}
+
+@media (max-width: 900px) {
+  .school-brand-mark {
+    width: 48px;
+    height: 48px;
+    flex-basis: 48px;
+  }
+}
