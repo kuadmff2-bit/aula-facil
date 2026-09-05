@@ -1,0 +1,40 @@
+name: Adicionar cliente Supabase
+
+on:
+  push:
+    branches: [develop]
+    paths:
+      - ".github/workflows/install-supabase-client.yml"
+
+permissions:
+  contents: write
+
+jobs:
+  install:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: develop
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Adicionar biblioteca oficial
+        run: npm install @supabase/supabase-js@2 --save-exact
+      - name: Validar frontend
+        run: npm run build
+      - name: Gerar recursos do Tauri
+        run: npm run desktop:icons
+      - name: Validar Tauri congelado
+        run: cargo check --locked --manifest-path src-tauri/Cargo.toml
+      - name: Publicar dependência somente após validação
+        shell: bash
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add package.json package-lock.json
+          git commit -m "Adicionar cliente oficial do Supabase"
+          git push origin HEAD:develop
