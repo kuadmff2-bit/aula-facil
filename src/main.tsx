@@ -4,6 +4,7 @@ import App from "./App";
 import { initializeSecureStorage } from "./storage";
 import "./styles.css";
 import "./theme.css";
+import "./layout-safety.css";
 
 const root = createRoot(document.getElementById("root")!);
 
