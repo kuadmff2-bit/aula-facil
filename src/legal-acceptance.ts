@@ -33,7 +33,7 @@ export async function getLegalAcceptanceState(schoolId: string | null): Promise<
     version: document.version,
     hash: await sha256(document.text),
   })));
-  const accepted = { terms: false, privacy: false } satisfies Record<LegalDocumentType, boolean>;
+  const accepted: Record<LegalDocumentType, boolean> = { terms: false, privacy: false };
   for (const document of expected) {
     accepted[document.type] = (data ?? []).some((row: any) =>
       row.document_type === document.type
