@@ -45,11 +45,37 @@ export type FinanceSettings = {
   boletoShowLogo: boolean;
 };
 
+export type ReceiptFieldId =
+  | "guardian"
+  | "class"
+  | "reference"
+  | "dueDate"
+  | "paidAt"
+  | "method"
+  | "provider"
+  | "principal"
+  | "lateFee"
+  | "interest"
+  | "discount"
+  | "notes";
+
+export type ReceiptFieldSetting = {
+  id: ReceiptFieldId;
+  label: string;
+  visible: boolean;
+};
+
 export type ReceiptSettings = {
   title: string;
   footer: string;
+  observation: string;
   schoolSignatureLabel: string;
   payerSignatureLabel: string;
+  showLogo: boolean;
+  showInstitutionDocument: boolean;
+  showInstitutionAddress: boolean;
+  showInstitutionContact: boolean;
+  fields: ReceiptFieldSetting[];
 };
 
 export type CertificateSettings = {
@@ -183,6 +209,7 @@ const INVOICE_STATUSES: InvoiceStatus[] = ["pending", "paid", "overdue", "cancel
 const PAYMENT_STATUSES: PaymentStatus[] = ["pending", "confirmed", "refunded", "cancelled", "failed"];
 const LATE_FEE_MODES: LateFeeMode[] = ["none", "fixed", "percent"];
 const INTEREST_MODES: InterestMode[] = ["none", "daily_percent", "monthly_percent", "fixed_daily"];
+const RECEIPT_FIELD_IDS: ReceiptFieldId[] = ["guardian", "class", "reference", "dueDate", "paidAt", "method", "provider", "principal", "lateFee", "interest", "discount", "notes"];
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -445,9 +472,28 @@ export function defaultFinanceSettings(): FinanceSettings {
 function defaultReceiptSettings(): ReceiptSettings {
   return {
     title: "Recibo de pagamento",
-    footer: "Emitido pelo AulaFácil",
+    footer: "Emitido eletronicamente pelo AulaFácil",
+    observation: "Recebemos {valor} referente a {referencia}, pago por ou em nome de {aluno}.",
     schoolSignatureLabel: "Assinatura da escola / responsável pelo recebimento",
     payerSignatureLabel: "Assinatura do pagador",
+    showLogo: true,
+    showInstitutionDocument: true,
+    showInstitutionAddress: true,
+    showInstitutionContact: true,
+    fields: [
+      { id: "guardian", label: "Responsável", visible: true },
+      { id: "class", label: "Turma / curso", visible: true },
+      { id: "reference", label: "Referência", visible: true },
+      { id: "dueDate", label: "Vencimento", visible: true },
+      { id: "paidAt", label: "Pagamento", visible: true },
+      { id: "method", label: "Forma", visible: true },
+      { id: "provider", label: "Provedor", visible: false },
+      { id: "principal", label: "Valor principal", visible: true },
+      { id: "lateFee", label: "Multa", visible: true },
+      { id: "interest", label: "Juros", visible: true },
+      { id: "discount", label: "Desconto", visible: true },
+      { id: "notes", label: "Observação do pagamento", visible: false },
+    ],
   };
 }
 
@@ -521,6 +567,30 @@ export function emptyDatabase(): SchoolDatabase {
   };
 }
 
+function sanitizeReceiptFields(value: unknown, fallback: ReceiptFieldSetting[]): ReceiptFieldSetting[] {
+  const byId = new Map(fallback.map((field) => [field.id, field]));
+  const result: ReceiptFieldSetting[] = [];
+  const seen = new Set<ReceiptFieldId>();
+  if (Array.isArray(value)) {
+    for (const item of value.slice(0, RECEIPT_FIELD_IDS.length)) {
+      if (!isRecord(item) || !RECEIPT_FIELD_IDS.includes(item.id as ReceiptFieldId)) continue;
+      const id = item.id as ReceiptFieldId;
+      if (seen.has(id)) continue;
+      const defaultField = byId.get(id)!;
+      result.push({
+        id,
+        label: text(item.label, 60, defaultField.label) || defaultField.label,
+        visible: item.visible === undefined ? defaultField.visible : Boolean(item.visible),
+      });
+      seen.add(id);
+    }
+  }
+  for (const field of fallback) {
+    if (!seen.has(field.id)) result.push({ ...field });
+  }
+  return result;
+}
+
 function sanitizeSettings(rawSettings: Record<string, unknown>): SchoolSettings | null {
   const defaults = defaultSchoolSettings();
   const appearance: AppearanceMode = rawSettings.appearance === "light" || rawSettings.appearance === "dark" || rawSettings.appearance === "system"
@@ -581,8 +651,14 @@ function sanitizeSettings(rawSettings: Record<string, unknown>): SchoolSettings 
     receipt: {
       title: text(rawReceipt.title, 120, defaults.receipt.title),
       footer: text(rawReceipt.footer, 300, defaults.receipt.footer),
+      observation: text(rawReceipt.observation, 500, defaults.receipt.observation),
       schoolSignatureLabel: text(rawReceipt.schoolSignatureLabel, 160, defaults.receipt.schoolSignatureLabel),
       payerSignatureLabel: text(rawReceipt.payerSignatureLabel, 160, defaults.receipt.payerSignatureLabel),
+      showLogo: rawReceipt.showLogo === undefined ? defaults.receipt.showLogo : Boolean(rawReceipt.showLogo),
+      showInstitutionDocument: rawReceipt.showInstitutionDocument === undefined ? defaults.receipt.showInstitutionDocument : Boolean(rawReceipt.showInstitutionDocument),
+      showInstitutionAddress: rawReceipt.showInstitutionAddress === undefined ? defaults.receipt.showInstitutionAddress : Boolean(rawReceipt.showInstitutionAddress),
+      showInstitutionContact: rawReceipt.showInstitutionContact === undefined ? defaults.receipt.showInstitutionContact : Boolean(rawReceipt.showInstitutionContact),
+      fields: sanitizeReceiptFields(rawReceipt.fields, defaults.receipt.fields),
     },
     certificate: {
       title: text(rawCertificate.title, 120, defaults.certificate.title),

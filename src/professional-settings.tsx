@@ -233,6 +233,17 @@ export function FinanceSettingsPanel({ value, onChange }: FinanceSettingsProps) 
 
 export function DocumentSettingsPanel({ receipt, certificate, onReceiptChange, onCertificateChange }: DocumentSettingsProps) {
   const updateReceipt = <K extends keyof ReceiptSettings>(key: K, fieldValue: ReceiptSettings[K]) => onReceiptChange({ ...receipt, [key]: fieldValue });
+  const updateReceiptField = (index: number, patch: Partial<ReceiptSettings["fields"][number]>) => {
+    const fields = receipt.fields.map((field, fieldIndex) => fieldIndex === index ? { ...field, ...patch } : field);
+    updateReceipt("fields", fields);
+  };
+  const moveReceiptField = (index: number, direction: -1 | 1) => {
+    const target = index + direction;
+    if (target < 0 || target >= receipt.fields.length) return;
+    const fields = [...receipt.fields];
+    [fields[index], fields[target]] = [fields[target], fields[index]];
+    updateReceipt("fields", fields);
+  };
   const updateCertificate = <K extends keyof CertificateSettings>(key: K, fieldValue: CertificateSettings[K]) => onCertificateChange({ ...certificate, [key]: fieldValue });
 
   return (
@@ -244,11 +255,33 @@ export function DocumentSettingsPanel({ receipt, certificate, onReceiptChange, o
 
       <div className="settings-subsection">
         <h3>Recibo em duas vias</h3>
+        <p className="receipt-customizer-note">A VIA DO PAGANTE e a VIA DA ESCOLA usam o mesmo número e ficam juntas em uma folha A4. Número do recibo, aluno e total recebido são sempre exibidos para preservar a integridade financeira.</p>
         <div className="settings-form-grid">
           <label><span>Título</span><input value={receipt.title} maxLength={120} onChange={(e) => updateReceipt("title", e.target.value)} /></label>
           <label><span>Rodapé</span><input value={receipt.footer} maxLength={300} onChange={(e) => updateReceipt("footer", e.target.value)} /></label>
+          <label className="settings-span-2"><span>Texto / observação do recibo</span><textarea rows={3} maxLength={500} value={receipt.observation} onChange={(e) => updateReceipt("observation", e.target.value)} /><small>Variáveis disponíveis: {'{aluno}'}, {'{valor}'}, {'{referencia}'}, {'{data}'}, {'{responsavel}'}, {'{turma}'}.</small></label>
           <label><span>Assinatura da escola</span><input value={receipt.schoolSignatureLabel} maxLength={160} onChange={(e) => updateReceipt("schoolSignatureLabel", e.target.value)} /></label>
           <label><span>Assinatura do pagador</span><input value={receipt.payerSignatureLabel} maxLength={160} onChange={(e) => updateReceipt("payerSignatureLabel", e.target.value)} /></label>
+        </div>
+
+        <div className="receipt-options-grid">
+          <label><input type="checkbox" checked={receipt.showLogo} onChange={(e) => updateReceipt("showLogo", e.target.checked)} /><span>Logo</span></label>
+          <label><input type="checkbox" checked={receipt.showInstitutionDocument} onChange={(e) => updateReceipt("showInstitutionDocument", e.target.checked)} /><span>CNPJ / CPF da instituição</span></label>
+          <label><input type="checkbox" checked={receipt.showInstitutionAddress} onChange={(e) => updateReceipt("showInstitutionAddress", e.target.checked)} /><span>Endereço da instituição</span></label>
+          <label><input type="checkbox" checked={receipt.showInstitutionContact} onChange={(e) => updateReceipt("showInstitutionContact", e.target.checked)} /><span>Telefone / WhatsApp / e-mail</span></label>
+        </div>
+
+        <div className="receipt-field-editor">
+          <div><strong>Campos do recibo</strong><small>Ligue/desligue, renomeie e use as setas para mudar a ordem.</small></div>
+          <div className="receipt-field-list">
+            {receipt.fields.map((field, index) => (
+              <div className="receipt-field-row" key={field.id}>
+                <label className="receipt-field-toggle"><input type="checkbox" checked={field.visible} onChange={(e) => updateReceiptField(index, { visible: e.target.checked })} /><span>Mostrar</span></label>
+                <input aria-label={`Rótulo de ${field.id}`} maxLength={60} value={field.label} onChange={(e) => updateReceiptField(index, { label: e.target.value })} />
+                <div className="receipt-field-actions"><button type="button" disabled={index === 0} onClick={() => moveReceiptField(index, -1)} aria-label="Mover campo para cima">↑</button><button type="button" disabled={index === receipt.fields.length - 1} onClick={() => moveReceiptField(index, 1)} aria-label="Mover campo para baixo">↓</button></div>
+              </div>
+            ))}
+          </div>
         </div>
       </div>
 
