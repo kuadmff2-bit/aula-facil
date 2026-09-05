@@ -1,6 +1,12 @@
 import type { CSSProperties } from "react";
 import type { CertificateSettings, ClassItem, InstitutionSettings, Student } from "./model";
-import { normalizeCertificateVisualStyle, type CertificateVisualStyle } from "./certificate-visuals";
+import {
+  DEFAULT_CERTIFICATE_LAYOUT,
+  normalizeCertificateLayout,
+  normalizeCertificateVisualStyle,
+  type CertificateLayout,
+  type CertificateVisualStyle,
+} from "./certificate-visuals";
 import "./certificate-document.css";
 
 type Props = {
@@ -11,6 +17,7 @@ type Props = {
   issuedAt?: string;
   certificateNumber?: string | null;
   visualStyle?: CertificateVisualStyle;
+  layout?: CertificateLayout;
 };
 
 function formatDate(value: string) {
@@ -38,11 +45,13 @@ export function CertificateDocument({
   issuedAt = new Date().toISOString().slice(0, 10),
   certificateNumber,
   visualStyle = "classic",
+  layout = DEFAULT_CERTIFICATE_LAYOUT,
 }: Props) {
   const schoolName = institution.name || institution.legalName || "Instituição de ensino";
   const courseName = classItem?.name || "curso informado";
   const workload = classItem?.workloadHours ?? settings.defaultWorkloadHours;
   const resolvedStyle = normalizeCertificateVisualStyle(visualStyle);
+  const resolvedLayout = normalizeCertificateLayout(layout);
   const body = replaceTemplate(settings.bodyTemplate, {
     aluno: student.name,
     curso: courseName,
@@ -54,7 +63,9 @@ export function CertificateDocument({
   return (
     <article
       id="certificate-print-area"
-      className={`professional-certificate certificate-style-${resolvedStyle}`}
+      className={`professional-certificate certificate-style-${resolvedStyle} certificate-paper-${resolvedLayout.paperSize} certificate-orientation-${resolvedLayout.orientation} certificate-spacing-${resolvedLayout.spacing}`}
+      data-paper-size={resolvedLayout.paperSize}
+      data-page-orientation={resolvedLayout.orientation}
       style={{
         "--certificate-primary": settings.primaryColor || institution.primaryColor,
         "--certificate-secondary": settings.secondaryColor || institution.secondaryColor,
