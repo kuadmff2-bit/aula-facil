@@ -27,6 +27,7 @@ export function SchoolBrand({ institution }: { institution: InstitutionSettings 
   const primary = safeHex(institution.primaryColor, "#1649b8");
   const secondary = safeHex(institution.secondaryColor, "#0f766e");
   const foreground = useMemo(() => onColor(primary), [primary]);
+  const hasLogo = Boolean(institution.logoDataUrl);
 
   useEffect(() => {
     const root = document.documentElement;
@@ -36,11 +37,11 @@ export function SchoolBrand({ institution }: { institution: InstitutionSettings 
   }, [primary, secondary, foreground]);
 
   return <>
-    <span className="brand-mark school-brand-mark" aria-hidden="true">
-      {institution.logoDataUrl
+    <span className={`brand-mark school-brand-mark ${hasLogo ? "has-logo" : "has-initials"}`} aria-hidden="true">
+      {hasLogo
         ? <img src={institution.logoDataUrl} alt="" />
         : <b>{initials(name)}</b>}
-      <i />
+      {!hasLogo && <i />}
     </span>
     <span className="school-brand-copy">
       <strong title={name}>{name}</strong>
