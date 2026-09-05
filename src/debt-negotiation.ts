@@ -86,7 +86,9 @@ export async function listNegotiationInstallments(schoolId: string, negotiationI
 }
 
 export async function cancelDebtNegotiation(schoolId: string, negotiationId: string) {
-  const { error } = await cloud.from("debt_negotiations").update({ status: "cancelled" })
-    .eq("school_id", schoolId).eq("id", negotiationId).eq("status", "active");
+  const { error } = await cloud.rpc("cancel_debt_negotiation", {
+    target_school: schoolId,
+    target_negotiation: negotiationId,
+  });
   if (error) throw new Error(`Não foi possível cancelar o acordo: ${error.message}`);
 }
