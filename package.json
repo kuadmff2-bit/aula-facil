@@ -19,6 +19,7 @@
     "desktop:build": "npm run desktop:icons && tauri build"
   },
   "dependencies": {
+    "@supabase/supabase-js": "2.115.0",
     "lucide-react": "^0.542.0",
     "react": "^19.1.1",
     "react-dom": "^19.1.1"
