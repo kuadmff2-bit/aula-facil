@@ -1,0 +1,44 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Confirme seu e-mail — AulaFácil</title>
+</head>
+<body style="margin:0;background:#f4f7fb;font-family:Arial,Helvetica,sans-serif;color:#172033;">
+  <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="background:#f4f7fb;padding:32px 12px;">
+    <tr>
+      <td align="center">
+        <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="max-width:560px;background:#ffffff;border-radius:18px;overflow:hidden;box-shadow:0 10px 32px rgba(23,32,51,.08);">
+          <tr>
+            <td style="background:#1649b8;padding:28px 32px;color:#ffffff;">
+              <div style="font-size:28px;font-weight:800;letter-spacing:-.5px;">AulaFácil</div>
+              <div style="font-size:14px;opacity:.9;margin-top:4px;">Gestão escolar segura e simples</div>
+            </td>
+          </tr>
+          <tr>
+            <td style="padding:34px 32px;">
+              <h1 style="margin:0 0 12px;font-size:24px;line-height:1.25;color:#172033;">Confirme seu e-mail</h1>
+              <p style="margin:0 0 18px;font-size:16px;line-height:1.6;color:#526078;">Olá! Seu cadastro no AulaFácil está quase pronto.</p>
+              <p style="margin:0 0 26px;font-size:16px;line-height:1.6;color:#526078;">Clique no botão abaixo para confirmar o endereço <strong style="color:#172033;">{{ .Email }}</strong>. Depois, volte ao aplicativo e faça login normalmente.</p>
+              <table role="presentation" cellspacing="0" cellpadding="0" style="margin:0 auto 26px;">
+                <tr>
+                  <td bgcolor="#1649b8" style="border-radius:10px;">
+                    <a href="{{ .ConfirmationURL }}" style="display:inline-block;padding:14px 24px;color:#ffffff;text-decoration:none;font-size:16px;font-weight:700;">Confirmar meu e-mail</a>
+                  </td>
+                </tr>
+              </table>
+              <div style="background:#f7f9fc;border:1px solid #e6ebf2;border-radius:12px;padding:16px 18px;font-size:13px;line-height:1.55;color:#6a768b;">
+                Se você não criou uma conta no AulaFácil, pode ignorar esta mensagem. Nunca envie sua senha por e-mail ou WhatsApp.
+              </div>
+            </td>
+          </tr>
+          <tr>
+            <td style="padding:18px 32px 26px;text-align:center;font-size:12px;color:#8792a5;">AulaFácil • Confirmação automática de cadastro</td>
+          </tr>
+        </table>
+      </td>
+    </tr>
+  </table>
+</body>
+</html>
