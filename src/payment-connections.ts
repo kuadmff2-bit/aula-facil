@@ -74,6 +74,19 @@ function connectionCapabilities(providerKey: string) {
   };
 }
 
+async function invokeCredentialAction(
+  connectionId: string,
+  action: "configure" | "clear" | "delete",
+  credentials?: Record<string, string>,
+) {
+  const { data, error } = await cloud.functions.invoke("payment-credentials", {
+    body: { connectionId, action, credentials },
+  });
+  if (error) fail("O backend seguro recusou a operação bancária", error);
+  if (data?.error) throw new Error(String(data.error));
+  return data;
+}
+
 export async function listPaymentConnections(schoolId: string): Promise<PaymentConnection[]> {
   const { data, error } = await cloud
     .from("payment_connections")
@@ -142,9 +155,16 @@ export async function updatePaymentConnection(
   return mapRow(data);
 }
 
+export async function configurePaymentCredentials(connectionId: string, credentials: Record<string, string>) {
+  await invokeCredentialAction(connectionId, "configure", credentials);
+}
+
+export async function clearPaymentCredentials(connectionId: string) {
+  await invokeCredentialAction(connectionId, "clear");
+}
+
 export async function removePaymentConnection(connectionId: string) {
-  const { error } = await cloud.from("payment_connections").delete().eq("id", connectionId);
-  if (error) fail("Não foi possível remover a conexão de pagamento", error);
+  await invokeCredentialAction(connectionId, "delete");
 }
 
 export function connectionSupports(connection: PaymentConnection, capability: PaymentCapability) {
