@@ -1,0 +1,213 @@
+@media screen {
+  html,
+  body,
+  #root {
+    width: 100%;
+    max-width: 100%;
+    min-width: 0 !important;
+    overflow-x: hidden;
+    overscroll-behavior-x: none;
+  }
+
+  html,
+  body {
+    min-height: 100%;
+  }
+
+  #root {
+    min-height: 100vh;
+  }
+
+  .app-shell {
+    width: 100%;
+    max-width: 100vw;
+    min-width: 0;
+    overflow-x: clip;
+  }
+
+  .workspace,
+  .page-content,
+  .stack,
+  .card,
+  .professional-settings-card,
+  .finance-ultimate,
+  .message-automation-card,
+  .backup-panel,
+  .cloud-account-panel,
+  .cloud-sync-panel,
+  .payment-connections-panel,
+  .certificate-manager,
+  .debt-negotiation-panel {
+    min-width: 0;
+    max-width: 100%;
+  }
+
+  .workspace {
+    width: 100%;
+    overflow-x: clip;
+  }
+
+  .page-content {
+    overflow-x: clip;
+  }
+
+  .page-content > *,
+  .stack > *,
+  .topbar > *,
+  .page-heading > *,
+  .professional-settings-heading > *,
+  .institution-logo-row > *,
+  .settings-form-grid > *,
+  .finance-ultimate-head > *,
+  .message-form-grid > *,
+  .data-summary > *,
+  .danger-zone > * {
+    min-width: 0;
+  }
+
+  img,
+  svg,
+  video,
+  canvas {
+    max-width: 100%;
+  }
+
+  input,
+  select,
+  textarea,
+  button {
+    min-width: 0;
+    max-width: 100%;
+  }
+
+  .card,
+  .settings-block,
+  .message-credential-box,
+  .generated-charge,
+  .info-box {
+    overflow-wrap: anywhere;
+  }
+
+  .table-card {
+    width: 100%;
+    max-width: 100%;
+    overflow-x: auto;
+    overflow-y: hidden;
+    overscroll-behavior-x: contain;
+    -webkit-overflow-scrolling: touch;
+  }
+
+  .table-card table {
+    min-width: 720px;
+  }
+
+  .document-dialog,
+  .modal,
+  .details-panel {
+    max-width: calc(100vw - 32px);
+  }
+
+  .topbar {
+    width: 100%;
+    max-width: 100%;
+  }
+
+  .top-actions {
+    min-width: 0;
+    flex: 0 1 auto;
+  }
+
+  .offline-pill {
+    white-space: nowrap;
+  }
+}
+
+@media screen and (max-width: 980px) {
+  .page-content {
+    padding-left: 18px;
+    padding-right: 18px;
+  }
+
+  .professional-settings-card {
+    padding: 18px;
+  }
+
+  .institution-logo-row {
+    grid-template-columns: 88px minmax(0, 1fr);
+  }
+
+  .institution-logo-preview {
+    width: 88px;
+    height: 88px;
+  }
+
+  .data-summary,
+  .danger-zone,
+  .professional-settings-heading,
+  .finance-ultimate-head,
+  .message-template-list article,
+  .automation-list article {
+    min-width: 0;
+  }
+}
+
+@media screen and (max-width: 760px) {
+  .topbar {
+    gap: 10px;
+    padding-left: 14px;
+    padding-right: 14px;
+  }
+
+  .offline-pill {
+    display: none;
+  }
+
+  .page-content {
+    padding-left: 12px;
+    padding-right: 12px;
+  }
+
+  .page-heading,
+  .professional-settings-heading,
+  .data-summary,
+  .danger-zone,
+  .institution-logo-row {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .institution-logo-row {
+    grid-template-columns: 1fr;
+  }
+
+  .settings-form-grid,
+  .message-form-grid,
+  .billing-grid,
+  .finance-ultimate-metrics,
+  .finance-metrics,
+  .student-metrics,
+  .backup-grid,
+  .notice-grid,
+  .record-list {
+    grid-template-columns: 1fr !important;
+  }
+
+  .settings-span-2,
+  .message-span-2 {
+    grid-column: auto !important;
+  }
+
+  .summary-numbers,
+  .details-actions,
+  .settings-inline-actions,
+  .message-actions {
+    flex-wrap: wrap;
+  }
+
+  .toast {
+    left: 12px;
+    right: 12px;
+    min-width: 0;
+    max-width: none;
+  }
+}
