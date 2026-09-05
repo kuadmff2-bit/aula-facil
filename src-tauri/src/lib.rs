@@ -1,11 +1,17 @@
-use std::{fs, io::ErrorKind, path::PathBuf};
+use std::{
+    fs::{self, OpenOptions},
+    io::{ErrorKind, Write},
+    path::{Path, PathBuf},
+};
 
 use tauri::Manager;
 
 const DATABASE_FILE: &str = "database.dpapi";
+const DATABASE_BACKUP_FILE: &str = "database.dpapi.bak";
+const DATABASE_TEMP_FILE: &str = "database.dpapi.tmp";
 const MAX_DATABASE_BYTES: usize = 64 * 1024 * 1024;
 
-fn database_path(app: &tauri::AppHandle) -> Result<PathBuf, String> {
+fn data_directory(app: &tauri::AppHandle) -> Result<PathBuf, String> {
     let directory = app
         .path()
         .app_data_dir()
@@ -14,7 +20,19 @@ fn database_path(app: &tauri::AppHandle) -> Result<PathBuf, String> {
     fs::create_dir_all(&directory)
         .map_err(|error| format!("Não foi possível preparar a pasta segura do AulaFácil: {error}"))?;
 
-    Ok(directory.join(DATABASE_FILE))
+    Ok(directory)
+}
+
+fn database_path(app: &tauri::AppHandle) -> Result<PathBuf, String> {
+    Ok(data_directory(app)?.join(DATABASE_FILE))
+}
+
+fn database_backup_path(app: &tauri::AppHandle) -> Result<PathBuf, String> {
+    Ok(data_directory(app)?.join(DATABASE_BACKUP_FILE))
+}
+
+fn database_temp_path(app: &tauri::AppHandle) -> Result<PathBuf, String> {
+    Ok(data_directory(app)?.join(DATABASE_TEMP_FILE))
 }
 
 #[cfg(target_os = "windows")]
@@ -26,7 +44,8 @@ fn protect_bytes(data: &[u8]) -> Result<Vec<u8>, String> {
         wincrypt::DATA_BLOB,
     };
 
-    let size = u32::try_from(data.len()).map_err(|_| "Banco de dados grande demais para ser protegido.".to_string())?;
+    let size = u32::try_from(data.len())
+        .map_err(|_| "Banco de dados grande demais para ser protegido.".to_string())?;
     let mut input = DATA_BLOB {
         cbData: size,
         pbData: data.as_ptr() as *mut u8,
@@ -71,7 +90,8 @@ fn unprotect_bytes(data: &[u8]) -> Result<Vec<u8>, String> {
         wincrypt::DATA_BLOB,
     };
 
-    let size = u32::try_from(data.len()).map_err(|_| "Banco de dados protegido inválido.".to_string())?;
+    let size = u32::try_from(data.len())
+        .map_err(|_| "Banco de dados protegido inválido.".to_string())?;
     let mut input = DATA_BLOB {
         cbData: size,
         pbData: data.as_ptr() as *mut u8,
@@ -117,9 +137,7 @@ fn unprotect_bytes(_data: &[u8]) -> Result<Vec<u8>, String> {
     Err("O armazenamento protegido desta versão está disponível somente no Windows.".to_string())
 }
 
-#[tauri::command]
-fn secure_storage_load(app: tauri::AppHandle) -> Result<Option<String>, String> {
-    let path = database_path(&app)?;
+fn load_protected_file(path: &Path) -> Result<Option<String>, String> {
     let encrypted = match fs::read(path) {
         Ok(content) => content,
         Err(error) if error.kind() == ErrorKind::NotFound => return Ok(None),
@@ -137,24 +155,80 @@ fn secure_storage_load(app: tauri::AppHandle) -> Result<Option<String>, String> 
 }
 
 #[tauri::command]
+fn secure_storage_load(app: tauri::AppHandle) -> Result<Option<String>, String> {
+    let primary = database_path(&app)?;
+    let backup = database_backup_path(&app)?;
+
+    match load_protected_file(&primary) {
+        Ok(Some(content)) => Ok(Some(content)),
+        Ok(None) => load_protected_file(&backup),
+        Err(primary_error) => match load_protected_file(&backup) {
+            Ok(Some(content)) => Ok(Some(content)),
+            Ok(None) => Err(primary_error),
+            Err(backup_error) => Err(format!(
+                "O banco principal e a cópia de recuperação não puderam ser abertos. Principal: {primary_error} Recuperação: {backup_error}"
+            )),
+        },
+    }
+}
+
+#[tauri::command]
 fn secure_storage_save(app: tauri::AppHandle, payload: String) -> Result<(), String> {
     if payload.len() > MAX_DATABASE_BYTES {
         return Err("O banco de dados excede o limite de segurança permitido.".to_string());
     }
 
-    let path = database_path(&app)?;
+    let primary = database_path(&app)?;
+    let backup = database_backup_path(&app)?;
+    let temporary = database_temp_path(&app)?;
     let encrypted = protect_bytes(payload.as_bytes())?;
-    fs::write(path, encrypted).map_err(|error| format!("Não foi possível salvar o banco protegido: {error}"))
+
+    let mut temp_file = OpenOptions::new()
+        .create(true)
+        .truncate(true)
+        .write(true)
+        .open(&temporary)
+        .map_err(|error| format!("Não foi possível preparar a gravação segura: {error}"))?;
+
+    temp_file
+        .write_all(&encrypted)
+        .map_err(|error| format!("Não foi possível gravar a cópia temporária: {error}"))?;
+    temp_file
+        .sync_all()
+        .map_err(|error| format!("Não foi possível confirmar a gravação no disco: {error}"))?;
+    drop(temp_file);
+
+    if primary.exists() {
+        fs::copy(&primary, &backup)
+            .map_err(|error| format!("Não foi possível criar a cópia de recuperação antes de salvar: {error}"))?;
+        fs::remove_file(&primary)
+            .map_err(|error| format!("Não foi possível substituir o banco protegido atual: {error}"))?;
+    }
+
+    if let Err(error) = fs::rename(&temporary, &primary) {
+        if backup.exists() && !primary.exists() {
+            let _ = fs::copy(&backup, &primary);
+        }
+        return Err(format!("Não foi possível concluir a gravação protegida: {error}"));
+    }
+
+    Ok(())
 }
 
 #[tauri::command]
 fn secure_storage_clear(app: tauri::AppHandle) -> Result<(), String> {
-    let path = database_path(&app)?;
-    match fs::remove_file(path) {
-        Ok(()) => Ok(()),
-        Err(error) if error.kind() == ErrorKind::NotFound => Ok(()),
-        Err(error) => Err(format!("Não foi possível remover o banco protegido: {error}")),
+    for path in [
+        database_path(&app)?,
+        database_backup_path(&app)?,
+        database_temp_path(&app)?,
+    ] {
+        match fs::remove_file(path) {
+            Ok(()) => {}
+            Err(error) if error.kind() == ErrorKind::NotFound => {}
+            Err(error) => return Err(format!("Não foi possível remover o banco protegido: {error}")),
+        }
     }
+    Ok(())
 }
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
