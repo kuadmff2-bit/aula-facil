@@ -24,6 +24,7 @@ import {
 import "./message-automations-panel.css";
 
 const SELECTED_SCHOOL_KEY = "aulafacil.cloud.selected-school";
+const CLOUD_SCHOOL_CHANGE_EVENT = "aulafacil:cloud-school-change";
 
 const EVENT_LABELS: Record<MessageEventKey, string> = {
   invoice_before_due: "Mensalidade antes do vencimento",
@@ -119,11 +120,17 @@ export function MessageAutomationsPanel() {
     const sync = () => {
       const next = localStorage.getItem(SELECTED_SCHOOL_KEY) ?? "";
       setSchoolId(next);
+      setCredentialChannelId("");
+      setCredentials({});
       void refresh(next).catch((error) => setMessage({ tone: "danger", text: error instanceof Error ? error.message : "Não foi possível carregar as automações." }));
     };
     sync();
     window.addEventListener("storage", sync);
-    return () => window.removeEventListener("storage", sync);
+    window.addEventListener(CLOUD_SCHOOL_CHANGE_EVENT, sync);
+    return () => {
+      window.removeEventListener("storage", sync);
+      window.removeEventListener(CLOUD_SCHOOL_CHANGE_EVENT, sync);
+    };
   }, []);
 
   const run = async (operation: () => Promise<void>) => {
