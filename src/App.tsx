@@ -66,6 +66,7 @@ import { MessageAutomationsPanel } from "./message-automations-panel";
 import { dueDateForMonth, invoiceAmountDue, referenceMonthFromDate } from "./finance-utils";
 import { CertificateManager } from "./certificate-manager";
 import { BackupPanel } from "./backup-panel";
+import { SchoolBrand } from "./school-brand";
 
 type ModalKind = "student" | "class" | "invoice" | "bulk-invoice" | "notice" | "grade" | "student-details" | null;
 type Toast = { message: string; tone: "success" | "warning" | "danger" };
@@ -551,9 +552,8 @@ export default function App() {
   return (
     <div className="app-shell">
       <aside className="sidebar">
-        <button className="brand" onClick={() => changeView("dashboard")}>
-          <span className="brand-mark">A<i /></span>
-          <span><strong>AulaFácil</strong><small>{database.settings.institution.name || "Sua instituição"}</small></span>
+        <button className="brand" onClick={() => changeView("dashboard")} aria-label="Ir para o início">
+          <SchoolBrand institution={database.settings.institution} />
         </button>
 
         <div className="nav-label">GESTÃO</div>

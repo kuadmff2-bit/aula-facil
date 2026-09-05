@@ -29,6 +29,56 @@ function normalizeMoneyInput(value: string) {
   return Number.isFinite(parsed) && parsed >= 0 ? parsed : 0;
 }
 
+const MAX_LOGO_SOURCE_BYTES = 12 * 1024 * 1024;
+const MAX_LOGO_SAVED_BYTES = 900 * 1024;
+const LOGO_TYPES = new Set(["image/png", "image/jpeg", "image/webp"]);
+
+function blobToDataUrl(blob: Blob) {
+  return new Promise<string>((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(String(reader.result ?? ""));
+    reader.onerror = () => reject(new Error("Não foi possível processar a imagem selecionada."));
+    reader.readAsDataURL(blob);
+  });
+}
+
+async function optimizeLogo(file: File) {
+  if (!LOGO_TYPES.has(file.type)) throw new Error("Use uma imagem PNG, JPG/JPEG ou WEBP.");
+  if (file.size > MAX_LOGO_SOURCE_BYTES) throw new Error("A imagem original pode ter no máximo 12 MB.");
+
+  const objectUrl = URL.createObjectURL(file);
+  try {
+    const image = await new Promise<HTMLImageElement>((resolve, reject) => {
+      const element = new Image();
+      element.onload = () => resolve(element);
+      element.onerror = () => reject(new Error("A imagem não pôde ser aberta."));
+      element.src = objectUrl;
+    });
+    if (!image.naturalWidth || !image.naturalHeight) throw new Error("A imagem selecionada é inválida.");
+    if (image.naturalWidth * image.naturalHeight > 80_000_000) throw new Error("A resolução da imagem é grande demais. Use uma imagem de até 80 megapixels.");
+
+    const attempts = [
+      { maxSide: 1600, quality: 0.90 },
+      { maxSide: 1200, quality: 0.82 },
+      { maxSide: 900, quality: 0.74 },
+    ];
+    for (const attempt of attempts) {
+      const scale = Math.min(1, attempt.maxSide / Math.max(image.naturalWidth, image.naturalHeight));
+      const canvas = document.createElement("canvas");
+      canvas.width = Math.max(1, Math.round(image.naturalWidth * scale));
+      canvas.height = Math.max(1, Math.round(image.naturalHeight * scale));
+      const context = canvas.getContext("2d", { alpha: true });
+      if (!context) throw new Error("O Windows não conseguiu preparar a imagem da logo.");
+      context.drawImage(image, 0, 0, canvas.width, canvas.height);
+      const blob = await new Promise<Blob | null>((resolve) => canvas.toBlob(resolve, "image/webp", attempt.quality));
+      if (blob && blob.size <= MAX_LOGO_SAVED_BYTES) return blobToDataUrl(blob);
+    }
+    throw new Error("A logo continuou muito pesada após a otimização. Escolha uma imagem com menos detalhes.");
+  } finally {
+    URL.revokeObjectURL(objectUrl);
+  }
+}
+
 function SettingsHeader({ title, description }: { title: string; description: string }) {
   return (
     <div className="professional-settings-heading">
@@ -50,14 +100,7 @@ export function InstitutionSettingsPanel({ value, onChange }: InstitutionSetting
   const importLogo = async (file?: File) => {
     setLogoError("");
     if (!file) return;
-    if (!file.type.startsWith("image/")) throw new Error("Selecione um arquivo de imagem válido.");
-    if (file.size > 1_500_000) throw new Error("A logo deve ter no máximo 1,5 MB.");
-    const dataUrl = await new Promise<string>((resolve, reject) => {
-      const reader = new FileReader();
-      reader.onload = () => resolve(String(reader.result ?? ""));
-      reader.onerror = () => reject(new Error("Não foi possível ler o arquivo selecionado."));
-      reader.readAsDataURL(file);
-    });
+    const dataUrl = await optimizeLogo(file);
     update("logoDataUrl", dataUrl);
   };
 
@@ -74,7 +117,7 @@ export function InstitutionSettingsPanel({ value, onChange }: InstitutionSetting
         </div>
         <div>
           <strong>Marca da escola</strong>
-          <p>PNG, JPG, WEBP ou SVG. Recomendado: imagem quadrada ou com fundo transparente.</p>
+          <p>PNG, JPG/JPEG ou WEBP de até 12 MB. O AulaFácil otimiza a imagem automaticamente para manter o sistema rápido.</p>
           <div className="settings-inline-actions">
             <button type="button" className="secondary-button" onClick={() => fileRef.current?.click()}>Escolher logo</button>
             {value.logoDataUrl && <button type="button" className="ghost-danger-button" onClick={() => update("logoDataUrl", "")}>Remover</button>}
@@ -84,7 +127,7 @@ export function InstitutionSettingsPanel({ value, onChange }: InstitutionSetting
             ref={fileRef}
             hidden
             type="file"
-            accept="image/png,image/jpeg,image/webp,image/svg+xml"
+            accept="image/png,image/jpeg,image/webp"
             onChange={(event) => {
               void importLogo(event.target.files?.[0]).catch((error) => {
                 setLogoError(error instanceof Error ? error.message : "Não foi possível carregar a logo.");

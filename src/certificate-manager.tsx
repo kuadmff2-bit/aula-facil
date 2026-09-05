@@ -123,7 +123,7 @@ export function CertificateManager({ student, classItem, database, onClose, onCo
         <div><span className="certificate-manager-eyebrow">CONCLUSÃO DO ALUNO</span><strong>Certificados</strong><small>{student.name} · {classItem?.name ?? "Curso"}</small></div>
         <div className="certificate-manager-actions">
           <button className="secondary-button" onClick={onClose}><X size={17}/> Fechar</button>
-          {selected && <button className="secondary-button" onClick={() => window.print()}><Printer size={17}/> Imprimir / PDF</button>}
+          {selected && <button className="primary-button" onClick={() => window.print()} title="Imprimir certificado ou salvar em PDF"><Printer size={17}/> Imprimir certificado</button>}
           <button className={armed ? "danger-button" : "primary-button"} disabled={busy} onClick={() => void emit()}><FileCheck2 size={17}/>{busy ? "Emitindo..." : armed ? "Confirmar conclusão" : "Emitir novo certificado"}</button>
         </div>
       </div>

@@ -167,6 +167,7 @@ async function pushSnapshot(schoolId: string, source: SchoolDatabase, role: Clou
       name: institution.name || undefined,
       legal_name: institution.legalName || null,
       document_number: institution.documentNumber || null,
+      logo_url: institution.logoDataUrl || null,
       primary_color: institution.primaryColor,
       secondary_color: institution.secondaryColor,
       address: institution.address || null,
