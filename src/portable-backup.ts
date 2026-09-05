@@ -20,6 +20,12 @@ export type EncryptedBackupEnvelope = {
   data: string;
 };
 
+function asArrayBuffer(bytes: Uint8Array): ArrayBuffer {
+  const copy = new Uint8Array(bytes.byteLength);
+  copy.set(bytes);
+  return copy.buffer;
+}
+
 function bytesToBase64(bytes: Uint8Array) {
   let binary = "";
   const chunkSize = 0x8000;
@@ -85,7 +91,7 @@ async function deriveKey(password: string, salt: Uint8Array, iterations: number)
     ["deriveKey"],
   );
   return crypto.subtle.deriveKey(
-    { name: "PBKDF2", hash: "SHA-256", salt, iterations },
+    { name: "PBKDF2", hash: "SHA-256", salt: asArrayBuffer(salt), iterations },
     passwordKey,
     { name: "AES-GCM", length: 256 },
     false,
@@ -111,7 +117,7 @@ export async function createEncryptedBackup(database: SchoolDatabase, password: 
   const iv = crypto.getRandomValues(new Uint8Array(12));
   const key = await deriveKey(password, salt, PBKDF2_ITERATIONS);
   const encrypted = await crypto.subtle.encrypt(
-    { name: "AES-GCM", iv },
+    { name: "AES-GCM", iv: asArrayBuffer(iv) },
     key,
     encoder.encode(plaintext),
   );
@@ -142,7 +148,11 @@ export async function decryptPortableBackup(content: string, password: string): 
   const key = await deriveKey(password, salt, envelope.iterations);
 
   try {
-    const decrypted = await crypto.subtle.decrypt({ name: "AES-GCM", iv }, key, encrypted);
+    const decrypted = await crypto.subtle.decrypt(
+      { name: "AES-GCM", iv: asArrayBuffer(iv) },
+      key,
+      asArrayBuffer(encrypted),
+    );
     return parseBackup(decoder.decode(decrypted));
   } catch {
     throw new Error("Senha incorreta ou arquivo de backup corrompido.");
