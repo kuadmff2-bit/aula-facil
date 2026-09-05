@@ -90,7 +90,7 @@ replacement = '''  const generateMonthlyInvoices = (event: FormEvent<HTMLFormEle
   };
 
   const addNotice'''
-text, count = pattern.subn(replacement, text, count=1)
+text, count = pattern.subn(lambda _match: replacement, text, count=1)
 if count != 1:
     raise SystemExit(f'geração mensal: esperado 1 trecho, encontrado {count}')
 
@@ -113,7 +113,7 @@ replacement = '''  const restoreBackupCandidate = (restored: SchoolDatabase, sou
   };
 
   const resetDatabase ='''
-text, count = pattern.subn(replacement, text, count=1)
+text, count = pattern.subn(lambda _match: replacement, text, count=1)
 if count != 1:
     raise SystemExit(f'backup antigo: esperado 1 trecho, encontrado {count}')
 
@@ -139,7 +139,7 @@ replacement = '''{view === "backup" && (
               onNotify={notify}
             />
           )}'''
-text, count = pattern.subn(replacement, text, count=1)
+text, count = pattern.subn(lambda _match: replacement, text, count=1)
 if count != 1:
     raise SystemExit(f'painel backup: esperado 1 trecho, encontrado {count}')
 
