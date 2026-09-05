@@ -68,3 +68,5 @@ jobs:
           git fetch origin develop
           git rebase origin/develop
           git push origin HEAD:develop
+
+# Reexecutado após validação dos testes de backup.
