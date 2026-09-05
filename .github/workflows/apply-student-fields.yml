@@ -6,6 +6,7 @@ on:
     paths:
       - "scripts/patch-student-fields.py"
       - ".github/workflows/apply-student-fields.yml"
+  workflow_dispatch:
 
 permissions:
   contents: write
