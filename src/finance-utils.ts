@@ -40,7 +40,7 @@ export function invoiceAmountDue(
   asOf = new Date().toISOString().slice(0, 10),
 ): InvoiceAmountBreakdown {
   const baseAmount = roundMoney(Math.max(0, invoice.amount));
-  if (invoice.status === "paid" || invoice.status === "cancelled") {
+  if (invoice.status === "paid" || invoice.status === "cancelled" || invoice.status === "negotiated") {
     return { baseAmount, lateFee: 0, interest: 0, totalDue: baseAmount, daysOverdue: 0 };
   }
 
