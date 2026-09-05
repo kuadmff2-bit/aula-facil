@@ -5,7 +5,6 @@ import {
   getCloudDataSummary,
   listCloudSchools,
   onCloudAuthChange,
-  seedEmptyCloudFromLocal,
   signInCloud,
   signOutCloud,
   signUpCloud,
@@ -13,7 +12,7 @@ import {
   type CloudDataSummary,
   type CloudSchool,
 } from "./cloud";
-import { establishSyncBaseline, safePullFromCloud } from "./cloud-safe-sync";
+import { safePullFromCloud, safePushToCloud } from "./cloud-safe-sync";
 import type { SchoolDatabase } from "./model";
 import { LegalAcceptancePanel } from "./legal-acceptance-panel";
 import { copyCurrentLegalAcceptanceToSchool } from "./legal-acceptance";
@@ -231,8 +230,7 @@ export function CloudAccountPanel({ database, onReplaceDatabase }: Props) {
               <h3>Primeiro envio deste computador</h3>
               <p>Por segurança, o AulaFácil só permite esta operação quando a instituição online ainda não possui registros operacionais.</p>
               <button className="primary-button" disabled={busy || !selectedSchoolId || (summary?.totalOperationalRecords ?? 1) > 0} onClick={() => void run(async () => {
-                const normalized = await seedEmptyCloudFromLocal(selectedSchoolId, database);
-                await establishSyncBaseline(selectedSchoolId, normalized);
+                const normalized = await safePushToCloud(selectedSchoolId, database);
                 onReplaceDatabase(normalized);
                 setSummary(await getCloudDataSummary(selectedSchoolId));
                 setMessage({ tone: "success", text: "Dados iniciais enviados e este computador foi vinculado à revisão atual da nuvem." });
