@@ -30,7 +30,7 @@ export type Student = {
   guardianPhone: string;
   customFields: Record<string, string>;
   classId: string;
-  dueDay: number | null;
+  dueDay?: number | null;
   active: boolean;
   createdAt: string;
 };
