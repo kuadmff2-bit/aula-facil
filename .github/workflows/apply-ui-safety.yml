@@ -1,0 +1,58 @@
+name: Integrar tema e confirmações com validação
+
+on:
+  push:
+    branches: [develop]
+    paths:
+      - "scripts/apply-ui-safety.py"
+      - ".github/workflows/apply-ui-safety.yml"
+
+permissions:
+  contents: write
+
+jobs:
+  integrate:
+    runs-on: windows-latest
+    steps:
+      - name: Baixar a develop
+        uses: actions/checkout@v4
+        with:
+          ref: develop
+          fetch-depth: 0
+
+      - name: Preparar Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Preparar Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Instalar dependências
+        run: npm ci
+
+      - name: Aplicar integração de UX
+        run: python scripts/apply-ui-safety.py
+
+      - name: Validar estrutura
+        run: node scripts/quality-check.mjs
+
+      - name: Validar frontend
+        run: npm run build
+
+      - name: Validar Tauri
+        run: cargo check --manifest-path src-tauri/Cargo.toml
+
+      - name: Publicar somente se tudo passou
+        shell: bash
+        run: |
+          if git diff --quiet -- src/App.tsx src/main.tsx; then
+            echo "Nenhuma alteração necessária."
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add src/App.tsx src/main.tsx
+          git commit -m "Integrar modo escuro e confirmações personalizadas"
+          git push origin HEAD:develop
