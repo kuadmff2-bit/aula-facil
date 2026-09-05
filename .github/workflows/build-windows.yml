@@ -3,6 +3,7 @@ name: Gerar instaladores do AulaFácil
 on:
   push:
     branches: [main]
+    tags: ["v*"]
   workflow_dispatch:
 
 permissions:
@@ -47,6 +48,9 @@ jobs:
       - name: Instalar dependências
         run: npm ci
 
+      - name: Validar TypeScript e frontend
+        run: npm run build
+
       - name: Gerar ícones
         run: npm run desktop:icons
 
@@ -61,7 +65,7 @@ jobs:
           New-Item -ItemType Directory -Force -Path "dist-installers" | Out-Null
           Copy-Item $source.FullName "dist-installers/${{ matrix.artifact }}-Setup.exe"
 
-      - name: Guardar o instalador
+      - name: Guardar o instalador de teste
         uses: actions/upload-artifact@v4
         with:
           name: ${{ matrix.artifact }}
@@ -71,6 +75,7 @@ jobs:
 
   release:
     name: Publicar downloads
+    if: startsWith(github.ref, 'refs/tags/v')
     needs: build
     runs-on: ubuntu-latest
     steps:
@@ -90,6 +95,16 @@ jobs:
           cd release-assets
           sha256sum *.exe > SHA256SUMS.txt
 
+      - name: Conferir versão da tag
+        run: |
+          version=$(node -p "require('./package.json').version")
+          expected="v${version}"
+          actual="${GITHUB_REF_NAME}"
+          if [ "$actual" != "$expected" ]; then
+            echo "A tag $actual não corresponde à versão $expected do package.json."
+            exit 1
+          fi
+
       - name: Publicar a versão do aplicativo
         env:
           GH_TOKEN: ${{ github.token }}
@@ -106,5 +121,5 @@ jobs:
           else
             gh release create "$tag" "${files[@]}" \
               --title "AulaFácil Desktop ${version}" \
-              --notes "Versão desktop local e independente do AulaFácil. Abre limpa, funciona sem login e sem internet. Use ARM64 no Galaxy Book Go; use x64 em computadores Intel ou AMD."
+              --generate-notes
           fi
