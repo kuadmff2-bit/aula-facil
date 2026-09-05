@@ -46,5 +46,8 @@ jobs:
       - name: Validar TypeScript e frontend
         run: npm run build
 
+      - name: Gerar ícones do aplicativo
+        run: npm run desktop:icons
+
       - name: Validar código nativo do Tauri
         run: cargo check --manifest-path src-tauri/Cargo.toml
