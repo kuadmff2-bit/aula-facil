@@ -37,22 +37,22 @@ const EVENT_LABELS: Record<MessageEventKey, string> = {
 };
 
 const EVENT_DEFAULTS: Record<MessageEventKey, { body: string; offset: number }> = {
-  invoice_before_due: { body: "Olá, {responsavel}! A mensalidade de {aluno}, no valor de {valor}, vence em {vencimento}. Caso já tenha pago, desconsidere esta mensagem.", offset: 1 },
-  invoice_due: { body: "Olá, {responsavel}! A mensalidade de {aluno}, no valor de {valor}, vence hoje ({vencimento}).", offset: 0 },
-  invoice_overdue: { body: "Olá, {responsavel}. A mensalidade de {aluno}, referente a {referencia}, está em atraso. Valor atualizado: {valor}.", offset: 1 },
-  payment_confirmed: { body: "Olá, {responsavel}! Confirmamos o pagamento de {valor} referente a {referencia}. Obrigado!", offset: 0 },
-  negotiation_due: { body: "Olá, {responsavel}! A parcela da negociação de {aluno}, no valor de {valor}, vence em {vencimento}.", offset: 1 },
-  absence: { body: "Olá, {responsavel}. Registramos ausência de {aluno} em {data}. Em caso de dúvida, entre em contato com a escola.", offset: 0 },
+  invoice_before_due: { body: "Olá, {destinatario}! {contexto}, no valor de {valor}, vence em {vencimento}. Caso já tenha pago, desconsidere esta mensagem.", offset: 1 },
+  invoice_due: { body: "Olá, {destinatario}! {contexto}, no valor de {valor}, vence hoje ({vencimento}).", offset: 0 },
+  invoice_overdue: { body: "Olá, {destinatario}. {contexto}, referente a {referencia}, está em atraso. Valor atualizado: {valor}.", offset: 1 },
+  payment_confirmed: { body: "Olá, {destinatario}! Confirmamos {contexto}, no valor de {valor}, referente a {referencia}. Obrigado!", offset: 0 },
+  negotiation_due: { body: "Olá, {destinatario}! {contexto}, no valor de {valor}, vence em {vencimento}.", offset: 1 },
+  absence: { body: "Olá, {destinatario}. Registramos {contexto} em {data}. Em caso de dúvida, entre em contato com a escola.", offset: 0 },
   notice: { body: "{escola}: {titulo}\n{aviso}", offset: 0 },
 };
 
 const META_PARAMETER_SUGGESTIONS: Record<MessageEventKey, string[]> = {
-  invoice_before_due: ["responsavel", "aluno", "valor", "vencimento"],
-  invoice_due: ["responsavel", "aluno", "valor", "vencimento"],
-  invoice_overdue: ["responsavel", "aluno", "referencia", "valor"],
-  payment_confirmed: ["responsavel", "valor", "referencia"],
-  negotiation_due: ["responsavel", "aluno", "valor", "vencimento"],
-  absence: ["responsavel", "aluno", "data"],
+  invoice_before_due: ["destinatario", "contexto", "valor", "vencimento"],
+  invoice_due: ["destinatario", "contexto", "valor", "vencimento"],
+  invoice_overdue: ["destinatario", "contexto", "referencia", "valor"],
+  payment_confirmed: ["destinatario", "contexto", "valor", "referencia"],
+  negotiation_due: ["destinatario", "contexto", "valor", "vencimento"],
+  absence: ["destinatario", "contexto", "data"],
   notice: ["escola", "titulo", "aviso"],
 };
 
@@ -217,7 +217,12 @@ export function MessageAutomationsPanel() {
       recipientMode,
     });
     await refresh();
-    setMessage({ tone: "success", text: "Automação ativada no servidor. Ela continuará funcionando com o AulaFácil fechado." });
+    setMessage({
+      tone: "success",
+      text: recipientMode === "auto"
+        ? "Automação ativada. Menores de 18 anos recebem pelo responsável; alunos com 18 anos ou mais recebem diretamente, com texto adaptado à idade."
+        : "Automação ativada no servidor. Ela continuará funcionando com o AulaFácil fechado.",
+    });
   });
 
   return (
@@ -260,9 +265,9 @@ export function MessageAutomationsPanel() {
           <label className="message-span-2"><span>Texto / prévia</span><textarea rows={4} maxLength={4000} value={templateBody} onChange={(e) => setTemplateBody(e.target.value)} /></label>
           <label><span>Template aprovado da Meta</span><input placeholder="ex.: mensalidade_vence_amanha" value={metaTemplateName} onChange={(e) => setMetaTemplateName(e.target.value)} /></label>
           <label><span>Idioma Meta</span><input value={metaLanguage} maxLength={30} onChange={(e) => setMetaLanguage(e.target.value)} /></label>
-          <label className="message-span-2"><span>Parâmetros Meta, na ordem</span><input value={metaParameterKeys} onChange={(e) => setMetaParameterKeys(e.target.value)} /><small>Use os nomes sem chaves, separados por vírgula. Ex.: responsavel, aluno, valor, vencimento.</small></label>
+          <label className="message-span-2"><span>Parâmetros Meta, na ordem</span><input value={metaParameterKeys} onChange={(e) => setMetaParameterKeys(e.target.value)} /><small>Use os nomes sem chaves, separados por vírgula. Ex.: destinatario, contexto, valor, vencimento.</small></label>
         </div>
-        <div className="message-variable-help">Variáveis disponíveis: <code>{'{aluno}'}</code> <code>{'{responsavel}'}</code> <code>{'{valor}'}</code> <code>{'{vencimento}'}</code> <code>{'{referencia}'}</code> <code>{'{escola}'}</code> <code>{'{data}'}</code>.</div>
+        <div className="message-variable-help">Variáveis disponíveis: <code>{'{destinatario}'}</code> <code>{'{contexto}'}</code> <code>{'{aluno}'}</code> <code>{'{responsavel}'}</code> <code>{'{valor}'}</code> <code>{'{vencimento}'}</code> <code>{'{referencia}'}</code> <code>{'{escola}'}</code> <code>{'{data}'}</code>. <strong>{'{destinatario}'}</strong> e <strong>{'{contexto}'}</strong> mudam automaticamente conforme a idade.</div>
         <button className="secondary-button" type="button" disabled={busy || !schoolId} onClick={addTemplate}>Salvar novo modelo</button>
 
         {templates.length > 0 && <div className="message-template-list">{templates.map((template) => <article key={template.id}><div><strong>{template.name}</strong><span>{EVENT_LABELS[template.eventKey]} · {template.metaTemplateName ? `Meta: ${template.metaTemplateName}` : "sem template Meta"}</span></div><button type="button" onClick={() => void run(async () => { await updateMessageTemplate(template.id, { enabled: !template.enabled }); await refresh(); })}>{template.enabled ? "Desativar" : "Ativar"}</button></article>)}</div>}
@@ -275,12 +280,13 @@ export function MessageAutomationsPanel() {
           <label><span>Modelo</span><select value={automationTemplateId} onChange={(e) => { const id = e.target.value; setAutomationTemplateId(id); const template = templates.find((item) => item.id === id); if (template) setDaysOffset(EVENT_DEFAULTS[template.eventKey].offset); }}><option value="">Escolha</option>{templates.filter((item) => item.enabled).map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}</select></label>
           <label><span>Dias de antecedência/atraso</span><input type="number" min={0} max={365} value={daysOffset} onChange={(e) => setDaysOffset(Math.max(0, Math.min(365, Math.trunc(Number(e.target.value) || 0))))} /></label>
           <label><span>Hora de envio</span><select value={sendHour} onChange={(e) => setSendHour(Number(e.target.value))}>{Array.from({ length: 24 }, (_, hour) => <option key={hour} value={hour}>{String(hour).padStart(2, "0")}:00</option>)}</select></label>
-          <label><span>Destinatário</span><select value={recipientMode} onChange={(e) => setRecipientMode(e.target.value as RecipientMode)}><option value="auto">Automático (responsável se menor)</option><option value="guardian">Sempre responsável</option><option value="student">Sempre aluno</option></select></label>
+          <label><span>Destinatário</span><select value={recipientMode} onChange={(e) => setRecipientMode(e.target.value as RecipientMode)}><option value="auto">Automático pela idade (recomendado)</option><option value="guardian">Sempre responsável</option><option value="student">Sempre aluno</option></select></label>
           <label><span>Evento selecionado</span><input readOnly value={selectedTemplate ? EVENT_LABELS[selectedTemplate.eventKey] : "Escolha um modelo"} /></label>
+          {recipientMode === "auto" && <div className="message-age-rule message-span-2"><strong>Como o destinatário é escolhido</strong><span>Menor de 18 anos: usa o telefone do responsável e fala sobre o aluno pelo nome. A partir de 18 anos: usa o telefone do próprio aluno e escreve diretamente “sua mensalidade”, “seu pagamento” ou “sua ausência”. Se o telefone correto não estiver cadastrado, o AulaFácil não troca silenciosamente para outra pessoa.</span></div>}
         </div>
         <button className="primary-button" type="button" disabled={busy || !schoolId} onClick={addAutomation}>Ativar automação</button>
 
-        {automations.length > 0 && <div className="automation-list">{automations.map((automation) => { const channel = channels.find((item) => item.id === automation.channelId); const template = templates.find((item) => item.id === automation.templateId); return <article key={automation.id}><div><strong>{template?.name ?? EVENT_LABELS[automation.eventKey]}</strong><span>{channel?.displayName ?? "Canal"} · {String(automation.sendHour).padStart(2, "0")}:00 · {automation.recipientMode === "auto" ? "destinatário automático" : automation.recipientMode === "guardian" ? "responsável" : "aluno"}</span></div><div className="message-actions"><button type="button" onClick={() => void run(async () => { await updateMessageAutomation(automation.id, { enabled: !automation.enabled }); await refresh(); })}>{automation.enabled ? "Pausar" : "Ativar"}</button><button className="danger" type="button" onClick={() => void run(async () => { await removeMessageAutomation(automation.id); await refresh(); })}>Excluir</button></div></article>; })}</div>}
+        {automations.length > 0 && <div className="automation-list">{automations.map((automation) => { const channel = channels.find((item) => item.id === automation.channelId); const template = templates.find((item) => item.id === automation.templateId); return <article key={automation.id}><div><strong>{template?.name ?? EVENT_LABELS[automation.eventKey]}</strong><span>{channel?.displayName ?? "Canal"} · {String(automation.sendHour).padStart(2, "0")}:00 · {automation.recipientMode === "auto" ? "por idade: menor → responsável, 18+ → aluno" : automation.recipientMode === "guardian" ? "responsável" : "aluno"}</span></div><div className="message-actions"><button type="button" onClick={() => void run(async () => { await updateMessageAutomation(automation.id, { enabled: !automation.enabled }); await refresh(); })}>{automation.enabled ? "Pausar" : "Ativar"}</button><button className="danger" type="button" onClick={() => void run(async () => { await removeMessageAutomation(automation.id); await refresh(); })}>Excluir</button></div></article>; })}</div>}
       </div>
 
       <div className="message-section">
