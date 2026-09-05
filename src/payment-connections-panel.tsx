@@ -11,6 +11,7 @@ import { PAYMENT_PROVIDERS, type PaymentProviderKey } from "./payment-providers"
 import "./payment-connections-panel.css";
 
 const SELECTED_SCHOOL_KEY = "aulafacil.cloud.selected-school";
+const CLOUD_SCHOOL_CHANGE_EVENT = "aulafacil:cloud-school-change";
 
 type Message = { tone: "success" | "warning" | "danger"; text: string } | null;
 
@@ -64,11 +65,17 @@ export function PaymentConnectionsPanel() {
     const syncSchool = () => {
       const next = localStorage.getItem(SELECTED_SCHOOL_KEY) ?? "";
       setSchoolId(next);
+      setCredentialConnectionId("");
+      setCredentialValues({});
       void refresh(next).catch((error) => setMessage({ tone: "danger", text: error instanceof Error ? error.message : "Não foi possível carregar os recebimentos." }));
     };
     syncSchool();
     window.addEventListener("storage", syncSchool);
-    return () => window.removeEventListener("storage", syncSchool);
+    window.addEventListener(CLOUD_SCHOOL_CHANGE_EVENT, syncSchool);
+    return () => {
+      window.removeEventListener("storage", syncSchool);
+      window.removeEventListener(CLOUD_SCHOOL_CHANGE_EVENT, syncSchool);
+    };
   }, []);
 
   const run = async (operation: () => Promise<void>) => {
@@ -157,7 +164,7 @@ export function PaymentConnectionsPanel() {
         <div>
           <span className="payment-eyebrow">RECEBIMENTOS</span>
           <h2>Bancos e provedores de pagamento</h2>
-          <p>Conecte mais de um serviço. O AulaFácil pode usar provedores diferentes para Pix, boleto e cartão sem prender a escola a uma única empresa.</p>
+          <p>Conecte mais de um serviço. O AulaFácil pode usar provedores diferentes para Pix e boleto sem prender a escola a uma única empresa.</p>
         </div>
       </div>
 
