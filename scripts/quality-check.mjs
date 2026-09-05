@@ -23,7 +23,7 @@ if (tauri.version !== pkg.version) failures.push(`Versões diferentes: package.j
 if (cargoVersion !== pkg.version) failures.push(`Versões diferentes: package.json=${pkg.version}, Cargo.toml=${cargoVersion ?? "ausente"}.`);
 
 if (lock.version !== pkg.version || lock.packages?.[""]?.version !== pkg.version) {
-  warnings.push(`package-lock.json ainda registra ${lock.version}/${lock.packages?.[""]?.version}; sincronizar antes do próximo lançamento.`);
+  failures.push(`package-lock.json registra ${lock.version}/${lock.packages?.[""]?.version}, mas a versão do aplicativo é ${pkg.version}.`);
 }
 
 if (!mainRs.includes('windows_subsystem = "windows"')) {
