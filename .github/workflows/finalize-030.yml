@@ -133,7 +133,7 @@ jobs:
         run: |
           $ErrorActionPreference = "Stop"
           $package = Get-Content package.json -Raw | ConvertFrom-Json
-          $lock = Get-Content package-lock.json -Raw | ConvertFrom-Json
+          $lock = Get-Content package-lock.json -Raw | ConvertFrom-Json -AsHashtable
           $tauri = Get-Content src-tauri/tauri.conf.json -Raw | ConvertFrom-Json
           $cargo = Get-Content src-tauri/Cargo.toml -Raw
           $cargoLock = Get-Content src-tauri/Cargo.lock -Raw
@@ -141,7 +141,7 @@ jobs:
           [xml]$manifest = Get-Content src-tauri/msix/AppxManifest.xml -Raw
 
           if ($package.version -ne "0.3.0") { throw "package.json não está em 0.3.0" }
-          if ($lock.version -ne "0.3.0" -or $lock.packages."".version -ne "0.3.0") { throw "package-lock raiz não está em 0.3.0" }
+          if ($lock["version"] -ne "0.3.0" -or $lock["packages"][""]["version"] -ne "0.3.0") { throw "package-lock raiz não está em 0.3.0" }
           if ($tauri.version -ne "0.3.0") { throw "tauri.conf.json não está em 0.3.0" }
           if ($cargo -notmatch '(?m)^version = "0\.3\.0"') { throw "Cargo.toml não está em 0.3.0" }
           if ($cargoLock -notmatch '(?s)name = "aula-facil"\s+version = "0\.3\.0"') { throw "Cargo.lock do aplicativo não está em 0.3.0" }
