@@ -5,6 +5,7 @@ import { dueDateForMonth, invoiceAmountDue, referenceMonthFromDate } from "./fin
 import { makeId, type Invoice, type Payment, type SchoolDatabase, type Student } from "./model";
 import { DebtNegotiationPanel } from "./debt-negotiation-panel";
 import { getCloudSyncStatus, safePullFromCloud } from "./cloud-safe-sync";
+import { confirmManualInvoicePayment } from "./manual-payment";
 import "./finance-ultimate.css";
 
 const SELECTED_SCHOOL_KEY = "aulafacil.cloud.selected-school";
@@ -133,24 +134,54 @@ export function FinanceUltimate({ database, onChange, onReceipt }: Props) {
     setModal({ kind: "pay", invoice, student });
   };
 
-  const confirmPayment = () => {
-    if (!modal || modal.kind !== "pay") return;
-    const breakdown = invoiceAmountDue(modal.invoice, database.settings.finance);
+  const confirmPayment = () => void (async () => {
+    if (!modal || modal.kind !== "pay" || busy) return;
+    const currentModal = modal;
+    const breakdown = invoiceAmountDue(currentModal.invoice, database.settings.finance);
     const safeDiscount = Math.min(Math.max(0, Number(discount) || 0), breakdown.totalDue);
     const amountReceived = Math.round((breakdown.totalDue - safeDiscount) * 100) / 100;
     if (amountReceived <= 0) {
       setNotice({ tone: "danger", text: "O valor final do pagamento precisa ser maior que zero." });
       return;
     }
+
+    const schoolId = localStorage.getItem(SELECTED_SCHOOL_KEY) ?? "";
+    if (schoolId) {
+      setBusy(true);
+      setNotice(null);
+      try {
+        const syncStatus = await getCloudSyncStatus(schoolId, database);
+        if (syncStatus !== "synced") {
+          throw new Error("Sincronize este computador antes de registrar o pagamento. A baixa foi bloqueada para evitar recibos ou saldos divergentes.");
+        }
+        const payment = await confirmManualInvoicePayment({
+          schoolId, invoiceId: currentModal.invoice.id, method: paymentMethod, discount: safeDiscount,
+        });
+        const restored = await safePullFromCloud(schoolId, database.settings.appearance);
+        onChange(restored);
+        const syncedInvoice = restored.invoices.find((item) => item.id === currentModal.invoice.id)
+          ?? { ...currentModal.invoice, status: "paid" as const, paidAt: payment.paidAt };
+        setModal(null);
+        setNotice({ tone: "success", text: `Pagamento de ${money(payment.amountReceived)} confirmado no servidor. Recibo ${payment.receiptNumber ?? payment.id}.` });
+        onReceipt(currentModal.student, syncedInvoice, payment);
+      } catch (error) {
+        setNotice({ tone: "danger", text: error instanceof Error ? error.message : "Não foi possível confirmar o pagamento." });
+      } finally {
+        setBusy(false);
+      }
+      return;
+    }
+
     const now = new Date().toISOString();
     const payment: Payment = {
-      id: makeId("pagamento"), studentId: modal.student.id, invoiceId: modal.invoice.id,
+      id: makeId("pagamento"), studentId: currentModal.student.id, invoiceId: currentModal.invoice.id,
       amountReceived, principalAmount: breakdown.baseAmount, lateFeeAmount: breakdown.lateFee,
       interestAmount: breakdown.interest, discountAmount: safeDiscount, paymentMethod,
-      status: "confirmed", paidAt: now, receiptNumber: localReceiptNumber(), createdAt: now,
+      status: "confirmed", paidAt: now, receiptNumber: localReceiptNumber(),
+      notes: "Pagamento registrado em modo local/offline.", createdAt: now,
     };
     const next = replaceDatabase(database, (draft) => {
-      const invoice = draft.invoices.find((item) => item.id === modal.invoice.id);
+      const invoice = draft.invoices.find((item) => item.id === currentModal.invoice.id);
       if (!invoice) return;
       invoice.status = "paid";
       invoice.paidAt = now;
@@ -158,9 +189,9 @@ export function FinanceUltimate({ database, onChange, onReceipt }: Props) {
     });
     onChange(next);
     setModal(null);
-    setNotice({ tone: "success", text: `Pagamento de ${money(amountReceived)} registrado com histórico financeiro.` });
-    onReceipt(modal.student, { ...modal.invoice, status: "paid", paidAt: now }, payment);
-  };
+    setNotice({ tone: "warning", text: `Pagamento registrado apenas neste dispositivo. Recibo ${payment.receiptNumber}. Ative o Cloud para recibos oficiais sincronizados.` });
+    onReceipt(currentModal.student, { ...currentModal.invoice, status: "paid", paidAt: now }, payment);
+  })();
 
   const openCharge = async (invoice: Invoice) => {
     const student = students.get(invoice.studentId);
