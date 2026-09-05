@@ -1,5 +1,6 @@
 import { cloud } from "./cloud";
 import type { CertificateSettings, ClassItem, InstitutionSettings, Student } from "./model";
+import { normalizeCertificateVisualStyle, type CertificateVisualStyle } from "./certificate-visuals";
 
 const SELECTED_SCHOOL_KEY = "aulafacil.cloud.selected-school";
 
@@ -17,6 +18,7 @@ export async function issueCertificate(input: {
   classItem?: ClassItem;
   institution: InstitutionSettings;
   settings: CertificateSettings;
+  visualStyle?: CertificateVisualStyle;
 }) {
   const schoolId = localStorage.getItem(SELECTED_SCHOOL_KEY) ?? "";
   if (!schoolId) throw new Error("Selecione uma instituição no AulaFácil Cloud para formalizar o certificado.");
@@ -28,6 +30,7 @@ export async function issueCertificate(input: {
     studentId: input.student.id,
     courseName,
     workloadHours,
+    visualStyle: normalizeCertificateVisualStyle(input.visualStyle),
     institution: input.institution,
     certificate: input.settings,
   };
