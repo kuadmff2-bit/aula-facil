@@ -9,6 +9,7 @@ type SyncBaseline = {
   syncedAt: string;
 };
 
+const SELECTED_SCHOOL_KEY = "aulafacil.cloud.selected-school";
 const baselineKey = (schoolId: string) => `aulafacil.cloud.sync-baseline.${schoolId}`;
 
 function readBaseline(schoolId: string): SyncBaseline | null {
@@ -31,6 +32,16 @@ function writeBaseline(schoolId: string, revision: number, database: SchoolDatab
   };
   localStorage.setItem(baselineKey(schoolId), JSON.stringify(baseline));
   return baseline;
+}
+
+export function invalidateCloudSyncBaseline(schoolId: string) {
+  if (!schoolId) return;
+  localStorage.removeItem(baselineKey(schoolId));
+}
+
+export function invalidateSelectedSchoolSyncBaseline() {
+  const schoolId = localStorage.getItem(SELECTED_SCHOOL_KEY) ?? "";
+  invalidateCloudSyncBaseline(schoolId);
 }
 
 export async function getCloudRevision(schoolId: string) {
