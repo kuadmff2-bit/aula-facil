@@ -6,6 +6,9 @@ export type StudentFieldSource = "phone" | "guardianName" | "guardianPhone";
 export type AppearanceMode = "system" | "light" | "dark";
 export type LateFeeMode = "none" | "fixed" | "percent";
 export type InterestMode = "none" | "daily_percent" | "monthly_percent" | "fixed_daily";
+export type CourseDurationType = "fixed" | "open_ended";
+export type EnrollmentStatus = "active" | "paused" | "completed";
+export type Weekday = "monday" | "tuesday" | "wednesday" | "thursday" | "friday" | "saturday" | "sunday";
 
 export type StudentFieldDefinition = {
   id: string;
@@ -101,12 +104,17 @@ export type Student = {
   id: string;
   name: string;
   birthDate: string;
+  documentNumber?: string;
   phone: string;
   guardianName: string;
   guardianPhone: string;
   customFields: Record<string, string>;
   classId: string;
   dueDay?: number | null;
+  enrollmentStatus?: EnrollmentStatus;
+  enrollmentStartDate?: string;
+  pausedAt?: string | null;
+  pauseReason?: string;
   active: boolean;
   completedAt?: string | null;
   createdAt: string;
@@ -115,10 +123,16 @@ export type Student = {
 export type ClassItem = {
   id: string;
   name: string;
+  groupName?: string;
   teacher: string;
   schedule: string;
+  meetingDays?: Weekday[];
+  startTime?: string;
+  endTime?: string;
   room: string;
   monthlyFee: number;
+  durationType?: CourseDurationType;
+  durationMonths?: number | null;
   workloadHours?: number | null;
   color: string;
   createdAt: string;
@@ -135,6 +149,10 @@ export type Invoice = {
   amount: number;
   status: InvoiceStatus;
   paidAt: string | null;
+  installmentNumber?: number | null;
+  planGenerated?: boolean;
+  cancelledAt?: string | null;
+  cancellationReason?: string;
   provider?: string | null;
   providerChargeId?: string | null;
   pixCopyPaste?: string | null;
@@ -159,6 +177,8 @@ export type Payment = {
   paidAt: string | null;
   receiptNumber?: string | null;
   notes?: string;
+  reversedAt?: string | null;
+  reversalReason?: string;
   createdAt: string;
 };
 
@@ -209,8 +229,12 @@ const INVOICE_STATUSES: InvoiceStatus[] = ["pending", "paid", "overdue", "cancel
 const PAYMENT_STATUSES: PaymentStatus[] = ["pending", "confirmed", "refunded", "cancelled", "failed"];
 const LATE_FEE_MODES: LateFeeMode[] = ["none", "fixed", "percent"];
 const INTEREST_MODES: InterestMode[] = ["none", "daily_percent", "monthly_percent", "fixed_daily"];
+const COURSE_DURATION_TYPES: CourseDurationType[] = ["fixed", "open_ended"];
+const ENROLLMENT_STATUSES: EnrollmentStatus[] = ["active", "paused", "completed"];
+const WEEKDAYS: Weekday[] = ["monday", "tuesday", "wednesday", "thursday", "friday", "saturday", "sunday"];
 const RECEIPT_FIELD_IDS: ReceiptFieldId[] = ["guardian", "class", "reference", "dueDate", "paidAt", "method", "provider", "principal", "lateFee", "interest", "discount", "notes"];
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+const TIME_PATTERN = /^([01]\d|2[0-3]):[0-5]\d$/;
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return Boolean(value) && typeof value === "object" && !Array.isArray(value);
@@ -236,6 +260,16 @@ function sanitizeDueDays(value: unknown): number[] {
     .sort((a, b) => a - b)
     .slice(0, 31);
   return days.length ? days : [5, 10, 15, 20, 25];
+}
+
+function sanitizeWeekdays(value: unknown): Weekday[] {
+  if (!Array.isArray(value)) return [];
+  return [...new Set(value.filter((item): item is Weekday => WEEKDAYS.includes(item as Weekday)))].slice(0, 7);
+}
+
+function sanitizeTime(value: unknown) {
+  const normalized = text(value, 5);
+  return TIME_PATTERN.test(normalized) ? normalized : "";
 }
 
 function sanitizeCustomFields(value: unknown): Record<string, string> | null {
@@ -289,18 +323,26 @@ function sanitizeStudent(student: unknown): Student | null {
 
   const rawDueDay = finiteNumber(student.dueDay, 1, 31, null);
   const dueDay = rawDueDay !== null && Number.isInteger(rawDueDay) ? rawDueDay : null;
+  const enrollmentStatus = ENROLLMENT_STATUSES.includes(student.enrollmentStatus as EnrollmentStatus)
+    ? student.enrollmentStatus as EnrollmentStatus
+    : student.completedAt ? "completed" : student.active === false ? "paused" : "active";
 
   return {
     id,
     name,
     birthDate,
+    documentNumber: text(student.documentNumber, 40),
     phone: text(student.phone, 40),
     guardianName: text(student.guardianName, 200),
     guardianPhone: text(student.guardianPhone, 40),
     customFields,
     classId,
     dueDay,
-    active: student.active === undefined ? true : Boolean(student.active),
+    enrollmentStatus,
+    enrollmentStartDate: text(student.enrollmentStartDate, 32, createdAt.slice(0, 10)),
+    pausedAt: student.pausedAt === null || student.pausedAt === undefined ? null : text(student.pausedAt, 48) || null,
+    pauseReason: text(student.pauseReason, 500),
+    active: enrollmentStatus === "active",
     completedAt: student.completedAt === null || student.completedAt === undefined ? null : text(student.completedAt, 48) || null,
     createdAt,
   };
@@ -314,13 +356,25 @@ function sanitizeClass(item: unknown): ClassItem | null {
   const monthlyFee = finiteNumber(item.monthlyFee, 0, 100_000_000, null);
   if (!id || !name || !createdAt || monthlyFee === null) return null;
 
+  const durationType = COURSE_DURATION_TYPES.includes(item.durationType as CourseDurationType)
+    ? item.durationType as CourseDurationType
+    : "open_ended";
+  const durationMonthsRaw = finiteNumber(item.durationMonths, 1, 240, null);
+  const durationMonths = durationType === "fixed" && durationMonthsRaw !== null ? Math.round(durationMonthsRaw) : null;
+
   return {
     id,
     name,
+    groupName: text(item.groupName, 120),
     teacher: text(item.teacher, 200),
     schedule: text(item.schedule, 200),
+    meetingDays: sanitizeWeekdays(item.meetingDays),
+    startTime: sanitizeTime(item.startTime),
+    endTime: sanitizeTime(item.endTime),
     room: text(item.room, 120),
     monthlyFee,
+    durationType,
+    durationMonths,
     workloadHours: finiteNumber(item.workloadHours, 0, 100_000, null),
     color: text(item.color, 32, "#1649b8"),
     createdAt,
@@ -338,6 +392,7 @@ function sanitizeInvoice(item: unknown): Invoice | null {
   const status = INVOICE_STATUSES.includes(item.status as InvoiceStatus) ? item.status as InvoiceStatus : null;
   if (!id || !studentId || !reference || !dueDate || !createdAt || amount === null || !status) return null;
 
+  const installmentRaw = finiteNumber(item.installmentNumber, 1, 240, null);
   return {
     id,
     studentId,
@@ -346,6 +401,10 @@ function sanitizeInvoice(item: unknown): Invoice | null {
     amount,
     status,
     paidAt: item.paidAt === null || item.paidAt === undefined ? null : text(item.paidAt, 48) || null,
+    installmentNumber: installmentRaw === null ? null : Math.round(installmentRaw),
+    planGenerated: Boolean(item.planGenerated),
+    cancelledAt: item.cancelledAt === null || item.cancelledAt === undefined ? null : text(item.cancelledAt, 48) || null,
+    cancellationReason: text(item.cancellationReason, 500),
     provider: item.provider === null || item.provider === undefined ? null : text(item.provider, 40) || null,
     providerChargeId: item.providerChargeId === null || item.providerChargeId === undefined ? null : text(item.providerChargeId, 255) || null,
     pixCopyPaste: item.pixCopyPaste === null || item.pixCopyPaste === undefined ? null : text(item.pixCopyPaste, 8_000) || null,
@@ -389,6 +448,8 @@ function sanitizePayment(item: unknown): Payment | null {
     paidAt: item.paidAt === null || item.paidAt === undefined ? null : text(item.paidAt, 48) || null,
     receiptNumber: item.receiptNumber === null || item.receiptNumber === undefined ? null : text(item.receiptNumber, 120) || null,
     notes: text(item.notes, 2_000),
+    reversedAt: item.reversedAt === null || item.reversedAt === undefined ? null : text(item.reversedAt, 48) || null,
+    reversalReason: text(item.reversalReason, 500),
     createdAt,
   };
 }
@@ -525,7 +586,7 @@ export function defaultStudentFields(): StudentFieldDefinition[] {
       label: "Nome do responsável",
       type: "text",
       required: false,
-      visibility: "always",
+      visibility: "minor",
       placeholder: "Nome completo",
       source: "guardianName",
     },
@@ -534,7 +595,7 @@ export function defaultStudentFields(): StudentFieldDefinition[] {
       label: "Telefone do responsável",
       type: "tel",
       required: false,
-      visibility: "always",
+      visibility: "minor",
       placeholder: "(92) 99999-9999",
       source: "guardianPhone",
     },
