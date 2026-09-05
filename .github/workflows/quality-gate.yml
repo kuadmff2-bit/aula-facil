@@ -1,0 +1,50 @@
+name: Validar qualidade do AulaFácil
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: quality-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  quality:
+    name: Código, frontend e Tauri
+    runs-on: windows-latest
+
+    steps:
+      - name: Baixar o código
+        uses: actions/checkout@v4
+
+      - name: Preparar Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Preparar Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Ativar cache do Rust
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri -> target
+
+      - name: Instalar dependências exatamente pelo lockfile
+        run: npm ci
+
+      - name: Verificar estrutura e configurações críticas
+        run: node scripts/quality-check.mjs
+
+      - name: Validar TypeScript e frontend
+        run: npm run build
+
+      - name: Validar código nativo do Tauri
+        run: cargo check --manifest-path src-tauri/Cargo.toml
