@@ -62,6 +62,9 @@ jobs:
           AULAFACIL_STRICT_RELEASE: "1"
         run: node scripts/quality-check.mjs
 
+      - name: Executar testes automáticos
+        run: npm test
+
       - name: Validar TypeScript e frontend
         run: npm run build
 
