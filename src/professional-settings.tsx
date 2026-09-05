@@ -1,4 +1,4 @@
-import { useRef } from "react";
+import { useRef, useState } from "react";
 import type {
   CertificateSettings,
   FinanceSettings,
@@ -42,17 +42,23 @@ function SettingsHeader({ title, description }: { title: string; description: st
 
 export function InstitutionSettingsPanel({ value, onChange }: InstitutionSettingsProps) {
   const fileRef = useRef<HTMLInputElement>(null);
+  const [logoError, setLogoError] = useState("");
   const update = <K extends keyof InstitutionSettings>(key: K, fieldValue: InstitutionSettings[K]) => {
     onChange({ ...value, [key]: fieldValue });
   };
 
   const importLogo = async (file?: File) => {
+    setLogoError("");
     if (!file) return;
-    if (!file.type.startsWith("image/")) throw new Error("Selecione um arquivo de imagem.");
+    if (!file.type.startsWith("image/")) throw new Error("Selecione um arquivo de imagem válido.");
     if (file.size > 1_500_000) throw new Error("A logo deve ter no máximo 1,5 MB.");
-    const reader = new FileReader();
-    reader.onload = () => update("logoDataUrl", String(reader.result ?? ""));
-    reader.readAsDataURL(file);
+    const dataUrl = await new Promise<string>((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = () => resolve(String(reader.result ?? ""));
+      reader.onerror = () => reject(new Error("Não foi possível ler o arquivo selecionado."));
+      reader.readAsDataURL(file);
+    });
+    update("logoDataUrl", dataUrl);
   };
 
   return (
@@ -73,13 +79,16 @@ export function InstitutionSettingsPanel({ value, onChange }: InstitutionSetting
             <button type="button" className="secondary-button" onClick={() => fileRef.current?.click()}>Escolher logo</button>
             {value.logoDataUrl && <button type="button" className="ghost-danger-button" onClick={() => update("logoDataUrl", "")}>Remover</button>}
           </div>
+          {logoError && <div className="settings-inline-error" role="alert">{logoError}</div>}
           <input
             ref={fileRef}
             hidden
             type="file"
             accept="image/png,image/jpeg,image/webp,image/svg+xml"
             onChange={(event) => {
-              void importLogo(event.target.files?.[0]).catch((error) => window.alert(error instanceof Error ? error.message : "Não foi possível carregar a logo."));
+              void importLogo(event.target.files?.[0]).catch((error) => {
+                setLogoError(error instanceof Error ? error.message : "Não foi possível carregar a logo.");
+              });
               event.currentTarget.value = "";
             }}
           />
