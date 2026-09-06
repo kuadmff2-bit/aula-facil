@@ -696,11 +696,13 @@ export default function App() {
               />
               <FinanceSettingsPanel
                 value={database.settings.finance}
+                institution={database.settings.institution}
                 onChange={(finance) => updateDatabase((draft) => { draft.settings.finance = finance; })}
               />
               <DocumentSettingsPanel
                 receipt={database.settings.receipt}
                 certificate={database.settings.certificate}
+                institution={database.settings.institution}
                 onReceiptChange={(receipt) => updateDatabase((draft) => { draft.settings.receipt = receipt; })}
                 onCertificateChange={(certificate) => updateDatabase((draft) => { draft.settings.certificate = certificate; })}
               />

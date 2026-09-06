@@ -1,6 +1,7 @@
 import { useMemo, useState } from "react";
 import { CalendarClock, Download, Search, Trash2, UserPlus, Users } from "lucide-react";
 import type { ClassItem, SchoolDatabase, Student, Weekday } from "./model";
+import { exportClassWorkbook } from "./spreadsheet-export";
 import "./class-overview-panel.css";
 
 const DAY_LABELS: Record<Weekday, string> = {
@@ -51,51 +52,6 @@ function enrollmentLabel(student: Student) {
   return "Ativo";
 }
 
-function csvCell(value: unknown) {
-  const text = String(value ?? "").replace(/\r?\n/g, " ").trim();
-  return `"${text.replace(/"/g, '""')}"`;
-}
-
-function safeFilename(value: string) {
-  return value.normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/[^a-zA-Z0-9._-]+/g, "-").replace(/-+/g, "-").replace(/^-|-$/g, "").toLowerCase() || "turma";
-}
-
-function downloadRosterCsv(classes: ClassItem[], students: Student[], filename: string) {
-  const rows = [["Curso", "Turma", "Professor", "Sala", "Dias / horário", "Aluno", "Telefone", "Responsável", "Telefone do responsável", "Vencimento", "Situação"]];
-  const sorted = [...classes].sort((a, b) => `${a.startTime ?? "99:99"}${a.name}${a.groupName ?? ""}`.localeCompare(`${b.startTime ?? "99:99"}${b.name}${b.groupName ?? ""}`, "pt-BR"));
-  for (const classItem of sorted) {
-    const members = students.filter((student) => student.classId === classItem.id).sort((a, b) => a.name.localeCompare(b.name, "pt-BR"));
-    if (!members.length) {
-      rows.push([classItem.name, classItem.groupName ?? "", classItem.teacher, classItem.room, scheduleLabel(classItem), "", "", "", "", "", "Sem alunos"]);
-      continue;
-    }
-    for (const student of members) {
-      rows.push([
-        classItem.name,
-        classItem.groupName ?? "",
-        classItem.teacher,
-        classItem.room,
-        scheduleLabel(classItem),
-        student.name,
-        student.phone,
-        student.guardianName,
-        student.guardianPhone,
-        student.dueDay ? `Dia ${student.dueDay}` : "Padrão",
-        enrollmentLabel(student),
-      ]);
-    }
-  }
-  const content = `\uFEFF${rows.map((row) => row.map(csvCell).join(";")).join("\r\n")}`;
-  const blob = new Blob([content], { type: "text/csv;charset=utf-8" });
-  const url = URL.createObjectURL(blob);
-  const anchor = document.createElement("a");
-  anchor.href = url;
-  anchor.download = filename;
-  document.body.appendChild(anchor);
-  anchor.click();
-  anchor.remove();
-  URL.revokeObjectURL(url);
-}
 
 type Props = {
   database: SchoolDatabase;
@@ -133,7 +89,7 @@ export function ClassOverviewPanel({ database, onNewClass, onAddStudent, onDelet
           <button className={scope === "current" ? "active" : ""} onClick={() => setScope("current")}>Agora</button>
           <button className={scope === "all" ? "active" : ""} onClick={() => setScope("all")}>Todas as turmas</button>
         </div>
-        <button className="secondary-button" disabled={!database.classes.length} onClick={() => downloadRosterCsv(database.classes, database.students, "aulafacil-todas-as-turmas.csv")}><Download size={16}/> Baixar todas</button>
+        <button className="secondary-button" disabled={!database.classes.length} onClick={() => void exportClassWorkbook(database.classes, database.students, "aulafacil-todas-as-turmas")}><Download size={16}/> Baixar todas</button>
         <button className="primary-button" onClick={onNewClass}>+ Nova turma</button>
       </div>
     </div>
@@ -157,7 +113,7 @@ export function ClassOverviewPanel({ database, onNewClass, onAddStudent, onDelet
           </div>
           <span className="class-overview-count"><Users size={15}/>{students.length} aluno{students.length === 1 ? "" : "s"}</span>
           <button className="secondary-button small" onClick={() => onAddStudent(classItem.id)}><UserPlus size={15}/> Adicionar aluno</button>
-          <button className="secondary-button small" onClick={() => downloadRosterCsv([classItem], database.students, `aulafacil-${safeFilename(`${classItem.name}-${classItem.groupName ?? classItem.room}`)}.csv`)}><Download size={15}/> Baixar turma</button>
+          <button className="secondary-button small" onClick={() => void exportClassWorkbook([classItem], database.students, `aulafacil-${classItem.name}-${classItem.groupName ?? classItem.room}`)}><Download size={15}/> Baixar turma</button>
           <button className="secondary-button small" onClick={onAttendance}>Fazer chamada</button>
           <button className="quiet-danger" onClick={() => onDeleteClass(classItem)} title="Excluir turma"><Trash2 size={16}/></button>
         </header>

@@ -19,6 +19,7 @@ export type GeneratedCharge = {
   pixQrCodeBase64: string;
   boletoUrl: string;
   paymentUrl: string;
+  publicPaymentUrl: string;
   amount: number;
   reused: boolean;
   metadata: Record<string, unknown>;
@@ -70,7 +71,7 @@ export async function generateProviderCharge(input: {
   connectionId?: string;
   billingProfile?: BillingProfile;
 }): Promise<GeneratedCharge> {
-  const { data, error } = await cloud.functions.invoke("payment-charge", {
+  const { data, error } = await cloud.functions.invoke("payment-charge-link", {
     body: {
       invoiceId: input.invoiceId,
       method: input.method,
@@ -97,6 +98,7 @@ export async function generateProviderCharge(input: {
     pixQrCodeBase64: String(data?.pixQrCodeBase64 ?? ""),
     boletoUrl: String(data?.boletoUrl ?? ""),
     paymentUrl: String(data?.paymentUrl ?? ""),
+    publicPaymentUrl: String(data?.publicPaymentUrl ?? ""),
     amount: Number(data?.amount ?? 0),
     reused: Boolean(data?.reused),
     metadata: data?.metadata && typeof data.metadata === "object" ? data.metadata : {},

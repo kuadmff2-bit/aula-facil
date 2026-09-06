@@ -1,0 +1,81 @@
+name: Integrar AulaFácil 0.4.0
+
+on:
+  push:
+    branches: [release/aulafacil-0.4.0]
+    paths:
+      - "scripts/apply-0.4.0-upgrade.py"
+      - "scripts/fix-0.4.0-build.py"
+      - ".github/workflows/apply-0.4.0-upgrade.yml"
+
+permissions:
+  contents: write
+
+concurrency:
+  group: integrate-aulafacil-0-4-0
+  cancel-in-progress: true
+
+jobs:
+  integrate:
+    runs-on: windows-latest
+    steps:
+      - name: Baixar branch de release
+        uses: actions/checkout@v4
+        with:
+          ref: release/aulafacil-0.4.0
+          fetch-depth: 0
+
+      - name: Preparar Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Preparar Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Aplicar upgrade 0.4.0
+        run: python scripts/apply-0.4.0-upgrade.py
+
+      - name: Corrigir compatibilidade do build
+        run: python scripts/fix-0.4.0-build.py
+
+      - name: Atualizar lockfile do aplicativo
+        run: npm install --package-lock-only --ignore-scripts --no-audit
+
+      - name: Gerar lockfile do Robô AulaFácil
+        run: npm install --package-lock-only --ignore-scripts --no-audit --prefix services/aulafacil-robot
+
+      - name: Instalar dependências pelo lockfile
+        run: npm ci --no-audit
+
+      - name: Validar estrutura
+        run: node scripts/quality-check.mjs
+
+      - name: Executar testes
+        run: npm test
+
+      - name: Validar TypeScript e frontend
+        run: npm run build
+
+      - name: Validar sintaxe do Robô AulaFácil
+        run: node --check services/aulafacil-robot/server.js
+
+      - name: Gerar recursos Tauri
+        run: npm run desktop:icons
+
+      - name: Validar Tauri
+        run: cargo check --locked --manifest-path src-tauri/Cargo.toml
+
+      - name: Publicar alterações somente se tudo passou
+        shell: bash
+        run: |
+          if git diff --quiet; then
+            echo "Nenhuma alteração pendente."
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A
+          git commit -m "AulaFácil 0.4.0: automatizar financeiro, comunicação e UX"
+          git push origin HEAD:release/aulafacil-0.4.0
