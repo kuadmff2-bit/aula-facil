@@ -1,0 +1,1 @@
+Executar quality gate oficial antes do merge.
