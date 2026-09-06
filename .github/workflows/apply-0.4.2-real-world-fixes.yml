@@ -1,0 +1,62 @@
+name: Aplicar correções 0.4.2
+
+on:
+  push:
+    branches: [fix/0.4.2-real-world]
+    paths:
+      - ".github/workflows/apply-0.4.2-real-world-fixes.yml"
+
+permissions:
+  contents: write
+
+jobs:
+  apply-and-test:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Baixar branch
+        uses: actions/checkout@v4
+        with:
+          ref: fix/0.4.2-real-world
+          fetch-depth: 0
+
+      - name: Preparar Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Aplicar correções
+        run: python scripts/apply-0.4.2-real-world-fixes.py
+
+      - name: Preparar Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Instalar dependências
+        run: npm ci
+
+      - name: Validar estrutura
+        run: node scripts/quality-check.mjs
+
+      - name: Executar testes
+        run: npm test
+
+      - name: Validar frontend
+        run: npm run build
+
+      - name: Validar servidor do robô
+        run: node --check services/aulafacil-robot/server.js
+
+      - name: Publicar alterações validadas na branch
+        shell: bash
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add src services/aulafacil-robot/server.js
+          if git diff --cached --quiet; then
+            echo "Nenhuma alteração para publicar."
+            exit 0
+          fi
+          git commit -m "fix: corrigir sync, robô, pagamentos e layouts da 0.4.2"
+          git push origin HEAD:fix/0.4.2-real-world
