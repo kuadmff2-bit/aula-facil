@@ -35,7 +35,7 @@ jobs:
           $tauri | ConvertTo-Json -Depth 30 | Set-Content $tauriPath -Encoding utf8
           $cargoPath = "src-tauri/Cargo.toml"
           $cargo = Get-Content $cargoPath -Raw
-          $cargo = $cargo -replace '(?m)^version = "0\.4\.4"$', 'version = "0.4.5"'
+          $cargo = $cargo.Replace('version = "0.4.4"', 'version = "0.4.5"')
           Set-Content $cargoPath $cargo -Encoding utf8
       - name: Instalar dependências
         run: npm ci --no-audit
