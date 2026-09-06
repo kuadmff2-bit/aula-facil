@@ -1,0 +1,57 @@
+name: Preparar AulaFácil 0.4.5
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - ".github/workflows/prepare-0.4.5.yml"
+
+permissions:
+  contents: write
+
+jobs:
+  prepare:
+    runs-on: windows-latest
+    steps:
+      - name: Baixar código
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Preparar Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - name: Preparar Rust
+        uses: dtolnay/rust-toolchain@stable
+      - name: Atualizar versão npm e lockfile
+        run: npm version 0.4.5 --no-git-tag-version
+      - name: Atualizar versão do Tauri e Cargo
+        shell: pwsh
+        run: |
+          $tauriPath = "src-tauri/tauri.conf.json"
+          $tauri = Get-Content $tauriPath -Raw | ConvertFrom-Json
+          $tauri.version = "0.4.5"
+          $tauri | ConvertTo-Json -Depth 30 | Set-Content $tauriPath -Encoding utf8
+          $cargoPath = "src-tauri/Cargo.toml"
+          $cargo = Get-Content $cargoPath -Raw
+          $cargo = $cargo -replace '(?m)^version = "0\.4\.4"$', 'version = "0.4.5"'
+          Set-Content $cargoPath $cargo -Encoding utf8
+      - name: Instalar dependências
+        run: npm ci --no-audit
+      - name: Validar release
+        env:
+          AULAFACIL_STRICT_RELEASE: "1"
+        run: node scripts/quality-check.mjs
+      - name: Executar testes
+        run: npm test
+      - name: Validar frontend
+        run: npm run build
+      - name: Publicar versão na main
+        shell: bash
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add package.json package-lock.json src-tauri/tauri.conf.json src-tauri/Cargo.toml
+          git commit -m "chore: preparar AulaFácil 0.4.5"
+          git push origin HEAD:main
