@@ -34,7 +34,6 @@ export function PaymentConnectionsPanel() {
   const [pixKey, setPixKey] = useState("");
   const [pixRecipient, setPixRecipient] = useState("");
   const [environment, setEnvironment] = useState<"sandbox" | "production">("production");
-  const [priority, setPriority] = useState(50);
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState<Message>(null);
   const [credentialConnectionId, setCredentialConnectionId] = useState("");
@@ -109,7 +108,10 @@ export function PaymentConnectionsPanel() {
       providerKey,
       displayName: displayName.trim() || selectedProvider.name,
       environment,
-      priority,
+      priority: 50,
+      defaultForPix: selectedProvider.capabilities.includes("pix") && !connections.some((item) => item.defaultForPix),
+      defaultForBoleto: selectedProvider.capabilities.includes("boleto") && !connections.some((item) => item.defaultForBoleto),
+      defaultForCard: selectedProvider.capabilities.includes("card") && !connections.some((item) => item.defaultForCard),
       publicConfig: providerKey === "manual_pix"
         ? { pixKey: pixKey.trim().slice(0, 180), recipientName: pixRecipient.trim().slice(0, 160) }
         : {},
@@ -220,15 +222,20 @@ export function PaymentConnectionsPanel() {
               <div className="payment-connection-meta">
                 <span>{capabilityLabel(connection)}</span>
                 <span>{connection.environment === "sandbox" ? "Teste" : "Produção"}</span>
-                <span>Prioridade {connection.priority}</span>
                 <span>{connection.providerKey === "manual_pix" || connection.credentialsConfigured ? "Credenciais prontas" : "Credenciais pendentes"}</span>
               </div>
               <div className="payment-connection-actions">
-                {connection.supportsPix && <button type="button" className={connection.defaultForPix ? "active" : ""} onClick={() => makeDefault(connection, "pix")}>{connection.defaultForPix ? "Pix padrão" : "Usar para Pix"}</button>}
-                {connection.supportsBoleto && <button type="button" className={connection.defaultForBoleto ? "active" : ""} onClick={() => makeDefault(connection, "boleto")}>{connection.defaultForBoleto ? "Boleto padrão" : "Usar para boleto"}</button>}
-                {connection.supportsCard && <button type="button" className={connection.defaultForCard ? "active" : ""} onClick={() => makeDefault(connection, "card")}>{connection.defaultForCard ? "Cartão padrão" : "Usar para cartão"}</button>}
+                {connection.supportsPix && (connection.defaultForPix ? <span className="payment-default-chip">✓ Padrão para Pix</span> : <button type="button" onClick={() => makeDefault(connection, "pix")}>Usar para Pix</button>)}
+                {connection.supportsBoleto && (connection.defaultForBoleto ? <span className="payment-default-chip">✓ Padrão para boleto</span> : <button type="button" onClick={() => makeDefault(connection, "boleto")}>Usar para boleto</button>)}
+                {connection.supportsCard && (connection.defaultForCard ? <span className="payment-default-chip">✓ Padrão para cartão</span> : <button type="button" onClick={() => makeDefault(connection, "card")}>Usar para cartão</button>)}
                 {connection.providerKey !== "manual_pix" && <button type="button" onClick={() => { setCredentialConnectionId(connection.id); setCredentialValues({}); }}>{connection.credentialsConfigured ? "Trocar credenciais" : "Configurar credenciais"}</button>}
-                <button type="button" onClick={() => void run(async () => { await updatePaymentConnection(connection.id, { enabled: !connection.enabled }); await refresh(); })}>{connection.enabled ? "Pausar" : "Ativar"}</button>
+                <button type="button" onClick={() => void run(async () => {
+                  const enabled = !connection.enabled;
+                  await updatePaymentConnection(connection.id, { enabled });
+                  setConnections((current) => current.map((item) => item.id === connection.id ? { ...item, enabled } : item));
+                  await refresh();
+                  setMessage({ tone: "success", text: enabled ? `${connection.displayName} ativado.` : `${connection.displayName} pausado. Nenhuma nova cobrança usará esta conexão enquanto ela estiver pausada.` });
+                })}>{connection.enabled ? "Pausar" : "Ativar"}</button>
                 <button type="button" className="danger" onClick={() => void run(async () => { await removePaymentConnection(connection.id); if (credentialConnectionId === connection.id) setCredentialConnectionId(""); await refresh(); setMessage({ tone: "success", text: "Conexão e credenciais associadas removidas." }); })}>Remover</button>
               </div>
             </article>
@@ -240,7 +247,7 @@ export function PaymentConnectionsPanel() {
         <div className="payment-credential-box">
           <div>
             <h3>Credenciais de {credentialConnection.displayName}</h3>
-            <p>Esses valores serão enviados diretamente ao backend seguro e armazenados no Supabase Vault. Eles não entram no backup, no banco local nem no repositório.</p>
+            <p>Esses valores serão enviados diretamente ao backend seguro e armazenados de forma protegida no servidor. Eles não entram no backup, no banco local nem no repositório.</p>
           </div>
           <div className="payment-form-grid">
             {credentialProvider.credentialFields.map((field) => (
@@ -258,7 +265,7 @@ export function PaymentConnectionsPanel() {
           </div>
           <div className="settings-inline-actions">
             <button type="button" className="secondary-button" disabled={busy} onClick={() => { setCredentialValues({}); setCredentialConnectionId(""); }}>Cancelar</button>
-            <button type="button" className="primary-button" disabled={busy} onClick={saveCredentials}>{busy ? "Protegendo..." : "Salvar no cofre seguro"}</button>
+            <button type="button" className="primary-button" disabled={busy} onClick={saveCredentials}>{busy ? "Protegendo..." : "Salvar credenciais protegidas"}</button>
           </div>
         </div>
       )}
@@ -285,7 +292,6 @@ export function PaymentConnectionsPanel() {
               <option value="production">Produção</option>
             </select>
           </label>
-          <label><span>Prioridade</span><input type="number" min={0} max={100} value={priority} onChange={(event) => setPriority(Math.max(0, Math.min(100, Math.trunc(Number(event.target.value) || 0))))} /></label>
           {providerKey === "manual_pix" && <>
             <label><span>Chave Pix</span><input maxLength={180} value={pixKey} onChange={(event) => setPixKey(event.target.value)} placeholder="CPF, CNPJ, e-mail, telefone ou chave aleatória" /></label>
             <label><span>Nome do recebedor</span><input maxLength={160} value={pixRecipient} onChange={(event) => setPixRecipient(event.target.value)} placeholder="Nome que aparecerá para o aluno" /></label>
@@ -296,7 +302,7 @@ export function PaymentConnectionsPanel() {
           <span>{selectedProvider.description}</span>
           {selectedProvider.notes && <small>{selectedProvider.notes}</small>}
         </div>
-        {providerKey !== "manual_pix" && <div className="payment-secret-note">As chaves secretas não serão gravadas no aplicativo nem no banco acessível ao cliente. Após criar a conexão, o AulaFácil abre o cofre seguro para configurá-las.</div>}
+        {providerKey !== "manual_pix" && <div className="payment-secret-note">As chaves secretas não serão gravadas no aplicativo nem no banco acessível ao cliente. Após criar a conexão, o AulaFácil abre a área protegida para configurá-las.</div>}
         {message && <div className={`payment-message ${message.tone}`} role="status">{message.text}</div>}
         <button type="button" className="primary-button" disabled={busy || !schoolId} onClick={addConnection}>{busy ? "Aguarde..." : "Adicionar conexão"}</button>
       </div>

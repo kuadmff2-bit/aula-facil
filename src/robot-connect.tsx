@@ -17,6 +17,7 @@ function initialState(channel: MessageChannel): RobotSessionState {
     status,
     qr: null,
     phone: typeof channel.publicConfig.phone === "string" ? String(channel.publicConfig.phone) : null,
+    sessionError: typeof channel.publicConfig.lastRobotError === "string" ? String(channel.publicConfig.lastRobotError) : null,
   };
 }
 
@@ -34,9 +35,14 @@ export function RobotConnectBox({ channel, disabled, onChanged }: Props) {
   const refresh = async () => {
     const next = await getRobotSession(channel.id);
     setState(next);
+    if (next.sessionError) setError(next.sessionError);
     if (next.status === "connected") {
+      setError("");
       stopPolling();
       await onChanged?.();
+    } else if (next.status === "error" || next.status === "auth_failure") {
+      stopPolling();
+      setError(next.sessionError || (next.status === "auth_failure" ? "O WhatsApp recusou a autenticação. Tente conectar novamente." : "O servidor não conseguiu iniciar o WhatsApp. Tente novamente."));
     }
     return next;
   };
@@ -63,8 +69,9 @@ export function RobotConnectBox({ channel, disabled, onChanged }: Props) {
     try {
       const next = await startRobotSession(channel.id);
       setState(next);
-      if (next.status !== "connected") beginPolling();
-      else await onChanged?.();
+      if (next.status === "connected") await onChanged?.();
+      else if (next.status === "error" || next.status === "auth_failure") setError(next.sessionError || "Não foi possível iniciar o WhatsApp.");
+      else beginPolling();
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : "Não foi possível iniciar o Robô AulaFácil.");
     } finally {
@@ -97,7 +104,8 @@ export function RobotConnectBox({ channel, disabled, onChanged }: Props) {
       ) : (
         <>
           <button type="button" className="secondary-button small" disabled={disabled || busy} onClick={() => void start()}><Link2 size={15} /> {busy ? "Preparando..." : "Conectar WhatsApp"}</button>
-          {(state.status === "starting" || state.status === "connecting") && <span className="robot-status"><RefreshCw size={15} /> Preparando sessão...</span>}
+          {state.status === "starting" && <span className="robot-status"><RefreshCw size={15} /> Abrindo WhatsApp...</span>}
+          {state.status === "connecting" && <span className="robot-status"><RefreshCw size={15} /> Finalizando conexão...</span>}
         </>
       )}
       {state.qr && <div className="robot-qr"><div><QrCode size={18}/><strong>Leia este QR Code no WhatsApp</strong><span>WhatsApp → Aparelhos conectados → Conectar aparelho</span></div><img src={state.qr} alt="QR Code para conectar o WhatsApp ao Robô AulaFácil" /></div>}

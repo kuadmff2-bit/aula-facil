@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import {
   configureMessageCredentials,
   createMessageAutomation,
@@ -83,6 +83,7 @@ export function MessageAutomationsPanel() {
   const [channelName, setChannelName] = useState("WhatsApp oficial");
   const [credentialChannelId, setCredentialChannelId] = useState("");
   const [credentials, setCredentials] = useState<Record<string, string>>({});
+  const credentialBoxRef = useRef<HTMLDivElement | null>(null);
 
   const [eventKey, setEventKey] = useState<MessageEventKey>("invoice_before_due");
   const [templateName, setTemplateName] = useState("Mensalidade vence amanhã");
@@ -99,6 +100,13 @@ export function MessageAutomationsPanel() {
 
   const credentialChannel = useMemo(() => channels.find((item) => item.id === credentialChannelId) ?? null, [channels, credentialChannelId]);
   const selectedTemplate = useMemo(() => templates.find((item) => item.id === automationTemplateId) ?? null, [templates, automationTemplateId]);
+  const channelProviderAlreadyAdded = channels.some((item) => item.providerKey === channelProvider);
+
+  useEffect(() => {
+    if (!credentialChannelId) return;
+    const frame = window.requestAnimationFrame(() => credentialBoxRef.current?.scrollIntoView({ behavior: "smooth", block: "center" }));
+    return () => window.cancelAnimationFrame(frame);
+  }, [credentialChannelId]);
 
   const refresh = async (targetSchoolId = schoolId) => {
     if (!targetSchoolId) {
@@ -167,7 +175,7 @@ export function MessageAutomationsPanel() {
     await refresh();
     setCredentialChannelId(channel.id);
     setCredentials({});
-    setMessage({ tone: "warning", text: "Canal criado. Configure as credenciais no cofre seguro antes de ativar os envios." });
+    setMessage({ tone: "warning", text: channelProvider === "meta" ? "Canal criado. Agora conclua a configuração abaixo." : "Canal criado. Clique em Conectar WhatsApp para gerar o QR Code." });
   });
 
   const saveCredentials = () => {
@@ -183,6 +191,7 @@ export function MessageAutomationsPanel() {
       } else {
         throw new Error("Use o botão Conectar WhatsApp no canal Robô AulaFácil.");
       }
+      await updateMessageChannel(credentialChannel.id, { enabled: true });
       setCredentials({});
       setCredentialChannelId("");
       await refresh();
@@ -278,7 +287,13 @@ export function MessageAutomationsPanel() {
         {channels.length > 0 && <div className="message-channel-grid">{channels.map((channel) => (
           <article key={channel.id} className="message-channel-item">
             <div><strong>{channel.displayName}</strong><span>{channel.providerKey === "meta" ? "Meta WhatsApp Cloud API" : "Robô AulaFácil"}</span></div>
-            <div className="message-tags"><span>{channel.enabled ? "Ativo" : "Pausado"}</span><span>{channel.credentialsConfigured ? "Credenciais prontas" : "Credenciais pendentes"}</span></div>
+            <div className="message-tags">
+              {channel.providerKey === "meta" ? (
+                <span>{!channel.enabled ? "Pausado" : channel.credentialsConfigured ? "Ativo" : "Aguardando configuração"}</span>
+              ) : (
+                <span>{!channel.enabled ? "Pausado" : String(channel.publicConfig.robotStatus ?? "disconnected") === "connected" ? "Conectado" : ["starting", "qr", "connecting"].includes(String(channel.publicConfig.robotStatus ?? "")) ? "Preparando conexão" : ["error", "auth_failure"].includes(String(channel.publicConfig.robotStatus ?? "")) ? "Erro de conexão" : "Desconectado"}</span>
+              )}
+            </div>
             <div className="message-actions">
               {channel.providerKey === "meta" ? <button type="button" onClick={() => { setCredentialChannelId(channel.id); setCredentials({}); }}>{channel.credentialsConfigured ? "Trocar credenciais" : "Configurar"}</button> : <RobotConnectBox channel={channel} disabled={busy} onChanged={() => refresh()} />}
               <button type="button" onClick={() => void run(async () => { await updateMessageChannel(channel.id, { enabled: !channel.enabled }); await refresh(); })}>{channel.enabled ? "Pausar" : "Ativar"}</button>
@@ -291,9 +306,9 @@ export function MessageAutomationsPanel() {
           <label><span>Tipo</span><select value={channelProvider} onChange={(e) => { const value = e.target.value as MessageProviderKey; setChannelProvider(value); setChannelName(value === "meta" ? "WhatsApp oficial" : "Robô AulaFácil"); }}><option value="meta">Meta WhatsApp Cloud API</option><option value="robot_webhook">Robô AulaFácil · QR Code</option></select></label>
           <label><span>Nome</span><input value={channelName} maxLength={120} onChange={(e) => setChannelName(e.target.value)} /></label>
         </div>
-        <button type="button" className="secondary-button" disabled={busy || !schoolId} onClick={addChannel}>Adicionar canal</button>
+        <button type="button" className="secondary-button" disabled={busy || !schoolId || channelProviderAlreadyAdded} onClick={addChannel}>{channelProviderAlreadyAdded ? "Canal já adicionado" : "Adicionar canal"}</button>
 
-        {credentialChannel && credentialChannel.providerKey === "meta" && <div className="message-credential-box"><div><strong>Cofre seguro · {credentialChannel.displayName}</strong><p>Os segredos vão direto para o Supabase Vault e não entram no backup local.</p></div>{credentialChannel.providerKey === "meta" ? <div className="message-form-grid"><label><span>Access Token *</span><input type="password" autoComplete="off" value={credentials.access_token ?? ""} onChange={(e) => setCredentials((current) => ({ ...current, access_token: e.target.value }))} /></label><label><span>Phone Number ID *</span><input type="password" autoComplete="off" value={credentials.phone_number_id ?? ""} onChange={(e) => setCredentials((current) => ({ ...current, phone_number_id: e.target.value }))} /></label><label><span>Business Account ID</span><input type="password" autoComplete="off" value={credentials.business_account_id ?? ""} onChange={(e) => setCredentials((current) => ({ ...current, business_account_id: e.target.value }))} /></label></div> : <div className="message-form-grid"><label><span>URL HTTPS do robô *</span><input type="password" autoComplete="off" value={credentials.webhook_url ?? ""} onChange={(e) => setCredentials((current) => ({ ...current, webhook_url: e.target.value }))} /></label><label><span>Token do robô</span><input type="password" autoComplete="off" value={credentials.auth_token ?? ""} onChange={(e) => setCredentials((current) => ({ ...current, auth_token: e.target.value }))} /></label></div>}<div className="message-actions"><button className="secondary-button" type="button" onClick={() => { setCredentials({}); setCredentialChannelId(""); }}>Cancelar</button><button className="primary-button" type="button" disabled={busy} onClick={saveCredentials}>Salvar no cofre</button></div></div>}
+        {credentialChannel && credentialChannel.providerKey === "meta" && <div ref={credentialBoxRef} className="message-credential-box"><div><strong>Credenciais protegidas · {credentialChannel.displayName}</strong><p>As credenciais são protegidas no servidor e não entram no backup local.</p></div>{credentialChannel.providerKey === "meta" ? <div className="message-form-grid"><label><span>Access Token *</span><input type="password" autoComplete="off" value={credentials.access_token ?? ""} onChange={(e) => setCredentials((current) => ({ ...current, access_token: e.target.value }))} /></label><label><span>Phone Number ID *</span><input type="password" autoComplete="off" value={credentials.phone_number_id ?? ""} onChange={(e) => setCredentials((current) => ({ ...current, phone_number_id: e.target.value }))} /></label><label><span>Business Account ID</span><input type="password" autoComplete="off" value={credentials.business_account_id ?? ""} onChange={(e) => setCredentials((current) => ({ ...current, business_account_id: e.target.value }))} /></label></div> : <div className="message-form-grid"><label><span>URL HTTPS do robô *</span><input type="password" autoComplete="off" value={credentials.webhook_url ?? ""} onChange={(e) => setCredentials((current) => ({ ...current, webhook_url: e.target.value }))} /></label><label><span>Token do robô</span><input type="password" autoComplete="off" value={credentials.auth_token ?? ""} onChange={(e) => setCredentials((current) => ({ ...current, auth_token: e.target.value }))} /></label></div>}<div className="message-actions"><button className="secondary-button" type="button" onClick={() => { setCredentials({}); setCredentialChannelId(""); }}>Cancelar</button><button className="primary-button" type="button" disabled={busy} onClick={saveCredentials}>Salvar credenciais</button></div></div>}
       </div>
 
       <div className="message-section">

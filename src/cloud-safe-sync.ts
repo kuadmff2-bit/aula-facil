@@ -9,6 +9,34 @@ export type CloudSyncRole = "owner" | "admin" | "finance" | "teacher" | "staff";
 type SyncBaseline = { revision: number; localUpdatedAt: string; localSignature?: string; role?: CloudSyncRole; syncedAt: string };
 const SELECTED_SCHOOL_KEY = "aulafacil.cloud.selected-school";
 const baselineKey = (schoolId: string) => `aulafacil.cloud.sync-baseline.${schoolId}`;
+const pushAttemptKey = (schoolId: string) => `aulafacil.cloud.push-attempt.${schoolId}`;
+
+type SyncPushAttempt = {
+  role: CloudSyncRole;
+  localSignature: string;
+  baselineRevision: number | null;
+  lastObservedRevision: number;
+  firstSync: boolean;
+  startedAt: string;
+};
+
+function readPushAttempt(schoolId: string): SyncPushAttempt | null {
+  try {
+    const raw = localStorage.getItem(pushAttemptKey(schoolId));
+    if (!raw) return null;
+    const parsed = JSON.parse(raw) as Partial<SyncPushAttempt>;
+    if (!parsed.role || typeof parsed.localSignature !== "string" || !Number.isInteger(parsed.lastObservedRevision) || typeof parsed.startedAt !== "string") return null;
+    return parsed as SyncPushAttempt;
+  } catch { return null; }
+}
+
+function writePushAttempt(schoolId: string, attempt: SyncPushAttempt) {
+  localStorage.setItem(pushAttemptKey(schoolId), JSON.stringify(attempt));
+}
+
+function clearPushAttempt(schoolId: string) {
+  localStorage.removeItem(pushAttemptKey(schoolId));
+}
 
 function readBaseline(schoolId: string): SyncBaseline | null {
   try {
@@ -70,11 +98,20 @@ export async function getCloudRevision(schoolId: string) {
 }
 
 export async function getCloudSyncStatus(schoolId: string, database: SchoolDatabase): Promise<CloudSyncStatus> {
+  const [cloudRevision, role] = await Promise.all([getCloudRevision(schoolId), getCloudSyncRole(schoolId)]);
+  const signature = localSyncSignature(database, role);
+  const attempt = readPushAttempt(schoolId);
+  if (attempt
+    && attempt.role === role
+    && attempt.localSignature === signature
+    && attempt.lastObservedRevision === cloudRevision) {
+    return "local_changed";
+  }
+
   const baseline = readBaseline(schoolId);
   if (!baseline) return "not_linked";
-  const [cloudRevision, role] = await Promise.all([getCloudRevision(schoolId), getCloudSyncRole(schoolId)]);
   if (baseline.role && baseline.role !== role) return "not_linked";
-  const localChanged = baseline.localSignature ? localSyncSignature(database, role) !== baseline.localSignature : database.updatedAt !== baseline.localUpdatedAt;
+  const localChanged = baseline.localSignature ? signature !== baseline.localSignature : database.updatedAt !== baseline.localUpdatedAt;
   const cloudChanged = cloudRevision !== baseline.revision;
   if (localChanged && cloudChanged) return "conflict";
   if (localChanged) return "local_changed";
@@ -125,7 +162,7 @@ async function pushSnapshot(schoolId: string, source: SchoolDatabase, role: Clou
   if (canWriteAcademicCore(role)) {
     await upsertRows("classes", database.classes.map((item) => ({ id: item.id, school_id: schoolId, name: item.name, group_name: item.groupName ?? "", teacher: item.teacher, schedule: item.schedule, meeting_days: item.meetingDays ?? [], start_time: item.startTime || null, end_time: item.endTime || null, room: item.room, monthly_fee: item.monthlyFee, duration_type: item.durationType ?? "open_ended", duration_months: item.durationType === "fixed" ? item.durationMonths ?? null : null, workload_hours: item.workloadHours ?? null, color: item.color, active: true, created_at: item.createdAt, deleted_at: null })));
     await softDeleteMissing("classes", schoolId, database.classes.map((item) => item.id));
-    await upsertRows("students", database.students.map((item) => ({ id: item.id, school_id: schoolId, class_id: item.classId || null, name: item.name, birth_date: item.birthDate, document_number: item.documentNumber || null, phone: item.phone, guardian_name: item.guardianName, guardian_phone: item.guardianPhone, custom_fields: item.customFields, preferred_due_day: item.dueDay ?? null, enrollment_status: item.enrollmentStatus ?? (item.active ? "active" : "paused"), enrollment_start_date: item.enrollmentStartDate || item.createdAt.slice(0, 10), paused_at: item.pausedAt ?? null, pause_reason: item.pauseReason || null, active: item.active, completed_at: item.completedAt ? item.completedAt.slice(0, 10) : null, created_at: item.createdAt, deleted_at: null })));
+    await upsertRows("students", database.students.map((item) => ({ id: item.id, school_id: schoolId, class_id: item.classId || null, name: item.name, birth_date: item.birthDate, document_number: item.documentNumber?.trim() || "", phone: item.phone || "", guardian_name: item.guardianName || "", guardian_phone: item.guardianPhone || "", custom_fields: item.customFields, preferred_due_day: item.dueDay ?? null, enrollment_status: item.enrollmentStatus ?? (item.active ? "active" : "paused"), enrollment_start_date: item.enrollmentStartDate || item.createdAt.slice(0, 10), paused_at: item.pausedAt ?? null, pause_reason: item.pauseReason || "", active: item.active, completed_at: item.completedAt ? item.completedAt.slice(0, 10) : null, created_at: item.createdAt, deleted_at: null })));
     await softDeleteMissing("students", schoolId, database.students.map((item) => item.id));
     await upsertRows("attendance", database.attendance.map((item) => ({ id: item.id, school_id: schoolId, student_id: item.studentId, class_id: item.classId, attendance_date: item.date, status: item.status, deleted_at: null })));
     await softDeleteMissing("attendance", schoolId, database.attendance.map((item) => item.id));
@@ -153,20 +190,68 @@ export async function establishSyncBaseline(schoolId: string, database: SchoolDa
 }
 
 export async function safePushToCloud(schoolId: string, database: SchoolDatabase) {
-  const [summary, role] = await Promise.all([getCloudDataSummary(schoolId), getCloudSyncRole(schoolId)]);
+  const [summary, role, cloudRevision] = await Promise.all([
+    getCloudDataSummary(schoolId),
+    getCloudSyncRole(schoolId),
+    getCloudRevision(schoolId),
+  ]);
   const baseline = readBaseline(schoolId);
+  const signature = localSyncSignature(database, role);
+  const previousAttempt = readPushAttempt(schoolId);
+  const resumableAttempt = previousAttempt
+    && previousAttempt.role === role
+    && previousAttempt.localSignature === signature
+    && previousAttempt.lastObservedRevision === cloudRevision
+    && (previousAttempt.baselineRevision === null || baseline?.revision === previousAttempt.baselineRevision);
+
+  const runPush = async (firstSync: boolean, baselineRevision: number | null) => {
+    const normalized = ensureUuidDatabase(database);
+    const attempt: SyncPushAttempt = {
+      role,
+      localSignature: signature,
+      baselineRevision,
+      lastObservedRevision: cloudRevision,
+      firstSync,
+      startedAt: previousAttempt?.startedAt ?? new Date().toISOString(),
+    };
+    writePushAttempt(schoolId, attempt);
+    try {
+      if (firstSync && summary.totalOperationalRecords === 0) {
+        await seedEmptyCloudFromLocal(schoolId, normalized);
+      }
+      const pushed = await pushSnapshot(schoolId, normalized, role);
+      const revision = await getCloudRevision(schoolId);
+      writeBaseline(schoolId, revision, pushed, role);
+      clearPushAttempt(schoolId);
+      return pushed;
+    } catch (error) {
+      let lastObservedRevision = cloudRevision;
+      try { lastObservedRevision = await getCloudRevision(schoolId); } catch { /* mantém a última revisão conhecida */ }
+      writePushAttempt(schoolId, { ...attempt, lastObservedRevision });
+      throw error;
+    }
+  };
+
+  if (resumableAttempt) {
+    return runPush(Boolean(previousAttempt.firstSync), previousAttempt.baselineRevision);
+  }
+
   if (summary.totalOperationalRecords === 0 && !baseline) {
     if (!isAdmin(role)) throw new Error("Somente proprietário ou administrador pode realizar o primeiro envio de dados para uma instituição vazia.");
-    const normalized = ensureUuidDatabase(database);
-    await seedEmptyCloudFromLocal(schoolId, normalized);
-    await pushSnapshot(schoolId, normalized, role);
-    writeBaseline(schoolId, await getCloudRevision(schoolId), normalized, role);
-    return normalized;
+    return runPush(true, null);
   }
   if (!baseline || (baseline.role && baseline.role !== role)) throw new Error("Este computador ainda não possui uma base de sincronização compatível com sua função atual. Recupere os dados da nuvem antes de enviar alterações.");
-  if (await getCloudRevision(schoolId) !== baseline.revision) throw new Error("A nuvem mudou desde a última sincronização. O envio foi bloqueado para não sobrescrever dados de outro dispositivo.");
+  if (cloudRevision !== baseline.revision) throw new Error("A nuvem mudou desde a última sincronização. O envio foi bloqueado para não sobrescrever dados de outro dispositivo.");
+  return runPush(false, baseline.revision);
+}
+
+export async function replaceCloudWithLocal(schoolId: string, database: SchoolDatabase) {
+  const role = await getCloudSyncRole(schoolId);
+  if (!isAdmin(role)) throw new Error("Somente proprietário ou administrador pode escolher a cópia deste computador para resolver um conflito.");
   const normalized = await pushSnapshot(schoolId, database, role);
-  writeBaseline(schoolId, await getCloudRevision(schoolId), normalized, role);
+  const revision = await getCloudRevision(schoolId);
+  writeBaseline(schoolId, revision, normalized, role);
+  clearPushAttempt(schoolId);
   return normalized;
 }
 

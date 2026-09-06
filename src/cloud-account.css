@@ -41,3 +41,12 @@
 
 /* CLOUD-RESEND-2026 */
 .cloud-resend-box{display:grid;gap:7px;margin-top:12px;padding:14px;border:1px solid var(--border,var(--line));border-radius:12px;background:var(--surface-soft,var(--canvas))}.cloud-resend-box strong{color:var(--text);font-size:.86rem}.cloud-resend-box span{color:var(--text-muted,var(--muted));font-size:.78rem;line-height:1.5}.cloud-resend-box .secondary-button{justify-self:start}
+
+/* CLOUD-THEME-0.4.2 */
+.cloud-message.success{color:color-mix(in srgb,#34d399 78%,var(--text));border-color:color-mix(in srgb,#10b981 34%,var(--border,var(--line)));background:color-mix(in srgb,#10b981 10%,var(--surface))}
+.cloud-message.warning{color:color-mix(in srgb,#fbbf24 82%,var(--text));border-color:color-mix(in srgb,#d97706 34%,var(--border,var(--line)));background:color-mix(in srgb,#d97706 10%,var(--surface))}
+.cloud-message.danger{color:color-mix(in srgb,#fb7185 82%,var(--text));border-color:color-mix(in srgb,#dc2626 34%,var(--border,var(--line)));background:color-mix(in srgb,#dc2626 10%,var(--surface))}
+.cloud-role-chip{background:color-mix(in srgb,var(--blue) 9%,var(--surface));border-color:color-mix(in srgb,var(--blue) 28%,var(--border,var(--line)))}
+.cloud-summary-grid>div{background:var(--surface-soft,var(--canvas));border-color:var(--border,var(--line))}
+.cloud-danger-zone{background:color-mix(in srgb,var(--red) 9%,var(--surface));border-color:color-mix(in srgb,var(--red) 32%,var(--border,var(--line)));color:var(--text)}
+.cloud-danger-zone>span{color:var(--text-muted,var(--muted))}

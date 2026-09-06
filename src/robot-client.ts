@@ -4,6 +4,7 @@ export type RobotSessionState = {
   status: "starting" | "qr" | "connecting" | "connected" | "disconnected" | "auth_failure" | "error" | string;
   qr: string | null;
   phone: string | null;
+  sessionError: string | null;
 };
 
 async function action(channelId: string, actionName: "start" | "status" | "disconnect") {
@@ -14,6 +15,7 @@ async function action(channelId: string, actionName: "start" | "status" | "disco
     status: String(data?.status ?? "disconnected"),
     qr: typeof data?.qr === "string" ? data.qr : null,
     phone: typeof data?.phone === "string" ? data.phone : null,
+    sessionError: typeof data?.sessionError === "string" ? data.sessionError : null,
   } satisfies RobotSessionState;
 }
 
