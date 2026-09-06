@@ -1,1 +1,0 @@
-Validação de impressão e contraste.
