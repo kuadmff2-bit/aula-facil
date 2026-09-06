@@ -43,9 +43,10 @@ async function saveWorkbook(workbook: ExcelJS.Workbook, filename: string) {
   anchor.download = `${safeFilename(filename.replace(/\.xlsx$/i, ""))}.xlsx`;
   document.body.appendChild(anchor);
   anchor.click();
+  const downloadedName = anchor.download;
   anchor.remove();
   URL.revokeObjectURL(url);
-  window.dispatchEvent(new CustomEvent("aulafacil:download-success", { detail: { filename: anchor.download } }));
+  window.dispatchEvent(new CustomEvent("aulafacil:download-success", { detail: { filename: downloadedName } }));
 }
 
 function prepareSheet(worksheet: ExcelJS.Worksheet, headers: string[], rows: Array<Array<string | number>>) {
@@ -74,8 +75,14 @@ function prepareSheet(worksheet: ExcelJS.Worksheet, headers: string[], rows: Arr
     column.width = width;
   });
   worksheet.autoFilter = { from: { row: 1, column: 1 }, to: { row: 1, column: headers.length } };
-  worksheet.pageSetup = { orientation: "landscape", fitToPage: true, fitToWidth: 1, fitToHeight: 0, paperSize: 9 };
-  worksheet.pageMargins = { left: 0.25, right: 0.25, top: 0.5, bottom: 0.5, header: 0.2, footer: 0.2 };
+  worksheet.pageSetup = {
+    orientation: "landscape",
+    fitToPage: true,
+    fitToWidth: 1,
+    fitToHeight: 0,
+    paperSize: 9,
+    margins: { left: 0.25, right: 0.25, top: 0.5, bottom: 0.5, header: 0.2, footer: 0.2 },
+  };
 }
 
 export async function exportClassWorkbook(classes: ClassItem[], students: Student[], filename = "aulafacil-turmas") {
