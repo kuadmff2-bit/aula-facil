@@ -1,3 +1,4 @@
+// @ts-ignore Vitest executa este arquivo em Node; o app web não precisa carregar @types/node.
 import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 
