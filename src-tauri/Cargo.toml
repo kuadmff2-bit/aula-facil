@@ -1,6 +1,6 @@
 [package]
 name = "aula-facil"
-version = "0.4.4"
+version = "0.4.5"
 description = "Aplicativo desktop do AulaFácil"
 authors = ["AulaFácil"]
 edition = "2021"
@@ -17,4 +17,5 @@ tauri = { version = "2", features = [] }
 
 [target.'cfg(windows)'.dependencies]
 winapi = { version = "0.3.9", features = ["dpapi", "winbase", "wincrypt"] }
+
 
