@@ -51,23 +51,10 @@ function phone(value) {
   return result;
 }
 
-function sameBrazilianMobile(leftValue, rightValue) {
+function exactSamePhone(leftValue, rightValue) {
   const left = String(leftValue || "").replace(/\D/g, "");
   const right = String(rightValue || "").replace(/\D/g, "");
-  if (!left || !right) return false;
-  if (left === right) return true;
-  if (!left.startsWith("55") || !right.startsWith("55")) return false;
-
-  const a = left.slice(2);
-  const b = right.slice(2);
-  const matchesOldAndNew = (oldNumber, newNumber) =>
-    oldNumber.length === 10 &&
-    newNumber.length === 11 &&
-    oldNumber.slice(0, 2) === newNumber.slice(0, 2) &&
-    newNumber[2] === "9" &&
-    oldNumber.slice(2) === newNumber.slice(3);
-
-  return matchesOldAndNew(a, b) || matchesOldAndNew(b, a);
+  return Boolean(left && right && left === right);
 }
 
 function publicState(state) {
@@ -162,7 +149,7 @@ async function createSession(id, forceRestart = false) {
     state.error = null;
     state.phone = client.info?.wid?.user || null;
     state.updatedAt = new Date().toISOString();
-    console.log("Sessão WhatsApp conectada", id);
+    console.log("Sessão WhatsApp conectada", id, state.phone || "");
   });
   client.on("auth_failure", () => {
     state.status = "auth_failure";
@@ -239,14 +226,17 @@ async function enqueueSend(state, to, message) {
     const wait = Math.max(0, MIN_SEND_INTERVAL_MS - (Date.now() - state.lastSendAt));
     if (wait) await sleep(wait);
 
-    if (sameBrazilianMobile(to, state.phone)) {
-      throw new Error("O número do destinatário é o mesmo WhatsApp conectado ao Robô. Use outro número para testar o envio.");
+    if (exactSamePhone(to, state.phone)) {
+      throw new Error("O número do destinatário é exatamente o mesmo WhatsApp conectado ao Robô. Use outro número para testar o envio.");
     }
 
+    console.log("Tentando envio", { channelId: state.id, from: state.phone, to });
     const chatId = await resolveWhatsAppChatId(state.client, to);
+    console.log("Destino resolvido", { to, chatId });
     const result = await state.client.sendMessage(chatId, message, { waitUntilMsgSent: true, sendSeen: false });
     const confirmation = await waitForServerAck(result);
     state.lastSendAt = Date.now();
+    console.log("Envio confirmado", { to, messageId: confirmation.messageId, ack: confirmation.ack });
     return confirmation;
   });
   return state.queue;
