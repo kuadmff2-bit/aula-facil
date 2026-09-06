@@ -1,0 +1,164 @@
+/* Ajustes finais de legibilidade, principalmente no modo escuro. */
+html[data-theme="dark"]{
+  --text:#f6f8fc;
+  --muted:#cbd5e3;
+  --text-muted:#cbd5e3;
+  --line:#506078;
+  --border:#506078;
+  --surface:#1c2838;
+  --surface-soft:#223044;
+}
+
+html[data-theme="dark"] .page-content,
+html[data-theme="dark"] .card,
+html[data-theme="dark"] .modal,
+html[data-theme="dark"] .details-panel,
+html[data-theme="dark"] .professional-settings-card,
+html[data-theme="dark"] .cloud-sync-card,
+html[data-theme="dark"] .payment-connections-card,
+html[data-theme="dark"] .message-automation-card{
+  color:#f6f8fc;
+}
+
+html[data-theme="dark"] .page-content h1,
+html[data-theme="dark"] .page-content h2,
+html[data-theme="dark"] .page-content h3,
+html[data-theme="dark"] .page-content h4,
+html[data-theme="dark"] .page-content strong,
+html[data-theme="dark"] .card strong,
+html[data-theme="dark"] .modal strong,
+html[data-theme="dark"] .details-panel strong,
+html[data-theme="dark"] .professional-settings-card strong,
+html[data-theme="dark"] label{
+  color:#f8fafc;
+}
+
+html[data-theme="dark"] .page-content p,
+html[data-theme="dark"] .page-content small,
+html[data-theme="dark"] .page-content label>span,
+html[data-theme="dark"] .card p,
+html[data-theme="dark"] .card small,
+html[data-theme="dark"] .professional-settings-card p,
+html[data-theme="dark"] .professional-settings-card small,
+html[data-theme="dark"] .cloud-sync-heading p,
+html[data-theme="dark"] .cloud-sync-explainer span,
+html[data-theme="dark"] .cloud-sync-recovery>span,
+html[data-theme="dark"] .payment-connections-heading p,
+html[data-theme="dark"] .payment-connection-main span,
+html[data-theme="dark"] .payment-connection-meta span,
+html[data-theme="dark"] .payment-provider-note span,
+html[data-theme="dark"] .payment-provider-note small,
+html[data-theme="dark"] .payment-secret-note,
+html[data-theme="dark"] .payment-form-grid label span,
+html[data-theme="dark"] .payment-readiness span,
+html[data-theme="dark"] .message-heading p,
+html[data-theme="dark"] .message-form-grid label>span,
+html[data-theme="dark"] .message-form-grid small,
+html[data-theme="dark"] .message-channel-item span,
+html[data-theme="dark"] .message-template-list article span,
+html[data-theme="dark"] .automation-list article span,
+html[data-theme="dark"] .message-variable-help,
+html[data-theme="dark"] .message-age-rule span,
+html[data-theme="dark"] .message-history p,
+html[data-theme="dark"] .message-history small,
+html[data-theme="dark"] .automation-readiness span{
+  color:#cbd5e3!important;
+}
+
+html[data-theme="dark"] .cloud-sync-eyebrow,
+html[data-theme="dark"] .payment-eyebrow,
+html[data-theme="dark"] .message-eyebrow{
+  color:#a9c7ff!important;
+}
+
+html[data-theme="dark"] .cloud-sync-explainer>div,
+html[data-theme="dark"] .payment-connection-item,
+html[data-theme="dark"] .payment-provider-note,
+html[data-theme="dark"] .payment-secret-note,
+html[data-theme="dark"] .message-channel-item,
+html[data-theme="dark"] .message-template-list article,
+html[data-theme="dark"] .automation-list article,
+html[data-theme="dark"] .message-empty,
+html[data-theme="dark"] .payment-setup-guide>div,
+html[data-theme="dark"] .automation-setup-guide>div,
+html[data-theme="dark"] .payment-readiness,
+html[data-theme="dark"] .automation-readiness{
+  border-color:#506078!important;
+  background:#223044!important;
+}
+
+html[data-theme="dark"] input,
+html[data-theme="dark"] select,
+html[data-theme="dark"] textarea{
+  color:#f8fafc!important;
+  background:#111a26!important;
+  border-color:#607089!important;
+}
+html[data-theme="dark"] input::placeholder,
+html[data-theme="dark"] textarea::placeholder{color:#aebacc!important;opacity:1}
+
+html[data-theme="dark"] .secondary-button,
+html[data-theme="dark"] .icon-button,
+html[data-theme="dark"] .message-actions button,
+html[data-theme="dark"] .message-template-list button,
+html[data-theme="dark"] .payment-connection-actions button{
+  color:#eef3fb!important;
+  background:#243348!important;
+  border-color:#5b6b83!important;
+}
+
+html[data-theme="dark"] .cloud-sync-message.warning,
+html[data-theme="dark"] .cloud-sync-warning,
+html[data-theme="dark"] .payment-message.warning,
+html[data-theme="dark"] .message-box.warning,
+html[data-theme="dark"] .payment-readiness.warning{
+  color:#ffd492!important;
+  background:rgba(217,119,6,.16)!important;
+}
+html[data-theme="dark"] .cloud-sync-message.success,
+html[data-theme="dark"] .payment-message.success,
+html[data-theme="dark"] .message-box.success{
+  color:#8aebc8!important;
+}
+html[data-theme="dark"] .cloud-sync-message.danger,
+html[data-theme="dark"] .payment-message.danger,
+html[data-theme="dark"] .message-box.danger{
+  color:#ffabb6!important;
+}
+
+html[data-theme="dark"] th{color:#d5deea!important;background:#172232!important}
+html[data-theme="dark"] td{color:#eef3f9!important}
+
+/* Mantém cards dentro da largura disponível sem cortar menus, popovers ou conteúdo vertical. */
+.page-content .card,
+.page-content .professional-settings-card,
+.cloud-sync-card,
+.payment-connections-card,
+.message-automation-card,
+.cloud-sync-heading,
+.payment-connections-heading,
+.message-heading,
+.cloud-sync-explainer>div,
+.payment-setup-guide>div,
+.automation-setup-guide>div,
+.payment-readiness,
+.automation-readiness{
+  min-width:0;
+  max-width:100%;
+  box-sizing:border-box;
+}
+
+.page-content h1,
+.page-content h2,
+.page-content h3,
+.page-content h4,
+.page-content p,
+.page-content small,
+.page-content strong,
+.cloud-sync-card span,
+.payment-connections-card span,
+.message-automation-card span{
+  max-width:100%;
+  overflow-wrap:anywhere;
+  word-break:normal;
+}
