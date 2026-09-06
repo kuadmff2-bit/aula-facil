@@ -1,0 +1,72 @@
+name: Preparar AulaFácil 0.4.2
+
+on:
+  push:
+    branches: [release/aulafacil-0.4.2]
+    paths:
+      - ".github/workflows/prepare-0.4.2.yml"
+
+permissions:
+  contents: write
+
+concurrency:
+  group: prepare-aulafacil-0-4-2
+  cancel-in-progress: true
+
+jobs:
+  prepare:
+    runs-on: windows-latest
+    steps:
+      - name: Baixar branch de release
+        uses: actions/checkout@v4
+        with:
+          ref: release/aulafacil-0.4.2
+          fetch-depth: 0
+
+      - name: Preparar Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Preparar Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Sincronizar package-lock
+        run: npm install --package-lock-only --ignore-scripts --no-audit
+
+      - name: Instalar dependências
+        run: npm ci --no-audit
+
+      - name: Gerar recursos Tauri
+        run: npm run desktop:icons
+
+      - name: Sincronizar Cargo.lock
+        run: cargo check --manifest-path src-tauri/Cargo.toml
+
+      - name: Validar requisitos de lançamento
+        env:
+          AULAFACIL_STRICT_RELEASE: "1"
+        run: node scripts/quality-check.mjs
+
+      - name: Executar testes
+        run: npm test
+
+      - name: Validar TypeScript e frontend
+        run: npm run build
+
+      - name: Validar Tauri com lockfile
+        run: cargo check --locked --manifest-path src-tauri/Cargo.toml
+
+      - name: Publicar lockfiles sincronizados
+        shell: bash
+        run: |
+          if git diff --quiet package-lock.json src-tauri/Cargo.lock; then
+            echo "Lockfiles já estavam sincronizados."
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add package-lock.json src-tauri/Cargo.lock
+          git commit -m "release: sincronizar lockfiles da 0.4.2"
+          git push origin HEAD:release/aulafacil-0.4.2
