@@ -52,6 +52,9 @@ jobs:
       - name: Validar TypeScript e frontend
         run: npm run build
 
+      - name: Gerar recursos Tauri
+        run: npm run desktop:icons
+
       - name: Validar Tauri
         run: cargo check --locked --manifest-path src-tauri/Cargo.toml
 
