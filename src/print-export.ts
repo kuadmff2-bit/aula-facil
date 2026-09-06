@@ -1,6 +1,9 @@
 const PRINT_STAGE_ID = "aulafacil-print-stage";
 const PRINTING_CLASS = "aulafacil-printing";
 const PRINT_PAGE_STYLE_ID = "aulafacil-print-page-style";
+const nativeWindowPrint = window.print.bind(window);
+let printInstalled = false;
+let printBusy = false;
 
 function pageDescription(source: HTMLElement) {
   const paper = source.dataset.paperSize === "letter" ? "Letter" : "A4";
@@ -15,18 +18,28 @@ function clearPrintStage() {
   document.getElementById(PRINT_STAGE_ID)?.remove();
   document.getElementById(PRINT_PAGE_STYLE_ID)?.remove();
   document.documentElement.classList.remove(PRINTING_CLASS);
+  printBusy = false;
 }
 
-export function printElement(elementId: string) {
-  const source = document.getElementById(elementId);
-  if (!source) {
-    window.dispatchEvent(new CustomEvent("aulafacil:contact-error", {
-      detail: { message: "Não foi possível localizar o documento para impressão." },
-    }));
-    return;
-  }
+function isVisible(element: HTMLElement) {
+  const style = window.getComputedStyle(element);
+  return style.display !== "none" && style.visibility !== "hidden" && element.getClientRects().length > 0;
+}
 
+function activePrintable() {
+  const candidates = [
+    document.getElementById("certificate-print-area"),
+    document.getElementById("print-area"),
+  ].filter((item): item is HTMLElement => item instanceof HTMLElement);
+  return candidates.find(isVisible) ?? null;
+}
+
+function printSource(source: HTMLElement) {
+  if (printBusy) return;
+  printBusy = true;
   clearPrintStage();
+  printBusy = true;
+
   const page = pageDescription(source);
   const stage = document.createElement("div");
   stage.id = PRINT_STAGE_ID;
@@ -56,7 +69,7 @@ export function printElement(elementId: string) {
   window.addEventListener("afterprint", cleanup, { once: true });
   window.setTimeout(() => {
     try {
-      window.print();
+      nativeWindowPrint();
     } catch (error) {
       console.error("Falha ao abrir a impressão", error);
       cleanup();
@@ -64,7 +77,31 @@ export function printElement(elementId: string) {
         detail: { message: "Não foi possível abrir a impressão deste documento." },
       }));
     }
-  }, 50);
+  }, 80);
 
   window.setTimeout(cleanup, 120_000);
+}
+
+export function printElement(elementId: string) {
+  const source = document.getElementById(elementId);
+  if (!(source instanceof HTMLElement)) {
+    window.dispatchEvent(new CustomEvent("aulafacil:contact-error", {
+      detail: { message: "Não foi possível localizar o documento para impressão." },
+    }));
+    return;
+  }
+  printSource(source);
+}
+
+export function installDocumentPrintIsolation() {
+  if (printInstalled) return;
+  printInstalled = true;
+  window.print = () => {
+    const source = activePrintable();
+    if (!source) {
+      nativeWindowPrint();
+      return;
+    }
+    printSource(source);
+  };
 }
