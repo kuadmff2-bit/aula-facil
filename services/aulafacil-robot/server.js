@@ -23,6 +23,10 @@ if (TOKEN.length < 32) {
 
 const sessions = new Map();
 
+function sleep(ms) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
 function safeEqual(a, b) {
   const left = Buffer.from(String(a || ""));
   const right = Buffer.from(String(b || ""));
@@ -47,6 +51,25 @@ function phone(value) {
   return result;
 }
 
+function sameBrazilianMobile(leftValue, rightValue) {
+  const left = String(leftValue || "").replace(/\D/g, "");
+  const right = String(rightValue || "").replace(/\D/g, "");
+  if (!left || !right) return false;
+  if (left === right) return true;
+  if (!left.startsWith("55") || !right.startsWith("55")) return false;
+
+  const a = left.slice(2);
+  const b = right.slice(2);
+  const matchesOldAndNew = (oldNumber, newNumber) =>
+    oldNumber.length === 10 &&
+    newNumber.length === 11 &&
+    oldNumber.slice(0, 2) === newNumber.slice(0, 2) &&
+    newNumber[2] === "9" &&
+    oldNumber.slice(2) === newNumber.slice(3);
+
+  return matchesOldAndNew(a, b) || matchesOldAndNew(b, a);
+}
+
 function publicState(state) {
   return { status: state.status, qr: state.qr || null, phone: state.phone || null, sessionError: state.error || null, updatedAt: state.updatedAt };
 }
@@ -67,7 +90,7 @@ async function waitForSession(state, timeoutMs = 30000) {
   while (Date.now() - startedAt < timeoutMs) {
     if (state.status === "connected") return state;
     if (["qr", "auth_failure", "error", "disconnected"].includes(state.status)) return state;
-    await new Promise((resolve) => setTimeout(resolve, 250));
+    await sleep(250);
   }
   return state;
 }
@@ -81,9 +104,6 @@ async function createSession(id, forceRestart = false) {
   }
   if (sessions.size >= MAX_SESSIONS) throw new Error("limite de sessões atingido");
 
-  // LocalAuth fica em volume persistente. Após um restart brusco do container,
-  // apenas os arquivos de lock do Chromium podem sobreviver. Removê-los não
-  // apaga a autenticação do WhatsApp e permite reabrir o mesmo perfil.
   await clearChromiumSessionLocks(id);
 
   const state = {
@@ -158,7 +178,6 @@ async function createSession(id, forceRestart = false) {
     state.phone = null;
     state.updatedAt = new Date().toISOString();
   });
-  // Não há listener de mensagens recebidas: o Robô AulaFácil não atende nem responde usuários.
   client.initialize().catch(async (error) => {
     state.status = "error";
     state.error = String(error?.message || "Falha ao abrir o WhatsApp no servidor.");
@@ -181,8 +200,6 @@ async function resolveWhatsAppChatId(client, to) {
   let chatId = serializedId(numberId);
   if (!chatId) throw new Error("número não registrado no WhatsApp");
 
-  // WhatsApp passou a usar LIDs em várias contas. Resolver o LID antes do envio
-  // evita o erro "No LID for user" ao forçar diretamente numero@c.us.
   if (typeof client.getContactLidAndPhone === "function") {
     try {
       const mapping = await client.getContactLidAndPhone(chatId);
@@ -197,14 +214,40 @@ async function resolveWhatsAppChatId(client, to) {
   return chatId;
 }
 
+async function waitForServerAck(message, timeoutMs = 12000) {
+  const messageId = message?.id?._serialized || "";
+  if (!messageId) throw new Error("WhatsApp não devolveu o identificador da mensagem.");
+
+  let ack = Number(message?.ack ?? 0);
+  const startedAt = Date.now();
+  while (ack < 1 && Date.now() - startedAt < timeoutMs) {
+    await sleep(500);
+    try {
+      const refreshed = await message.reload();
+      if (refreshed) ack = Number(refreshed.ack ?? ack);
+    } catch {
+      // O cache pode remover a mensagem antes do reload; o ID ainda é obrigatório.
+    }
+  }
+
+  if (ack < 1) throw new Error("WhatsApp não confirmou o envio da mensagem.");
+  return { messageId, ack };
+}
+
 async function enqueueSend(state, to, message) {
   state.queue = state.queue.then(async () => {
     const wait = Math.max(0, MIN_SEND_INTERVAL_MS - (Date.now() - state.lastSendAt));
-    if (wait) await new Promise((resolve) => setTimeout(resolve, wait));
+    if (wait) await sleep(wait);
+
+    if (sameBrazilianMobile(to, state.phone)) {
+      throw new Error("O número do destinatário é o mesmo WhatsApp conectado ao Robô. Use outro número para testar o envio.");
+    }
+
     const chatId = await resolveWhatsAppChatId(state.client, to);
-    const result = await state.client.sendMessage(chatId, message);
+    const result = await state.client.sendMessage(chatId, message, { waitUntilMsgSent: true, sendSeen: false });
+    const confirmation = await waitForServerAck(result);
     state.lastSendAt = Date.now();
-    return result?.id?._serialized || "";
+    return confirmation;
   });
   return state.queue;
 }
@@ -267,8 +310,8 @@ app.post("/send", async (req, res) => {
       return res.status(409).json({ error: state.error || "WhatsApp não conectado", status: state.status, sessionError: state.error || null });
     }
 
-    const messageId = await enqueueSend(state, to, message);
-    res.json({ ok: true, messageId });
+    const confirmation = await enqueueSend(state, to, message);
+    res.json({ ok: true, messageId: confirmation.messageId, ack: confirmation.ack });
   } catch (error) {
     res.status(400).json({ error: error instanceof Error ? error.message : "envio falhou" });
   }
