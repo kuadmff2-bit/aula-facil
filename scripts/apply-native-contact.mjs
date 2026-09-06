@@ -7,9 +7,12 @@ function replaceOnce(text, from, to, label) {
 }
 
 function edit(path, mutator) {
-  const before = fs.readFileSync(path, "utf8");
-  const after = mutator(before);
-  if (after === before) throw new Error(`Nenhuma alteração aplicada em ${path}`);
+  const original = fs.readFileSync(path, "utf8");
+  const usesCrlf = original.includes("\r\n");
+  const before = original.replace(/\r\n/g, "\n");
+  const afterLf = mutator(before);
+  if (afterLf === before) throw new Error(`Nenhuma alteração aplicada em ${path}`);
+  const after = usesCrlf ? afterLf.replace(/\n/g, "\r\n") : afterLf;
   fs.writeFileSync(path, after);
 }
 
