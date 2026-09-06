@@ -1,4 +1,6 @@
 import crypto from "node:crypto";
+import fs from "node:fs/promises";
+import path from "node:path";
 import express from "express";
 import QRCode from "qrcode";
 import pkg from "whatsapp-web.js";
@@ -54,6 +56,22 @@ async function destroySession(state) {
   await state.client.destroy().catch(() => undefined);
 }
 
+async function clearChromiumSessionLocks(id) {
+  const profileDir = path.join(DATA_PATH, `session-${id}`);
+  const lockFiles = ["SingletonLock", "SingletonCookie", "SingletonSocket", "DevToolsActivePort"];
+  await Promise.all(lockFiles.map((name) => fs.rm(path.join(profileDir, name), { force: true, recursive: true }).catch(() => undefined)));
+}
+
+async function waitForSession(state, timeoutMs = 30000) {
+  const startedAt = Date.now();
+  while (Date.now() - startedAt < timeoutMs) {
+    if (state.status === "connected") return state;
+    if (["qr", "auth_failure", "error", "disconnected"].includes(state.status)) return state;
+    await new Promise((resolve) => setTimeout(resolve, 250));
+  }
+  return state;
+}
+
 async function createSession(id, forceRestart = false) {
   const existing = sessions.get(id);
   if (existing && !forceRestart) return existing;
@@ -62,6 +80,12 @@ async function createSession(id, forceRestart = false) {
     sessions.delete(id);
   }
   if (sessions.size >= MAX_SESSIONS) throw new Error("limite de sessões atingido");
+
+  // LocalAuth fica em volume persistente. Após um restart brusco do container,
+  // apenas os arquivos de lock do Chromium podem sobreviver. Removê-los não
+  // apaga a autenticação do WhatsApp e permite reabrir o mesmo perfil.
+  await clearChromiumSessionLocks(id);
+
   const state = {
     id,
     status: "starting",
@@ -118,6 +142,7 @@ async function createSession(id, forceRestart = false) {
     state.error = null;
     state.phone = client.info?.wid?.user || null;
     state.updatedAt = new Date().toISOString();
+    console.log("Sessão WhatsApp conectada", id);
   });
   client.on("auth_failure", () => {
     state.status = "auth_failure";
@@ -202,7 +227,9 @@ app.post("/sessions/start", async (req, res) => {
 app.post("/sessions/status", async (req, res) => {
   try {
     const id = channelId(req.body?.channelId);
-    const state = sessions.get(id) || await createSession(id);
+    const current = sessions.get(id);
+    const restart = Boolean(current && ["error", "disconnected"].includes(current.status));
+    const state = current ? (restart ? await createSession(id, true) : current) : await createSession(id);
     res.json({ ok: true, ...publicState(state) });
   } catch (error) {
     res.status(400).json({ error: error instanceof Error ? error.message : "não foi possível consultar" });
@@ -230,8 +257,16 @@ app.post("/send", async (req, res) => {
     const to = phone(req.body?.to);
     const message = String(req.body?.message || "").trim().slice(0, 4000);
     if (!message) throw new Error("mensagem vazia");
-    const state = sessions.get(id) || await createSession(id);
-    if (state.status !== "connected") return res.status(409).json({ error: "WhatsApp não conectado", status: state.status });
+
+    let state = sessions.get(id);
+    if (!state) state = await createSession(id);
+    else if (["error", "disconnected"].includes(state.status)) state = await createSession(id, true);
+
+    if (["starting", "connecting"].includes(state.status)) await waitForSession(state);
+    if (state.status !== "connected") {
+      return res.status(409).json({ error: state.error || "WhatsApp não conectado", status: state.status, sessionError: state.error || null });
+    }
+
     const messageId = await enqueueSend(state, to, message);
     res.json({ ok: true, messageId });
   } catch (error) {
