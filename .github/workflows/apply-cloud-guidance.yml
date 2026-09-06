@@ -28,6 +28,18 @@ jobs:
       - name: Instalar dependências
         run: npm ci
 
+      - name: Corrigir script temporário
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          p = Path('scripts/apply-cloud-guidance.mjs')
+          s = p.read_text(encoding='utf-8')
+          s = s.replace('<div className={`payment-readiness ${schoolId ? "info" : "warning"}`}><strong>Próximo passo</strong>', '<div className={schoolId ? "payment-readiness info" : "payment-readiness warning"}><strong>Próximo passo</strong>')
+          s = s.replace('<div className={`automation-readiness ${automationReady ? "success" : "info"}`}><strong>{automationReady ? "Pronto" : "Próximo passo"}</strong>', '<div className={automationReady ? "automation-readiness success" : "automation-readiness info"}><strong>{automationReady ? "Pronto" : "Próximo passo"}</strong>')
+          p.write_text(s, encoding='utf-8')
+          PY
+          node --check scripts/apply-cloud-guidance.mjs
+
       - name: Aplicar orientação
         run: node scripts/apply-cloud-guidance.mjs
 
