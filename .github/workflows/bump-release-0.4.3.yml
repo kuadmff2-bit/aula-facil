@@ -9,7 +9,7 @@ on:
 permissions:
   contents: write
 
-going:
+concurrency:
   group: bump-aulafacil-0-4-3
   cancel-in-progress: true
 
@@ -81,7 +81,7 @@ jobs:
       - name: Publicar bump na main
         run: |
           git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git config user.email "41898282+B009-419E-BD3B-FB6BC310FDA4@users.noreply.github.com"
           git add -A
           git commit -m "chore: release AulaFácil 0.4.3"
           git push origin HEAD:main
