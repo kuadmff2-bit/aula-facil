@@ -15,6 +15,7 @@ import "./ux-0.4.css";
 import "./responsive-hardening.css";
 import "./vertical-scroll-hardening.css";
 import "./student-fields-compact.css";
+import "./text-layout-hardening.css";
 
 const root = createRoot(document.getElementById("root")!);
 
