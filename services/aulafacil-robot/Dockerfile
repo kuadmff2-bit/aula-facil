@@ -37,6 +37,8 @@ RUN apt-get update \
 WORKDIR /app
 COPY package.json ./
 RUN npm install --omit=dev
+COPY patch-wwebjs.mjs ./
+RUN node patch-wwebjs.mjs
 COPY server.js ./
 
 ENV NODE_ENV=production \
