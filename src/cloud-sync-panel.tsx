@@ -22,17 +22,25 @@ type Props = {
 type Message = { tone: "success" | "warning" | "danger"; text: string } | null;
 
 const copy: Record<CloudSyncStatus, { title: string; text: string }> = {
-  not_linked: { title: "Sincronização ainda não vinculada", text: "Este computador ainda não possui uma revisão-base desta instituição." },
-  synced: { title: "Tudo sincronizado", text: "A cópia local e a nuvem estão na mesma revisão conhecida para o seu nível de acesso." },
-  local_changed: { title: "Alterações neste computador", text: "Há mudanças locais permitidas pela sua função prontas para serem enviadas com segurança." },
-  cloud_changed: { title: "Há novidades na nuvem", text: "Outro dispositivo ou uma automação alterou os dados online." },
-  conflict: { title: "Conflito detectado", text: "Este computador e a nuvem mudaram desde a última sincronização. Nada será sobrescrito automaticamente." },
+  not_linked: { title: "Sincronização ainda não preparada", text: "Este computador ainda precisa fazer a primeira sincronização desta escola." },
+  synced: { title: "Tudo sincronizado", text: "Os dados deste computador e da nuvem estão atualizados." },
+  local_changed: { title: "Há alterações neste computador", text: "Existem mudanças prontas para serem salvas na nuvem com segurança." },
+  cloud_changed: { title: "Há novidades na nuvem", text: "Outro dispositivo ou uma automação atualizou dados da escola." },
+  conflict: { title: "Precisamos escolher qual cópia manter", text: "Este computador e a nuvem foram alterados. O AulaFácil não apaga nenhum dos lados automaticamente." },
+};
+
+const statusLabel: Record<CloudSyncStatus, string> = {
+  not_linked: "primeira sincronização",
+  synced: "sincronizado",
+  local_changed: "alterações locais",
+  cloud_changed: "novidades na nuvem",
+  conflict: "atenção necessária",
 };
 
 const roleCopy: Record<CloudSyncRole, { label: string; scope: string }> = {
-  owner: { label: "Proprietário", scope: "instituição, configurações, acadêmico e financeiro" },
-  admin: { label: "Administrador", scope: "instituição, configurações, acadêmico e financeiro" },
-  finance: { label: "Financeiro", scope: "regras financeiras, cobranças e pagamentos" },
+  owner: { label: "Proprietário", scope: "dados da escola, ajustes, alunos, turmas e mensalidades" },
+  admin: { label: "Administrador", scope: "dados da escola, ajustes, alunos, turmas e mensalidades" },
+  finance: { label: "Financeiro", scope: "mensalidades, cobranças e pagamentos" },
   teacher: { label: "Professor", scope: "turmas, alunos, chamadas e notas" },
   staff: { label: "Equipe", scope: "turmas, alunos, chamadas e avisos" },
 };
@@ -133,20 +141,20 @@ export function CloudSyncPanel({ database, onReplaceDatabase }: Props) {
   };
 
   const syncNow = () => void run(async () => {
-    if (!schoolId) throw new Error("Selecione uma instituição no AulaFácil Cloud.");
-    if (!navigator.onLine) throw new Error("Sem conexão com a internet. Os dados locais continuam disponíveis e poderão ser sincronizados depois.");
+    if (!schoolId) throw new Error("Selecione uma escola em Conta e sincronização.");
+    if (!navigator.onLine) throw new Error("Sem internet. Você pode continuar trabalhando e sincronizar quando a conexão voltar.");
     const result = await reconcileCloud(schoolId, database);
     if (result.database.updatedAt !== database.updatedAt || result.database !== database) {
       onReplaceDatabase(result.database);
     }
     setRole(await getCloudSyncRole(schoolId));
     setStatus("synced");
-    setMessage({ tone: "success", text: "Sincronização concluída sem sobrescrever alterações desconhecidas." });
+    setMessage({ tone: "success", text: "Sincronização concluída. Alterações feitas em outros dispositivos foram respeitadas." });
   });
 
   const recoverCloud = () => void run(async () => {
-    if (!schoolId) throw new Error("Selecione uma instituição no AulaFácil Cloud.");
-    if (recoveryPassword !== recoveryConfirmation) throw new Error("As duas senhas do backup de segurança precisam ser iguais.");
+    if (!schoolId) throw new Error("Selecione uma escola em Conta e sincronização.");
+    if (recoveryPassword !== recoveryConfirmation) throw new Error("As duas senhas do backup precisam ser iguais.");
     validateBackupPassword(recoveryPassword);
     const encryptedBackup = await createEncryptedBackup(database, recoveryPassword);
     downloadEncryptedBackup(encryptedBackup);
@@ -157,22 +165,22 @@ export function CloudSyncPanel({ database, onReplaceDatabase }: Props) {
     setRecoveryArmed(false);
     setRecoveryPassword("");
     setRecoveryConfirmation("");
-    setMessage({ tone: "success", text: "A nuvem foi recuperada. A cópia local anterior foi salva em um .afbackup criptografado." });
+    setMessage({ tone: "success", text: "Os dados da nuvem foram carregados. A cópia anterior deste computador foi salva em um backup protegido." });
   });
 
   const resolveWithLocal = () => void run(async () => {
-    if (!schoolId) throw new Error("Selecione uma instituição no AulaFácil Cloud.");
+    if (!schoolId) throw new Error("Selecione uma escola em Conta e sincronização.");
     const uploaded = await replaceCloudWithLocal(schoolId, database);
     onReplaceDatabase(uploaded);
     setRole(await getCloudSyncRole(schoolId));
     setStatus("synced");
     setLocalWinsArmed(false);
-    setMessage({ tone: "success", text: "Conflito resolvido usando os dados deste computador. A nuvem agora está alinhada com esta cópia." });
+    setMessage({ tone: "success", text: "Pronto. Os dados deste computador foram mantidos e a nuvem foi atualizada." });
   });
 
   const state = schoolId
     ? copy[status]
-    : { title: "Selecione a instituição do Cloud", text: "A conta pode estar conectada, mas este computador ainda não tem uma instituição selecionada para sincronizar." };
+    : { title: "Escolha a escola para sincronizar", text: "Sua conta pode estar conectada, mas este computador ainda não sabe qual escola deve sincronizar." };
   const needsRecovery = (status === "conflict" || status === "not_linked") && schoolId;
 
   return (
@@ -183,19 +191,19 @@ export function CloudSyncPanel({ database, onReplaceDatabase }: Props) {
           <h2>{state.title}</h2>
           <p>{state.text}</p>
         </div>
-        <div className={`cloud-sync-badge ${schoolId ? status : "not_linked"}`}>{!navigator.onLine ? "offline" : schoolId ? status.replaceAll("_", " ") : "instituição pendente"}</div>
+        <div className={`cloud-sync-badge ${schoolId ? status : "not_linked"}`}>{!navigator.onLine ? "sem internet" : schoolId ? statusLabel[status] : "escola não selecionada"}</div>
       </div>
 
-      {!schoolId && <div className="cloud-sync-warning">Use o bloco “AulaFácil Cloud” acima para criar ou selecionar a instituição. Depois disso, clique em “Sincronizar agora”.</div>}
+      {!schoolId && <div className="cloud-sync-warning">Escolha ou crie a escola no bloco acima. Depois clique em “Sincronizar agora”.</div>}
 
       <div className="cloud-sync-explainer">
-        <div><strong>Sem sobrescrita cega</strong><span>O servidor usa uma revisão da escola para detectar alterações feitas em outro dispositivo.</span></div>
-        <div><strong>Offline continua funcionando</strong><span>Você pode trabalhar sem internet e sincronizar quando a conexão voltar.</span></div>
-        <div><strong>Permissões respeitadas</strong><span>{role ? `${roleCopy[role].label}: sincroniza ${roleCopy[role].scope}.` : "O escopo é definido pela função atribuída à sua conta."}</span></div>
+        <div><strong>Proteção contra perda de alterações</strong><span>O AulaFácil verifica mudanças feitas em outros dispositivos antes de salvar, evitando apagar alterações por engano.</span></div>
+        <div><strong>Funciona mesmo sem internet</strong><span>Você pode continuar trabalhando e sincronizar quando a conexão voltar.</span></div>
+        <div><strong>Cada pessoa vê o que precisa</strong><span>{role ? `${roleCopy[role].label}: pode sincronizar ${roleCopy[role].scope}.` : "O acesso depende da função atribuída à conta."}</span></div>
       </div>
 
       {role && role !== "owner" && role !== "admin" && (
-        <div className="cloud-sync-warning">Alterações feitas fora do escopo de {roleCopy[role].label.toLowerCase()} não são enviadas ao servidor. O backend também aplica essas permissões independentemente da interface.</div>
+        <div className="cloud-sync-warning">Sua conta de {roleCopy[role].label.toLowerCase()} sincroniza somente as áreas permitidas para essa função.</div>
       )}
 
       {message && <div className={`cloud-sync-message ${message.tone}`} role="status">{message.text}</div>}
@@ -215,32 +223,32 @@ export function CloudSyncPanel({ database, onReplaceDatabase }: Props) {
 
       {needsRecovery && recoveryArmed && (
         <div className="cloud-sync-recovery">
-          <strong>Proteja a cópia local antes de substituí-la</strong>
-          <span>Crie uma senha com pelo menos 12 caracteres. O AulaFácil salvará um .afbackup criptografado e só depois recuperará a versão online.</span>
+          <strong>Vamos guardar uma cópia antes de substituir os dados deste computador</strong>
+          <span>Crie uma senha com pelo menos 12 caracteres. O AulaFácil salva um backup protegido e só depois carrega os dados da nuvem.</span>
           <div className="cloud-sync-passwords">
             <input type="password" autoComplete="new-password" minLength={12} maxLength={256} placeholder="Senha do backup" value={recoveryPassword} onChange={(event) => setRecoveryPassword(event.target.value)} />
             <input type="password" autoComplete="new-password" minLength={12} maxLength={256} placeholder="Confirmar senha" value={recoveryConfirmation} onChange={(event) => setRecoveryConfirmation(event.target.value)} />
           </div>
           <div className="cloud-sync-recovery-actions">
             <button className="secondary-button" disabled={busy} onClick={() => { setRecoveryArmed(false); setRecoveryPassword(""); setRecoveryConfirmation(""); }}>Cancelar</button>
-            <button className="danger-button" disabled={busy || recoveryPassword.length < 12 || recoveryPassword !== recoveryConfirmation} onClick={recoverCloud}>Salvar backup protegido e recuperar nuvem</button>
+            <button className="danger-button" disabled={busy || recoveryPassword.length < 12 || recoveryPassword !== recoveryConfirmation} onClick={recoverCloud}>Salvar backup e usar a nuvem</button>
           </div>
         </div>
       )}
 
       {status === "conflict" && localWinsArmed && (
         <div className="cloud-sync-recovery">
-          <strong>Usar este computador como a cópia correta?</strong>
-          <span>Esta opção envia os dados atuais deste computador para a nuvem e resolve o conflito. Use somente se esta for a cópia que você deseja manter.</span>
+          <strong>Manter os dados deste computador?</strong>
+          <span>O AulaFácil vai usar esta cópia como a correta e atualizar a nuvem. Faça isso somente se os dados deste computador forem os que você quer manter.</span>
           <div className="cloud-sync-recovery-actions">
             <button className="secondary-button" disabled={busy} onClick={() => setLocalWinsArmed(false)}>Cancelar</button>
-            <button className="danger-button" disabled={busy} onClick={resolveWithLocal}>Confirmar e alinhar a nuvem</button>
+            <button className="danger-button" disabled={busy} onClick={resolveWithLocal}>Sim, manter estes dados</button>
           </div>
         </div>
       )}
 
       {status === "conflict" && (
-        <div className="cloud-sync-warning">O AulaFácil não escolhe um lado sozinho. Você pode manter a nuvem ou, se este computador tiver a cópia correta, alinhar a nuvem com os dados locais.</div>
+        <div className="cloud-sync-warning">O AulaFácil não escolhe sozinho para evitar perda de dados. Escolha se quer manter a versão da nuvem ou a versão deste computador.</div>
       )}
     </section>
   );
