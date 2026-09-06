@@ -5,6 +5,8 @@ on:
     branches: [fix/0.4.1-qa]
     paths:
       - "scripts/apply-0.4.1-qa-fixes.py"
+      - "scripts/fix-0.4.1-legacy-app-view.py"
+      - ".github/workflows/apply-0.4.1-qa-fixes.yml"
 
 permissions:
   contents: write
@@ -34,6 +36,9 @@ jobs:
 
       - name: Aplicar correções encontradas no teste real
         run: python scripts/apply-0.4.1-qa-fixes.py
+
+      - name: Manter App legado compatível
+        run: python scripts/fix-0.4.1-legacy-app-view.py
 
       - name: Instalar dependências
         run: npm ci --no-audit
