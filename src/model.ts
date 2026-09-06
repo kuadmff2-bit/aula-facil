@@ -1,4 +1,4 @@
-export type View = "dashboard" | "students" | "classes" | "attendance" | "finance" | "notices" | "backup" | "cloud" | "settings";
+export type View = "dashboard" | "students" | "classes" | "attendance" | "finance" | "notices" | "automations" | "backup" | "cloud" | "settings";
 
 export type StudentFieldType = "text" | "tel" | "email" | "date" | "number" | "textarea";
 export type StudentFieldVisibility = "always" | "minor" | "adult";
@@ -133,6 +133,7 @@ export type ClassItem = {
   monthlyFee: number;
   durationType?: CourseDurationType;
   durationMonths?: number | null;
+  endDate?: string | null;
   workloadHours?: number | null;
   color: string;
   createdAt: string;

@@ -90,6 +90,7 @@ const viewCopy: Record<View, { title: string; description: string }> = {
   attendance: { title: "Fazer chamada", description: "Registre a presença de uma turma em segundos." },
   finance: { title: "Financeiro", description: "Acompanhe cobranças, atrasos e recebimentos." },
   notices: { title: "Avisos", description: "Organize comunicados para alunos e responsáveis." },
+  automations: { title: "Automações", description: "Configure mensagens automáticas." },
   backup: { title: "Proteção dos dados", description: "Faça cópias e restaure o sistema com segurança." },
   cloud: { title: "Conta e nuvem", description: "Login, instituição, sincronização e estado deste dispositivo." },
   settings: { title: "Personalização", description: "Adapte o AulaFácil à realidade da sua instituição." },
