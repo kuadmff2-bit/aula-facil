@@ -3,15 +3,83 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
-    <meta name="theme-color" content="#0d2d73" />
+    <meta name="theme-color" content="#ffffff" />
     <meta name="description" content="Organize alunos, turmas, mensalidades e chamadas com segurança e praticidade no AulaFácil." />
     <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
     <link rel="manifest" href="/site.webmanifest" />
     <meta name="apple-mobile-web-app-title" content="AulaFácil" />
     <title>Gestão escolar simples | AulaFácil</title>
+    <style>
+      html, body, #root {
+        width: 100%;
+        min-width: 100%;
+        height: 100%;
+        min-height: 100%;
+        margin: 0;
+      }
+
+      body {
+        background: #fff;
+      }
+
+      #aulafacil-boot {
+        position: fixed;
+        inset: 0;
+        z-index: 2147483647;
+        display: grid;
+        place-items: center;
+        background: #fff;
+        overflow: hidden;
+      }
+
+      .aulafacil-boot-mark {
+        position: relative;
+        width: clamp(164px, 22vw, 230px);
+        aspect-ratio: 1;
+        display: grid;
+        place-items: center;
+      }
+
+      .aulafacil-boot-mark::before {
+        content: "";
+        position: absolute;
+        inset: 0;
+        border-radius: 50%;
+        border: 5px solid rgba(255, 126, 0, .14);
+        border-top-color: #ff7a00;
+        border-right-color: #ff9500;
+        box-shadow: 0 0 28px rgba(255, 122, 0, .12);
+        animation: aulafacil-boot-spin .72s linear infinite;
+      }
+
+      .aulafacil-boot-mark img {
+        width: 72%;
+        height: auto;
+        display: block;
+        object-fit: contain;
+        user-select: none;
+        -webkit-user-drag: none;
+      }
+
+      @keyframes aulafacil-boot-spin {
+        to { transform: rotate(360deg); }
+      }
+
+      @media (prefers-reduced-motion: reduce) {
+        .aulafacil-boot-mark::before {
+          animation-duration: 1.8s;
+        }
+      }
+    </style>
   </head>
   <body>
-    <div id="root"></div>
+    <div id="root">
+      <div id="aulafacil-boot" role="status" aria-label="Abrindo AulaFácil">
+        <div class="aulafacil-boot-mark">
+          <img src="data:image/webp;base64,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" alt="" width="320" height="252" />
+        </div>
+      </div>
+    </div>
     <script type="module" src="/src/main.tsx"></script>
   </body>
 </html>
