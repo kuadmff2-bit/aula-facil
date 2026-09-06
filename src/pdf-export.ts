@@ -1,6 +1,8 @@
 type PdfOrientation = "portrait" | "landscape";
 type PdfFormat = "a4" | "letter";
 
+const PDF_STATUS_ID = "aulafacil-pdf-status";
+
 function safeFilename(value: string) {
   const base = value
     .normalize("NFD")
@@ -17,6 +19,37 @@ function pagePixels(format: PdfFormat, orientation: PdfOrientation) {
   return orientation === "landscape"
     ? { width: portrait.height, height: portrait.width }
     : portrait;
+}
+
+function showPdfStatus(message: string, tone: "busy" | "success" | "error", timeout = 0) {
+  document.getElementById(PDF_STATUS_ID)?.remove();
+  const notice = document.createElement("div");
+  notice.id = PDF_STATUS_ID;
+  notice.setAttribute("role", "status");
+  notice.setAttribute("aria-live", "polite");
+  const symbol = tone === "busy" ? "…" : tone === "success" ? "✓" : "!";
+  const background = tone === "busy" ? "#173f8f" : tone === "success" ? "#087a55" : "#b42318";
+  notice.innerHTML = `<strong style="font-size:18px;line-height:1">${symbol}</strong><span>${message}</span>`;
+  Object.assign(notice.style, {
+    position: "fixed",
+    right: "24px",
+    bottom: "24px",
+    zIndex: "2147483647",
+    display: "flex",
+    alignItems: "center",
+    gap: "11px",
+    maxWidth: "min(430px, calc(100vw - 32px))",
+    padding: "14px 17px",
+    borderRadius: "14px",
+    background,
+    color: "#fff",
+    fontFamily: "system-ui, -apple-system, Segoe UI, sans-serif",
+    fontSize: "14px",
+    fontWeight: "750",
+    boxShadow: "0 18px 48px rgba(0,0,0,.28)",
+  });
+  document.body.appendChild(notice);
+  if (timeout > 0) window.setTimeout(() => notice.remove(), timeout);
 }
 
 async function waitForImages(element: HTMLElement) {
@@ -43,7 +76,12 @@ export async function exportElementToPdf(
   format: PdfFormat = "a4",
 ) {
   const source = document.getElementById(elementId);
-  if (!source) throw new Error("Não foi possível localizar a prévia do documento.");
+  if (!source) {
+    showPdfStatus("Não foi possível localizar a prévia do documento.", "error", 6000);
+    throw new Error("Não foi possível localizar a prévia do documento.");
+  }
+
+  showPdfStatus("Gerando o PDF… não feche esta janela.", "busy");
   await waitForImages(source);
 
   const { width, height } = pagePixels(format, orientation);
@@ -102,9 +140,11 @@ export async function exportElementToPdf(
       pagebreak: { mode: ["css"] },
     };
     await html2pdf().set(options).from(clone).save();
+    showPdfStatus("PDF baixado com sucesso. Verifique a pasta Downloads.", "success", 5000);
   } catch (error) {
     console.error("Falha ao gerar PDF", error);
-    throw new Error("O PDF não pôde ser gerado. Tente novamente ou use Imprimir e escolha ‘Microsoft Print to PDF’.");
+    showPdfStatus("Não foi possível gerar o PDF. Você pode usar Imprimir e escolher ‘Microsoft Print to PDF’.", "error", 7000);
+    throw new Error("O PDF não pôde ser gerado. Tente novamente ou use Imprimir e escolha ‘Microsoft Print to PDF’. ");
   } finally {
     stage.remove();
   }

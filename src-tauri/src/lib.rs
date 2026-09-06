@@ -287,6 +287,28 @@ fn secure_auth_clear(app: tauri::AppHandle) -> Result<(), String> {
     Ok(())
 }
 
+#[tauri::command]
+fn open_external_url(url: String) -> Result<(), String> {
+    if !url.starts_with("https://wa.me/") {
+        return Err("O AulaFácil bloqueou a abertura de um endereço externo não permitido.".to_string());
+    }
+
+    #[cfg(target_os = "windows")]
+    {
+        std::process::Command::new("rundll32.exe")
+            .arg("url.dll,FileProtocolHandler")
+            .arg(&url)
+            .spawn()
+            .map_err(|error| format!("Não foi possível abrir o WhatsApp no Windows: {error}"))?;
+        return Ok(());
+    }
+
+    #[cfg(not(target_os = "windows"))]
+    {
+        Err("A abertura externa desta versão está disponível somente no Windows.".to_string())
+    }
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
@@ -296,7 +318,8 @@ pub fn run() {
             secure_storage_clear,
             secure_auth_load,
             secure_auth_save,
-            secure_auth_clear
+            secure_auth_clear,
+            open_external_url
         ])
         .run(tauri::generate_context!())
         .expect("não foi possível iniciar o AulaFácil");

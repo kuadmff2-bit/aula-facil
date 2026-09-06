@@ -100,7 +100,7 @@ export function ClassRosterBoard({ database, date = localDate(), onDateChange, o
           <button className={scope === "current" ? "active" : ""} onClick={() => setScope("current")}><Clock3 size={15}/> Agora</button>
           <button className={scope === "all" ? "active" : ""} onClick={() => setScope("all")}>Todas as turmas</button>
         </div>
-        <label><span>Data</span><input type="date" value={date} onChange={(event) => { setMarksByClass({}); onDateChange?.(event.target.value); }} /></label>
+        <label><span>Data</span><input key={date} type="date" defaultValue={date} onChange={(event) => { const next = event.currentTarget.value; if (!next) return; setMarksByClass({}); onDateChange?.(next); }} /></label>
         <label className="roster-search"><Search size={17}/><input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Buscar aluno ou turma" /></label>
       </div>
     </div>

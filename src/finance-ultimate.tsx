@@ -291,7 +291,7 @@ export function FinanceUltimate({ database, onChange, onReceipt }: Props) {
   return <section className="finance-ultimate stack">
     <div className="finance-ultimate-head">
       <div><span>FINANCEIRO</span><h2>Recebimentos e mensalidades</h2><p>Juros, pagamentos, recibos e cobranças bancárias no mesmo lugar.</p></div>
-      <div className="monthly-generator"><label><span>Mês</span><input type="month" value={referenceMonth} onChange={(event) => setReferenceMonth(event.target.value)} /></label><button className="primary-button" onClick={generateMonthly}><Plus size={17}/> Gerar cursos contínuos</button></div>
+      <div className="monthly-generator"><label><span>Mês</span><input type="month" defaultValue={referenceMonth} onChange={(event) => { const next = event.currentTarget.value; if (next) setReferenceMonth(next); }} /></label><button className="primary-button" onClick={generateMonthly}><Plus size={17}/> Gerar cursos contínuos</button></div>
     </div>
 
     <div className="finance-ultimate-metrics">

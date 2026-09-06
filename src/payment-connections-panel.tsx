@@ -8,6 +8,7 @@ import {
   type PaymentConnection,
 } from "./payment-connections";
 import { PAYMENT_PROVIDERS, type PaymentProviderKey } from "./payment-providers";
+import { getCloudAuthState, onCloudAuthChange } from "./cloud";
 import "./payment-connections-panel.css";
 
 const SELECTED_SCHOOL_KEY = "aulafacil.cloud.selected-school";
@@ -26,6 +27,7 @@ function capabilityLabel(connection: PaymentConnection) {
 
 export function PaymentConnectionsPanel() {
   const [schoolId, setSchoolId] = useState(() => localStorage.getItem(SELECTED_SCHOOL_KEY) ?? "");
+  const [cloudEmail, setCloudEmail] = useState("");
   const [connections, setConnections] = useState<PaymentConnection[]>([]);
   const [providerKey, setProviderKey] = useState<PaymentProviderKey>("manual_pix");
   const [displayName, setDisplayName] = useState("Pix da escola");
@@ -60,6 +62,15 @@ export function PaymentConnectionsPanel() {
     }
     setConnections(await listPaymentConnections(targetSchoolId));
   };
+
+  useEffect(() => {
+    let active = true;
+    void getCloudAuthState()
+      .then((state) => { if (active) setCloudEmail(state.user?.email ?? ""); })
+      .catch(() => { if (active) setCloudEmail(""); });
+    const unsubscribe = onCloudAuthChange((state) => setCloudEmail(state.user?.email ?? ""));
+    return () => { active = false; unsubscribe(); };
+  }, []);
 
   useEffect(() => {
     const syncSchool = () => {
@@ -158,6 +169,20 @@ export function PaymentConnectionsPanel() {
     });
   };
 
+  const readyConnections = connections.filter((connection) => connection.enabled && (connection.providerKey === "manual_pix" || connection.credentialsConfigured));
+  const hasDefaultOnline = connections.some((connection) => connection.enabled && connection.credentialsConfigured && (connection.defaultForPix || connection.defaultForBoleto));
+  const paymentNextStep = !cloudEmail
+    ? "Entre no AulaFácil Cloud."
+    : !schoolId
+      ? "Sua conta está conectada. Agora crie ou selecione a instituição no bloco AulaFácil Cloud acima."
+      : !connections.length
+        ? "Adicione uma forma de recebimento. Para começar sem API, escolha Pix da escola."
+        : !readyConnections.length
+          ? "Configure as credenciais da conexão bancária ou use Pix manual."
+          : !hasDefaultOnline && connections.some((item) => item.providerKey !== "manual_pix")
+            ? "Se usar Asaas ou outro provedor, defina qual conexão será o padrão para Pix ou boleto."
+            : "Recebimentos configurados. No Financeiro, abra a mensalidade e escolha Gerar Pix/Boleto ou Registrar pagamento.";
+
   return (
     <section className="card payment-connections-card">
       <div className="payment-connections-heading">
@@ -168,9 +193,18 @@ export function PaymentConnectionsPanel() {
         </div>
       </div>
 
+      <div className="payment-setup-guide" aria-label="Como funcionam as cobranças">
+        <div className={schoolId ? "done" : cloudEmail ? "current" : ""}><b>1</b><span><strong>Cloud</strong><small>{schoolId ? "Instituição selecionada" : cloudEmail ? "Conta conectada; falta a instituição" : "Entrar na conta"}</small></span></div>
+        <div className={connections.length ? "done" : schoolId ? "current" : ""}><b>2</b><span><strong>Recebimento</strong><small>Pix manual ou provedor como Asaas</small></span></div>
+        <div className={readyConnections.length ? "done" : connections.length ? "current" : ""}><b>3</b><span><strong>Configuração</strong><small>Credenciais e meios habilitados</small></span></div>
+        <div className={readyConnections.length ? "current" : ""}><b>4</b><span><strong>Cobrar</strong><small>Financeiro → mensalidade → Pix/Boleto</small></span></div>
+      </div>
+      <div className={schoolId ? "payment-readiness info" : "payment-readiness warning"}><strong>Próximo passo</strong><span>{paymentNextStep}</span></div>
+
       {!schoolId && (
-        <div className="payment-message warning">Conecte uma conta e selecione a instituição no AulaFácil Cloud para habilitar integrações bancárias.</div>
+        <div className="payment-message warning">{cloudEmail ? <>A conta <strong>{cloudEmail}</strong> já está conectada. Falta criar ou selecionar a instituição no AulaFácil Cloud acima.</> : <>Entre no AulaFácil Cloud e selecione a instituição para habilitar integrações bancárias.</>}</div>
       )}
+      {schoolId && <div className="payment-message success">Instituição Cloud selecionada. As mensalidades continuam sendo controladas no AulaFácil; Pix e boleto online são gerados somente quando você escolher uma conexão pronta.</div>}
 
       {connections.length > 0 && (
         <div className="payment-connection-list">
