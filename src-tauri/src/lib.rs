@@ -6,6 +6,8 @@ use std::{
 
 use tauri::Manager;
 
+mod exit_backup;
+
 const DATABASE_FILE: &str = "database.dpapi";
 const DATABASE_BACKUP_FILE: &str = "database.dpapi.bak";
 const DATABASE_TEMP_FILE: &str = "database.dpapi.tmp";
@@ -15,13 +17,13 @@ const MAX_DATABASE_BYTES: usize = 64 * 1024 * 1024;
 const MAX_AUTH_SESSION_BYTES: usize = 1024 * 1024;
 
 fn data_directory(app: &tauri::AppHandle) -> Result<PathBuf, String> {
-    let directory = app
-        .path()
-        .app_data_dir()
-        .map_err(|error| format!("Não foi possível localizar a pasta segura do AulaFácil: {error}"))?;
+    let directory = app.path().app_data_dir().map_err(|error| {
+        format!("Não foi possível localizar a pasta segura do AulaFácil: {error}")
+    })?;
 
-    fs::create_dir_all(&directory)
-        .map_err(|error| format!("Não foi possível preparar a pasta segura do AulaFácil: {error}"))?;
+    fs::create_dir_all(&directory).map_err(|error| {
+        format!("Não foi possível preparar a pasta segura do AulaFácil: {error}")
+    })?;
 
     Ok(directory)
 }
@@ -85,7 +87,8 @@ fn protect_bytes(data: &[u8]) -> Result<Vec<u8>, String> {
         ));
     }
 
-    let protected = unsafe { slice::from_raw_parts(output.pbData, output.cbData as usize).to_vec() };
+    let protected =
+        unsafe { slice::from_raw_parts(output.pbData, output.cbData as usize).to_vec() };
     unsafe {
         LocalFree(output.pbData as *mut _);
     }
@@ -101,8 +104,7 @@ fn unprotect_bytes(data: &[u8]) -> Result<Vec<u8>, String> {
         wincrypt::DATA_BLOB,
     };
 
-    let size = u32::try_from(data.len())
-        .map_err(|_| "Conteúdo protegido inválido.".to_string())?;
+    let size = u32::try_from(data.len()).map_err(|_| "Conteúdo protegido inválido.".to_string())?;
     let mut input = DATA_BLOB {
         cbData: size,
         pbData: data.as_ptr() as *mut u8,
@@ -148,7 +150,11 @@ fn unprotect_bytes(_data: &[u8]) -> Result<Vec<u8>, String> {
     Err("O armazenamento protegido desta versão está disponível somente no Windows.".to_string())
 }
 
-fn load_protected_file(path: &Path, max_bytes: usize, label: &str) -> Result<Option<String>, String> {
+fn load_protected_file(
+    path: &Path,
+    max_bytes: usize,
+    label: &str,
+) -> Result<Option<String>, String> {
     let encrypted = match fs::read(path) {
         Ok(content) => content,
         Err(error) if error.kind() == ErrorKind::NotFound => return Ok(None),
@@ -165,7 +171,12 @@ fn load_protected_file(path: &Path, max_bytes: usize, label: &str) -> Result<Opt
         .map_err(|_| format!("{label} não contém dados válidos em UTF-8."))
 }
 
-fn write_protected_temp(path: &Path, payload: &str, max_bytes: usize, label: &str) -> Result<(), String> {
+fn write_protected_temp(
+    path: &Path,
+    payload: &str,
+    max_bytes: usize,
+    label: &str,
+) -> Result<(), String> {
     if payload.len() > max_bytes {
         return Err(format!("{label} excede o limite de segurança permitido."));
     }
@@ -187,21 +198,46 @@ fn write_protected_temp(path: &Path, payload: &str, max_bytes: usize, label: &st
     Ok(())
 }
 
+fn load_latest_exit_backup(app: &tauri::AppHandle) -> Result<Option<String>, String> {
+    for path in exit_backup::exit_backup_paths(app)? {
+        if let Ok(Some(content)) =
+            load_protected_file(&path, MAX_DATABASE_BYTES, "um backup automático de saída")
+        {
+            return Ok(Some(content));
+        }
+    }
+    Ok(None)
+}
+
 #[tauri::command]
 fn secure_storage_load(app: tauri::AppHandle) -> Result<Option<String>, String> {
     let primary = database_path(&app)?;
     let backup = database_backup_path(&app)?;
+    let mut primary_error: Option<String> = None;
+    let mut backup_error: Option<String> = None;
 
     match load_protected_file(&primary, MAX_DATABASE_BYTES, "o banco protegido") {
-        Ok(Some(content)) => Ok(Some(content)),
-        Ok(None) => load_protected_file(&backup, MAX_DATABASE_BYTES, "a cópia de recuperação"),
-        Err(primary_error) => match load_protected_file(&backup, MAX_DATABASE_BYTES, "a cópia de recuperação") {
-            Ok(Some(content)) => Ok(Some(content)),
-            Ok(None) => Err(primary_error),
-            Err(backup_error) => Err(format!(
-                "O banco principal e a cópia de recuperação não puderam ser abertos. Principal: {primary_error} Recuperação: {backup_error}"
-            )),
-        },
+        Ok(Some(content)) => return Ok(Some(content)),
+        Ok(None) => {}
+        Err(error) => primary_error = Some(error),
+    }
+
+    match load_protected_file(&backup, MAX_DATABASE_BYTES, "a cópia de recuperação") {
+        Ok(Some(content)) => return Ok(Some(content)),
+        Ok(None) => {}
+        Err(error) => backup_error = Some(error),
+    }
+
+    if let Some(content) = load_latest_exit_backup(&app)? {
+        return Ok(Some(content));
+    }
+
+    match (primary_error, backup_error) {
+        (Some(primary_error), Some(backup_error)) => Err(format!(
+            "O banco principal e a cópia de recuperação não puderam ser abertos. Principal: {primary_error} Recuperação: {backup_error}"
+        )),
+        (Some(error), None) | (None, Some(error)) => Err(error),
+        (None, None) => Ok(None),
     }
 }
 
@@ -214,17 +250,21 @@ fn secure_storage_save(app: tauri::AppHandle, payload: String) -> Result<(), Str
     write_protected_temp(&temporary, &payload, MAX_DATABASE_BYTES, "o banco de dados")?;
 
     if primary.exists() {
-        fs::copy(&primary, &backup)
-            .map_err(|error| format!("Não foi possível criar a cópia de recuperação antes de salvar: {error}"))?;
-        fs::remove_file(&primary)
-            .map_err(|error| format!("Não foi possível substituir o banco protegido atual: {error}"))?;
+        fs::copy(&primary, &backup).map_err(|error| {
+            format!("Não foi possível criar a cópia de recuperação antes de salvar: {error}")
+        })?;
+        fs::remove_file(&primary).map_err(|error| {
+            format!("Não foi possível substituir o banco protegido atual: {error}")
+        })?;
     }
 
     if let Err(error) = fs::rename(&temporary, &primary) {
         if backup.exists() && !primary.exists() {
             let _ = fs::copy(&backup, &primary);
         }
-        return Err(format!("Não foi possível concluir a gravação protegida: {error}"));
+        return Err(format!(
+            "Não foi possível concluir a gravação protegida: {error}"
+        ));
     }
 
     Ok(())
@@ -240,9 +280,14 @@ fn secure_storage_clear(app: tauri::AppHandle) -> Result<(), String> {
         match fs::remove_file(path) {
             Ok(()) => {}
             Err(error) if error.kind() == ErrorKind::NotFound => {}
-            Err(error) => return Err(format!("Não foi possível remover o banco protegido: {error}")),
+            Err(error) => {
+                return Err(format!(
+                    "Não foi possível remover o banco protegido: {error}"
+                ))
+            }
         }
     }
+    exit_backup::clear_exit_backups(&app)?;
     Ok(())
 }
 
@@ -270,8 +315,9 @@ fn secure_auth_save(app: tauri::AppHandle, payload: String) -> Result<(), String
         fs::remove_file(&primary)
             .map_err(|error| format!("Não foi possível atualizar a sessão protegida: {error}"))?;
     }
-    fs::rename(&temporary, &primary)
-        .map_err(|error| format!("Não foi possível concluir a gravação da sessão protegida: {error}"))?;
+    fs::rename(&temporary, &primary).map_err(|error| {
+        format!("Não foi possível concluir a gravação da sessão protegida: {error}")
+    })?;
     Ok(())
 }
 
@@ -281,7 +327,11 @@ fn secure_auth_clear(app: tauri::AppHandle) -> Result<(), String> {
         match fs::remove_file(path) {
             Ok(()) => {}
             Err(error) if error.kind() == ErrorKind::NotFound => {}
-            Err(error) => return Err(format!("Não foi possível remover a sessão protegida: {error}")),
+            Err(error) => {
+                return Err(format!(
+                    "Não foi possível remover a sessão protegida: {error}"
+                ))
+            }
         }
     }
     Ok(())
@@ -290,7 +340,9 @@ fn secure_auth_clear(app: tauri::AppHandle) -> Result<(), String> {
 #[tauri::command]
 fn open_external_url(url: String) -> Result<(), String> {
     if !url.starts_with("https://wa.me/") {
-        return Err("O AulaFácil bloqueou a abertura de um endereço externo não permitido.".to_string());
+        return Err(
+            "O AulaFácil bloqueou a abertura de um endereço externo não permitido.".to_string(),
+        );
     }
 
     #[cfg(target_os = "windows")]
@@ -321,6 +373,13 @@ pub fn run() {
             secure_auth_clear,
             open_external_url
         ])
-        .run(tauri::generate_context!())
-        .expect("não foi possível iniciar o AulaFácil");
+        .build(tauri::generate_context!())
+        .expect("não foi possível iniciar o AulaFácil")
+        .run(|app, event| {
+            if let tauri::RunEvent::Exit = event {
+                if let Err(error) = exit_backup::create_exit_backup(app) {
+                    eprintln!("Falha ao criar backup automático de saída: {error}");
+                }
+            }
+        });
 }
