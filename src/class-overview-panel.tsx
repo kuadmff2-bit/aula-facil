@@ -2,6 +2,7 @@ import { useMemo, useState } from "react";
 import { ArrowRightLeft, CalendarClock, Check, Download, Search, Trash2, UserPlus, Users, X } from "lucide-react";
 import type { ClassItem, SchoolDatabase, Student, Weekday } from "./model";
 import { exportClassWorkbook } from "./spreadsheet-export";
+import { saveDatabase } from "./storage";
 import "./class-overview-panel.css";
 
 const DAY_LABELS: Record<Weekday, string> = {
@@ -56,7 +57,7 @@ type Props = {
   database: SchoolDatabase;
   onNewClass: () => void;
   onAddStudent: (classId: string) => void;
-  onMoveStudents: (targetClassId: string, studentIds: string[]) => void;
+  onMoveStudents?: (targetClassId: string, studentIds: string[]) => void;
   onDeleteClass: (classItem: ClassItem) => void;
   onAttendance: () => void;
 };
@@ -124,9 +125,22 @@ export function ClassOverviewPanel({ database, onNewClass, onAddStudent, onMoveS
     });
   };
 
+  const moveStudentsLocally = (targetClassId: string, studentIds: string[]) => {
+    const selectedIds = new Set(studentIds);
+    const next = structuredClone(database);
+    for (const student of next.students) {
+      if (selectedIds.has(student.id) && student.classId !== targetClassId) student.classId = targetClassId;
+    }
+    next.updatedAt = new Date().toISOString();
+    saveDatabase(next);
+    // Mantém o estado da tela coerente até o próximo render do aplicativo.
+    Object.assign(database, next);
+  };
+
   const confirmTransfer = () => {
     if (!transferTarget || !transferSelected.length) return;
-    onMoveStudents(transferTarget.id, transferSelected);
+    if (onMoveStudents) onMoveStudents(transferTarget.id, transferSelected);
+    else moveStudentsLocally(transferTarget.id, transferSelected);
     closeTransfer();
   };
 
