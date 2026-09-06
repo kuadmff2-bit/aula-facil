@@ -1,0 +1,47 @@
+name: Validar UX de Cloud e cobranças
+
+on:
+  push:
+    branches:
+      - release/cloud-ux-2026-09-05
+    paths:
+      - .github/workflows/apply-cloud-guidance.yml
+
+permissions:
+  contents: write
+
+jobs:
+  apply:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          ref: release/cloud-ux-2026-09-05
+
+      - name: Configurar Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Instalar dependências
+        run: npm ci
+
+      - name: Aplicar orientação
+        run: node scripts/apply-cloud-guidance.mjs
+
+      - name: Testes
+        run: npm test
+
+      - name: TypeScript e frontend
+        run: npm run build
+
+      - name: Publicar alterações validadas
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add src/payment-connections-panel.tsx src/payment-connections-panel.css src/message-automations-panel.tsx src/message-automations-panel.css src/cloud-sync-panel.tsx
+          git diff --cached --quiet && exit 0
+          git commit -m "Explicar Cloud, cobranças e automações passo a passo"
+          git push origin HEAD:release/cloud-ux-2026-09-05
