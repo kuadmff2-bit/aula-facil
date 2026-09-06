@@ -6,6 +6,7 @@ on:
     paths:
       - "scripts/apply-didactic-ux-refactor.py"
       - "scripts/run-didactic-ux-refactor.py"
+      - "scripts/fix-didactic-legacy.py"
       - ".github/workflows/apply-didactic-ux-refactor.yml"
 
 permissions:
@@ -36,6 +37,9 @@ jobs:
 
       - name: Aplicar reorganização didática
         run: python scripts/run-didactic-ux-refactor.py
+
+      - name: Manter App legado compatível
+        run: python scripts/fix-didactic-legacy.py
 
       - name: Instalar dependências
         run: npm ci --no-audit
