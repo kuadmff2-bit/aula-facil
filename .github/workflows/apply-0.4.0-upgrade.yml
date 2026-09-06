@@ -5,6 +5,7 @@ on:
     branches: [release/aulafacil-0.4.0]
     paths:
       - "scripts/apply-0.4.0-upgrade.py"
+      - "scripts/fix-0.4.0-build.py"
       - ".github/workflows/apply-0.4.0-upgrade.yml"
 
 permissions:
@@ -35,6 +36,9 @@ jobs:
 
       - name: Aplicar upgrade 0.4.0
         run: python scripts/apply-0.4.0-upgrade.py
+
+      - name: Corrigir compatibilidade do build
+        run: python scripts/fix-0.4.0-build.py
 
       - name: Atualizar lockfile do aplicativo
         run: npm install --package-lock-only --ignore-scripts --no-audit
