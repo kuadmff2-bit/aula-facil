@@ -26,6 +26,7 @@ const embeddedLegal = read("src/legal-documents.ts");
 const storeWorkflow = read(".github/workflows/build-store-msix.yml");
 const mainEntry = read("src/main.tsx");
 const layoutSafety = exists("src/layout-safety.css") ? read("src/layout-safety.css") : "";
+const textLayoutSafety = exists("src/text-layout-hardening.css") ? read("src/text-layout-hardening.css") : "";
 
 const cargoVersion = cargo.match(/^version\s*=\s*"([^"]+)"/m)?.[1];
 
@@ -86,6 +87,38 @@ if (!layoutSafety) {
   }
   if (!/\.table-card[\s\S]*?overflow-x\s*:\s*auto/.test(layoutSafety)) {
     failures.push("Tabelas largas não possuem rolagem horizontal isolada dentro do próprio card.");
+  }
+}
+
+if (!mainEntry.includes('import "./text-layout-hardening.css"')) {
+  failures.push("A proteção final contra texto cortado/estourado não está carregada no entrypoint.");
+}
+const finalLayoutImport = mainEntry.lastIndexOf('import "./text-layout-hardening.css"');
+const lastCssImport = Math.max(
+  mainEntry.lastIndexOf('import "./student-fields-compact.css"'),
+  mainEntry.lastIndexOf('import "./vertical-scroll-hardening.css"'),
+  mainEntry.lastIndexOf('import "./responsive-hardening.css"'),
+);
+if (finalLayoutImport >= 0 && finalLayoutImport < lastCssImport) {
+  failures.push("text-layout-hardening.css precisa ser a última proteção visual importada.");
+}
+if (!textLayoutSafety) {
+  failures.push("src/text-layout-hardening.css não foi encontrado.");
+} else {
+  if (!/overflow-x\s*:\s*clip\s*!important/.test(textLayoutSafety)) {
+    failures.push("A proteção final não bloqueia overflow horizontal da janela.");
+  }
+  if (!/overflow-wrap\s*:\s*anywhere/.test(textLayoutSafety)) {
+    failures.push("A proteção final não garante quebra de textos longos.");
+  }
+  if (!/\.cloud-sync-card[\s\S]*?padding\s*:/.test(textLayoutSafety)) {
+    failures.push("Cards de sincronização podem voltar a ficar sem respiro interno.");
+  }
+  if (!/@container\s+aulafacil-content/.test(textLayoutSafety)) {
+    failures.push("A proteção final não usa a largura real da área de conteúdo.");
+  }
+  if (!/\.table-card[\s\S]*?overflow-x\s*:\s*auto\s*!important/.test(textLayoutSafety)) {
+    failures.push("A proteção final não preserva a rolagem horizontal interna das tabelas.");
   }
 }
 
