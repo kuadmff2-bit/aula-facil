@@ -84,11 +84,29 @@ export function whatsappUrl(target: StudentContactTarget, message: string) {
   return `https://wa.me/${phone}?text=${encodeURIComponent(message)}`;
 }
 
-export function openStudentWhatsApp(database: SchoolDatabase, student: Student, template: StudentContactTemplate = "general", invoice?: Invoice | null) {
+type TauriWindow = Window & { __TAURI_INTERNALS__?: { invoke<T>(command: string, args?: Record<string, unknown>): Promise<T> } };
+
+async function openExternalUrl(url: string) {
+  const bridge = (window as TauriWindow).__TAURI_INTERNALS__;
+  if (bridge?.invoke) {
+    await bridge.invoke<void>("open_external_url", { url });
+    return;
+  }
+  const anchor = document.createElement("a");
+  anchor.href = url;
+  anchor.target = "_blank";
+  anchor.rel = "noopener noreferrer";
+  anchor.style.display = "none";
+  document.body.appendChild(anchor);
+  anchor.click();
+  anchor.remove();
+}
+
+export async function openStudentWhatsApp(database: SchoolDatabase, student: Student, template: StudentContactTemplate = "general", invoice?: Invoice | null) {
   const target = resolveStudentContact(student);
   if (!target) throw new Error(ageGroupFromBirthDate(student.birthDate) === "minor"
     ? "Cadastre um WhatsApp válido do responsável antes de entrar em contato."
     : "Cadastre um WhatsApp válido do aluno antes de entrar em contato.");
   const message = messageForStudentContact(database, student, template, invoice);
-  window.open(whatsappUrl(target, message), "_blank", "noopener,noreferrer");
+  await openExternalUrl(whatsappUrl(target, message));
 }

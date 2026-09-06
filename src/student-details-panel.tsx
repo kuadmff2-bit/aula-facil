@@ -59,8 +59,9 @@ export function StudentDetailsPanel({ student, classItem, database, onClose, onE
 
   const toggle = (invoiceId: string) => setSelected((current) => current.includes(invoiceId) ? current.filter((id) => id !== invoiceId) : [...current, invoiceId]);
   const contact = (kind: "general" | "pending" | "overdue", invoice?: Invoice | null) => {
-    try { openStudentWhatsApp(database, student, kind, invoice); }
-    catch (error) { window.dispatchEvent(new CustomEvent("aulafacil:contact-error", { detail: { message: error instanceof Error ? error.message : "Contato indisponível." } })); }
+    void openStudentWhatsApp(database, student, kind, invoice).catch((error) => {
+      window.dispatchEvent(new CustomEvent("aulafacil:contact-error", { detail: { message: error instanceof Error ? error.message : "Contato indisponível." } }));
+    });
   };
 
   return <div className="modal-backdrop" role="presentation" onMouseDown={(event) => event.target === event.currentTarget && onClose()}>
