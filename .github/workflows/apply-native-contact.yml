@@ -18,6 +18,7 @@ jobs:
         uses: actions/checkout@v4
         with:
           ref: release/ux-final-2026-09-05
+          fetch-depth: 0
 
       - name: Configurar Node
         uses: actions/setup-node@v4
@@ -51,4 +52,6 @@ jobs:
           git add src-tauri/src/lib.rs src/student-contact.ts src/student-details-panel.tsx
           git diff --cached --quiet && exit 0
           git commit -m "Abrir WhatsApp pelo Windows com segurança"
+          git fetch origin release/ux-final-2026-09-05
+          git rebase origin/release/ux-final-2026-09-05
           git push origin HEAD:release/ux-final-2026-09-05
