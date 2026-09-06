@@ -1,0 +1,68 @@
+name: Aplicar refatoração didática do AulaFácil
+
+on:
+  push:
+    branches: [refactor/didactic-ux]
+    paths:
+      - "scripts/apply-didactic-ux-refactor.py"
+      - ".github/workflows/apply-didactic-ux-refactor.yml"
+
+permissions:
+  contents: write
+
+concurrency:
+  group: aulafacil-didactic-ux
+  cancel-in-progress: true
+
+jobs:
+  refactor:
+    runs-on: windows-latest
+    steps:
+      - name: Baixar branch da refatoração
+        uses: actions/checkout@v4
+        with:
+          ref: refactor/didactic-ux
+          fetch-depth: 0
+
+      - name: Preparar Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Preparar Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Aplicar reorganização didática
+        run: python scripts/apply-didactic-ux-refactor.py
+
+      - name: Instalar dependências
+        run: npm ci --no-audit
+
+      - name: Validar estrutura
+        run: node scripts/quality-check.mjs
+
+      - name: Executar testes
+        run: npm test
+
+      - name: Validar TypeScript e frontend
+        run: npm run build
+
+      - name: Gerar recursos Tauri
+        run: npm run desktop:icons
+
+      - name: Validar Tauri
+        run: cargo check --locked --manifest-path src-tauri/Cargo.toml
+
+      - name: Publicar refatoração somente se tudo passou
+        shell: bash
+        run: |
+          if git diff --quiet; then
+            echo "Nenhuma alteração pendente."
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A
+          git commit -m "feat: simplificar AulaFácil e separar automações"
+          git push origin HEAD:refactor/didactic-ux
