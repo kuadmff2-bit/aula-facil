@@ -1,0 +1,156 @@
+/* A impressão é feita em um palco isolado, fora do layout normal do aplicativo. */
+#aulafacil-print-stage{display:none}
+
+@media print{
+  html.aulafacil-printing,
+  html.aulafacil-printing body{
+    width:100%!important;
+    height:100%!important;
+    min-width:0!important;
+    min-height:0!important;
+    margin:0!important;
+    padding:0!important;
+    overflow:hidden!important;
+    background:#fff!important;
+  }
+
+  html.aulafacil-printing body>*:not(#aulafacil-print-stage){display:none!important}
+
+  html.aulafacil-printing #aulafacil-print-stage,
+  html.aulafacil-printing #aulafacil-print-stage *{
+    visibility:visible!important;
+  }
+
+  html.aulafacil-printing #aulafacil-print-stage{
+    display:block!important;
+    position:fixed!important;
+    inset:0 auto auto 0!important;
+    margin:0!important;
+    padding:0!important;
+    overflow:hidden!important;
+    background:#fff!important;
+    box-shadow:none!important;
+  }
+
+  html.aulafacil-printing #aulafacil-print-stage>[data-print-clone="true"]{
+    position:relative!important;
+    inset:auto!important;
+    width:100%!important;
+    height:100%!important;
+    min-width:0!important;
+    min-height:0!important;
+    max-width:none!important;
+    max-height:none!important;
+    margin:0!important;
+    box-shadow:none!important;
+    overflow:hidden!important;
+    break-before:avoid!important;
+    break-after:avoid!important;
+    break-inside:avoid!important;
+    page-break-before:avoid!important;
+    page-break-after:avoid!important;
+    page-break-inside:avoid!important;
+  }
+
+  /* Certificado: exatamente uma página, sem permitir que decoração crie outra folha. */
+  html.aulafacil-printing #aulafacil-print-stage>.professional-certificate{
+    padding:0!important;
+    margin:0!important;
+    overflow:hidden!important;
+    aspect-ratio:auto!important;
+  }
+  html.aulafacil-printing #aulafacil-print-stage>.professional-certificate .professional-certificate-frame{
+    width:100%!important;
+    height:100%!important;
+    max-height:100%!important;
+    overflow:hidden!important;
+    break-inside:avoid!important;
+    page-break-inside:avoid!important;
+  }
+
+  /* Recibo: duas metades exatas da A4 e uma única linha de corte no centro. */
+  html.aulafacil-printing #aulafacil-print-stage>.receipt-two-copies{
+    display:grid!important;
+    grid-template-rows:calc((297mm - .4mm)/2) .4mm calc((297mm - .4mm)/2)!important;
+    grid-template-columns:210mm!important;
+    width:210mm!important;
+    height:297mm!important;
+    gap:0!important;
+    margin:0!important;
+    padding:0!important;
+    overflow:hidden!important;
+    background:#fff!important;
+  }
+  html.aulafacil-printing #aulafacil-print-stage>.receipt-two-copies>.receipt-copy{
+    width:210mm!important;
+    height:auto!important;
+    min-height:0!important;
+    max-height:none!important;
+    margin:0!important;
+    padding:6mm 8mm!important;
+    border:0!important;
+    border-radius:0!important;
+    box-shadow:none!important;
+    overflow:hidden!important;
+  }
+  html.aulafacil-printing #aulafacil-print-stage>.receipt-two-copies>.receipt-cut-line{
+    position:relative!important;
+    display:block!important;
+    width:210mm!important;
+    height:.4mm!important;
+    margin:0!important;
+    padding:0!important;
+    border:0!important;
+    border-top:.28mm dashed #6f7886!important;
+    overflow:visible!important;
+  }
+  html.aulafacil-printing #aulafacil-print-stage>.receipt-two-copies>.receipt-cut-line i{display:none!important}
+  html.aulafacil-printing #aulafacil-print-stage>.receipt-two-copies>.receipt-cut-line span{
+    position:absolute!important;
+    left:5mm!important;
+    top:50%!important;
+    transform:translateY(-50%)!important;
+    padding:0 1.4mm!important;
+    color:#5f6977!important;
+    background:#fff!important;
+    font-size:8pt!important;
+    line-height:1!important;
+  }
+}
+
+/* PDF do recibo segue a mesma divisão, sem corredor vazio entre as vias. */
+.pdf-export-root.receipt-two-copies{
+  display:grid!important;
+  grid-template-rows:561px 1px 561px!important;
+  grid-template-columns:794px!important;
+  width:794px!important;
+  height:1123px!important;
+  gap:0!important;
+  margin:0!important;
+  padding:0!important;
+  overflow:hidden!important;
+  background:#fff!important;
+}
+.pdf-export-root.receipt-two-copies>.receipt-copy{
+  width:794px!important;
+  height:561px!important;
+  min-height:0!important;
+  max-height:561px!important;
+  margin:0!important;
+  padding:23px 30px!important;
+  border:0!important;
+  border-radius:0!important;
+  box-shadow:none!important;
+  overflow:hidden!important;
+}
+.pdf-export-root.receipt-two-copies>.receipt-cut-line{
+  display:block!important;
+  position:relative!important;
+  width:794px!important;
+  height:1px!important;
+  margin:0!important;
+  border:0!important;
+  border-top:1px dashed #6f7886!important;
+}
+.pdf-export-root.receipt-two-copies>.receipt-cut-line i{display:none!important}
+.pdf-export-root.receipt-two-copies>.receipt-cut-line span{position:absolute;left:18px;top:50%;transform:translateY(-50%);padding:0 5px;background:#fff;font-size:10px;line-height:1}
