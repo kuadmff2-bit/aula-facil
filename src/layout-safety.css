@@ -33,9 +33,9 @@
   .finance-ultimate,
   .message-automation-card,
   .backup-panel,
-  .cloud-account-panel,
-  .cloud-sync-panel,
-  .payment-connections-panel,
+  .cloud-account-card,
+  .cloud-sync-card,
+  .payment-connections-card,
   .certificate-manager,
   .debt-negotiation-panel {
     min-width: 0;
@@ -60,8 +60,13 @@
   .settings-form-grid > *,
   .finance-ultimate-head > *,
   .message-form-grid > *,
+  .payment-form-grid > *,
   .data-summary > *,
-  .danger-zone > * {
+  .danger-zone > *,
+  .cloud-sync-heading > *,
+  .payment-connections-heading > *,
+  .message-heading > *,
+  .cloud-account-heading > * {
     min-width: 0;
   }
 
@@ -84,7 +89,36 @@
   .settings-block,
   .message-credential-box,
   .generated-charge,
-  .info-box {
+  .info-box,
+  .payment-message,
+  .message-box,
+  .cloud-sync-message,
+  .cloud-sync-warning,
+  .cloud-message,
+  .payment-provider-note,
+  .payment-secret-note {
+    overflow-wrap: anywhere;
+    word-break: normal;
+  }
+
+  h1,h2,h3,h4,p,strong,span,small,label {
+    max-width: 100%;
+  }
+
+  .cloud-sync-heading h2,
+  .payment-connections-heading h2,
+  .message-heading h2,
+  .cloud-account-heading h2,
+  .professional-settings-heading h2 {
+    line-height: 1.18;
+    overflow-wrap: anywhere;
+  }
+
+  .cloud-sync-heading p,
+  .payment-connections-heading p,
+  .message-heading p,
+  .cloud-account-heading p,
+  .professional-settings-heading p {
     overflow-wrap: anywhere;
   }
 
@@ -103,7 +137,8 @@
 
   .document-dialog,
   .modal,
-  .details-panel {
+  .details-panel,
+  .student-details-next {
     max-width: calc(100vw - 32px);
   }
 
@@ -125,6 +160,42 @@
 
   .offline-pill {
     white-space: nowrap;
+  }
+
+  /* Ações de configuração devem parecer botões, não faixas enormes. */
+  .payment-add-box > .primary-button,
+  .message-section > .secondary-button,
+  .message-section > .primary-button,
+  .cloud-sync-actions > button,
+  .settings-inline-actions > button,
+  .cloud-create-row > button,
+  .cloud-sync-recovery-actions > button {
+    width: auto !important;
+    min-height: 38px;
+    padding: 8px 14px;
+    justify-self: start;
+    align-self: start;
+  }
+
+  .payment-connection-actions button,
+  .message-actions button {
+    min-height: 34px;
+    padding: 7px 10px;
+  }
+}
+
+@media screen and (max-width: 1100px) {
+  .cloud-sync-heading,
+  .payment-connections-heading,
+  .message-heading,
+  .cloud-account-heading,
+  .professional-settings-heading {
+    min-width: 0;
+    max-width: 100%;
+  }
+
+  .cloud-sync-explainer {
+    grid-template-columns: 1fr !important;
   }
 }
 
@@ -154,6 +225,18 @@
   .message-template-list article,
   .automation-list article {
     min-width: 0;
+  }
+
+  .cloud-sync-heading,
+  .payment-connections-heading,
+  .message-heading,
+  .cloud-account-heading {
+    align-items: stretch !important;
+    flex-direction: column !important;
+  }
+
+  .cloud-sync-badge {
+    align-self: flex-start;
   }
 }
 
@@ -188,6 +271,7 @@
 
   .settings-form-grid,
   .message-form-grid,
+  .payment-form-grid,
   .billing-grid,
   .finance-ultimate-metrics,
   .finance-metrics,
@@ -206,7 +290,8 @@
   .summary-numbers,
   .details-actions,
   .settings-inline-actions,
-  .message-actions {
+  .message-actions,
+  .payment-connection-actions {
     flex-wrap: wrap;
   }
 
@@ -252,6 +337,10 @@
   input, select, textarea { font-size: 16px !important; }
   .document-toolbar { flex-wrap: wrap; }
   .document-toolbar > div:first-child { width: 100%; }
+  .payment-add-box > .primary-button,
+  .message-section > .secondary-button,
+  .message-section > .primary-button,
+  .settings-inline-actions > button { width: 100% !important; justify-self: stretch; }
 }
 @media screen and (max-width: 420px) {
   .topbar { padding-left: 10px !important; padding-right: 10px !important; }
