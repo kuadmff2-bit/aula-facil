@@ -21,6 +21,7 @@ import {
   type OutboxItem,
   type RecipientMode,
 } from "./message-automations";
+import { getCloudAuthState, onCloudAuthChange } from "./cloud";
 import "./message-automations-panel.css";
 
 const SELECTED_SCHOOL_KEY = "aulafacil.cloud.selected-school";
@@ -69,6 +70,7 @@ function statusLabel(status: OutboxItem["status"]) {
 
 export function MessageAutomationsPanel() {
   const [schoolId, setSchoolId] = useState(() => localStorage.getItem(SELECTED_SCHOOL_KEY) ?? "");
+  const [cloudEmail, setCloudEmail] = useState("");
   const [channels, setChannels] = useState<MessageChannel[]>([]);
   const [templates, setTemplates] = useState<MessageTemplate[]>([]);
   const [automations, setAutomations] = useState<MessageAutomation[]>([]);
@@ -115,6 +117,15 @@ export function MessageAutomationsPanel() {
     setAutomationChannelId((current) => nextChannels.some((item) => item.id === current) ? current : nextChannels[0]?.id ?? "");
     setAutomationTemplateId((current) => nextTemplates.some((item) => item.id === current) ? current : nextTemplates[0]?.id ?? "");
   };
+
+  useEffect(() => {
+    let active = true;
+    void getCloudAuthState()
+      .then((state) => { if (active) setCloudEmail(state.user?.email ?? ""); })
+      .catch(() => { if (active) setCloudEmail(""); });
+    const unsubscribe = onCloudAuthChange((state) => setCloudEmail(state.user?.email ?? ""));
+    return () => { active = false; unsubscribe(); };
+  }, []);
 
   useEffect(() => {
     const sync = () => {
@@ -225,13 +236,43 @@ export function MessageAutomationsPanel() {
     });
   });
 
+  const channelReady = channels.some((channel) => channel.enabled && channel.credentialsConfigured && channel.providerKey === "meta");
+  const templateReady = templates.some((template) => template.enabled && Boolean(template.metaTemplateName));
+  const automationReady = automations.some((automation) => automation.enabled);
+  const automationNextStep = !cloudEmail
+    ? "Entre no AulaFácil Cloud."
+    : !schoolId
+      ? "Sua conta já está conectada. Crie ou selecione a instituição no bloco AulaFácil Cloud acima."
+      : !channels.length
+        ? "Adicione o canal WhatsApp oficial da Meta."
+        : !channelReady
+          ? "Configure as credenciais do canal e deixe-o ativo."
+          : !templates.length
+            ? "Crie um modelo de mensagem."
+            : !templateReady
+              ? "Associe o modelo ao nome de um template aprovado pela Meta."
+              : !automationReady
+                ? "Escolha canal, modelo, horário e destinatário e clique em Ativar automação."
+                : "Automação ativa. O servidor continuará processando mensagens mesmo com o computador desligado.";
+
   return (
     <section className="card message-automation-card">
       <div className="message-heading">
         <div><span className="message-eyebrow">AUTOMAÇÕES</span><h2>WhatsApp e mensagens automáticas</h2><p>Configure lembretes e confirmações que rodam no servidor, mesmo com os computadores da escola desligados.</p></div>
       </div>
 
-      {!schoolId && <div className="message-box warning">Conecte uma conta e selecione a instituição no AulaFácil Cloud para configurar automações.</div>}
+      <div className="automation-setup-guide" aria-label="Etapas para ativar mensagens automáticas">
+        <div className={schoolId ? "done" : cloudEmail ? "current" : ""}><b>1</b><span><strong>Instituição</strong><small>{schoolId ? "Selecionada" : cloudEmail ? "Conta pronta" : "Entrar no Cloud"}</small></span></div>
+        <div className={channels.length ? "done" : schoolId ? "current" : ""}><b>2</b><span><strong>Canal</strong><small>WhatsApp Meta</small></span></div>
+        <div className={channelReady ? "done" : channels.length ? "current" : ""}><b>3</b><span><strong>Credenciais</strong><small>Cofre seguro</small></span></div>
+        <div className={templateReady ? "done" : channelReady ? "current" : ""}><b>4</b><span><strong>Mensagem</strong><small>Template aprovado</small></span></div>
+        <div className={automationReady ? "done" : templateReady ? "current" : ""}><b>5</b><span><strong>Regra</strong><small>Idade, dia e horário</small></span></div>
+        <div className={automationReady ? "done" : ""}><b>6</b><span><strong>Ativa</strong><small>Servidor 24h</small></span></div>
+      </div>
+      <div className={automationReady ? "automation-readiness success" : "automation-readiness info"}><strong>{automationReady ? "Pronto" : "Próximo passo"}</strong><span>{automationNextStep}</span></div>
+
+      {!schoolId && <div className="message-box warning">{cloudEmail ? <>A conta <strong>{cloudEmail}</strong> está conectada. O que falta é criar ou selecionar a instituição no AulaFácil Cloud acima.</> : <>Entre no AulaFácil Cloud e selecione a instituição para configurar automações.</>}</div>}
+      {schoolId && !automationReady && <div className="message-box success">Instituição Cloud reconhecida. Continue pelas etapas destacadas acima.</div>}
       {message && <div className={`message-box ${message.tone}`} role="status">{message.text}</div>}
 
       <div className="message-section">

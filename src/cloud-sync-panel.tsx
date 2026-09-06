@@ -157,7 +157,9 @@ export function CloudSyncPanel({ database, onReplaceDatabase }: Props) {
     setMessage({ tone: "success", text: "A nuvem foi recuperada. A cópia local anterior foi salva em um .afbackup criptografado." });
   });
 
-  const state = copy[status];
+  const state = schoolId
+    ? copy[status]
+    : { title: "Selecione a instituição do Cloud", text: "A conta pode estar conectada, mas este computador ainda não tem uma instituição selecionada para sincronizar." };
   const needsRecovery = (status === "conflict" || status === "not_linked") && schoolId;
 
   return (
@@ -168,8 +170,10 @@ export function CloudSyncPanel({ database, onReplaceDatabase }: Props) {
           <h2>{state.title}</h2>
           <p>{state.text}</p>
         </div>
-        <div className={`cloud-sync-badge ${status}`}>{navigator.onLine ? status.replaceAll("_", " ") : "offline"}</div>
+        <div className={`cloud-sync-badge ${schoolId ? status : "not_linked"}`}>{!navigator.onLine ? "offline" : schoolId ? status.replaceAll("_", " ") : "instituição pendente"}</div>
       </div>
+
+      {!schoolId && <div className="cloud-sync-warning">Use o bloco “AulaFácil Cloud” acima para criar ou selecionar a instituição. Depois disso, clique em “Sincronizar agora”.</div>}
 
       <div className="cloud-sync-explainer">
         <div><strong>Sem sobrescrita cega</strong><span>O servidor usa uma revisão da escola para detectar alterações feitas em outro dispositivo.</span></div>
