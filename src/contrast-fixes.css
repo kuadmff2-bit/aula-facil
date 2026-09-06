@@ -129,7 +129,7 @@ html[data-theme="dark"] .message-box.danger{
 html[data-theme="dark"] th{color:#d5deea!important;background:#172232!important}
 html[data-theme="dark"] td{color:#eef3f9!important}
 
-/* Impede títulos, avisos e descrições de ultrapassarem cards estreitos. */
+/* Mantém cards dentro da largura disponível sem cortar menus, popovers ou conteúdo vertical. */
 .page-content .card,
 .page-content .professional-settings-card,
 .cloud-sync-card,
@@ -145,7 +145,7 @@ html[data-theme="dark"] td{color:#eef3f9!important}
 .automation-readiness{
   min-width:0;
   max-width:100%;
-  overflow:hidden;
+  box-sizing:border-box;
 }
 
 .page-content h1,
