@@ -1,5 +1,5 @@
 import { useMemo, useState } from "react";
-import { CalendarClock, Download, Search, Trash2, Users } from "lucide-react";
+import { CalendarClock, Download, Search, Trash2, UserPlus, Users } from "lucide-react";
 import type { ClassItem, SchoolDatabase, Student, Weekday } from "./model";
 import "./class-overview-panel.css";
 
@@ -100,11 +100,12 @@ function downloadRosterCsv(classes: ClassItem[], students: Student[], filename: 
 type Props = {
   database: SchoolDatabase;
   onNewClass: () => void;
+  onAddStudent: (classId: string) => void;
   onDeleteClass: (classItem: ClassItem) => void;
   onAttendance: () => void;
 };
 
-export function ClassOverviewPanel({ database, onNewClass, onDeleteClass, onAttendance }: Props) {
+export function ClassOverviewPanel({ database, onNewClass, onAddStudent, onDeleteClass, onAttendance }: Props) {
   const [scope, setScope] = useState<"current" | "all">("current");
   const [query, setQuery] = useState("");
 
@@ -155,6 +156,7 @@ export function ClassOverviewPanel({ database, onNewClass, onDeleteClass, onAtte
             <small>{scheduleLabel(classItem)}</small>
           </div>
           <span className="class-overview-count"><Users size={15}/>{students.length} aluno{students.length === 1 ? "" : "s"}</span>
+          <button className="secondary-button small" onClick={() => onAddStudent(classItem.id)}><UserPlus size={15}/> Adicionar aluno</button>
           <button className="secondary-button small" onClick={() => downloadRosterCsv([classItem], database.students, `aulafacil-${safeFilename(`${classItem.name}-${classItem.groupName ?? classItem.room}`)}.csv`)}><Download size={15}/> Baixar turma</button>
           <button className="secondary-button small" onClick={onAttendance}>Fazer chamada</button>
           <button className="quiet-danger" onClick={() => onDeleteClass(classItem)} title="Excluir turma"><Trash2 size={16}/></button>
