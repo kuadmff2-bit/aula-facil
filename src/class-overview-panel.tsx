@@ -46,6 +46,11 @@ function scheduleLabel(item: ClassItem) {
   return [days, hours].filter(Boolean).join(" · ") || "Horário não informado";
 }
 
+function dateLabel(value?: string | null) {
+  if (!value) return "";
+  return new Date(`${value}T12:00:00`).toLocaleDateString("pt-BR");
+}
+
 function enrollmentLabel(student: Student) {
   const value = student.enrollmentStatus ?? (student.active ? "active" : "paused");
   if (value === "completed") return "Concluído";
@@ -178,7 +183,7 @@ export function ClassOverviewPanel({ database, onNewClass, onAddStudent, onMoveS
             <div className="class-overview-title">
               <strong>{classItem.name}{classItem.groupName ? ` · ${classItem.groupName}` : ""}</strong>
               <span>{classItem.room || "Sala não informada"} · Prof.: {classItem.teacher || "não informado"}</span>
-              <small>{scheduleLabel(classItem)}</small>
+              <small>{scheduleLabel(classItem)}</small><small className="class-overview-end">{(classItem.durationType ?? "open_ended") === "fixed" ? classItem.endDate ? `Conclusão: ${dateLabel(classItem.endDate)}` : classItem.durationMonths ? `Duração: ${classItem.durationMonths} meses` : "Data de conclusão não informada" : "Sem data de término"}</small>
             </div>
             <span className="class-overview-count"><Users size={15}/>{students.length} aluno{students.length === 1 ? "" : "s"}</span>
             <button className="secondary-button small" onClick={() => onAddStudent(classItem.id)}><UserPlus size={15}/> Novo aluno</button>
@@ -212,7 +217,7 @@ export function ClassOverviewPanel({ database, onNewClass, onAddStudent, onMoveS
         <div className="class-transfer-body">
           <div className="class-transfer-note">
             <ArrowRightLeft size={18}/>
-            <span><strong>O aluno sai da turma atual e entra nesta.</strong> Chamadas, notas e mensalidades já registradas continuam no histórico e não são apagadas.</span>
+            <span><strong>O aluno sai da turma atual e entra nesta.</strong> O histórico continua guardado. Cobranças futuras da turma anterior são canceladas e o novo plano respeita a data de conclusão da turma de destino.</span>
           </div>
 
           <label className="class-transfer-search"><Search size={18}/><input value={transferQuery} onChange={(event) => setTransferQuery(event.target.value)} placeholder="Buscar aluno ou turma atual" autoFocus/></label>

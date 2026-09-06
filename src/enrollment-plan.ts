@@ -31,13 +31,33 @@ function dueDayFor(student: Student, database: SchoolDatabase) {
     : fallback;
 }
 
-export function buildFixedCoursePlan(database: SchoolDatabase, student: Student, classItem: ClassItem) {
-  if ((classItem.durationType ?? "open_ended") !== "fixed") return [] as Invoice[];
-  const requestedMonths = classItem.durationMonths ?? 0;
-  if (!Number.isInteger(requestedMonths) || requestedMonths < 1 || requestedMonths > 240 || classItem.monthlyFee <= 0) return [] as Invoice[];
-  const months = requestedMonths;
+export function buildFixedCoursePlan(
+  database: SchoolDatabase,
+  student: Student,
+  classItem: ClassItem,
+  options: { startDate?: string } = {},
+) {
+  if ((classItem.durationType ?? "open_ended") !== "fixed" || classItem.monthlyFee <= 0) return [] as Invoice[];
 
-  const startMonth = monthFromDate(student.enrollmentStartDate || student.createdAt.slice(0, 10));
+  const planStartDate = options.startDate || student.enrollmentStartDate || student.createdAt.slice(0, 10);
+  const startMonth = monthFromDate(planStartDate);
+  const endDate = /^\d{4}-\d{2}-\d{2}$/.test(classItem.endDate ?? "") ? String(classItem.endDate) : "";
+
+  let months = 0;
+  if (endDate) {
+    const endMonth = endDate.slice(0, 7);
+    if (startMonth > endMonth) return [] as Invoice[];
+    const [startYear, startMonthNumber] = startMonth.split("-").map(Number);
+    const [endYear, endMonthNumber] = endMonth.split("-").map(Number);
+    months = (endYear - startYear) * 12 + (endMonthNumber - startMonthNumber) + 1;
+  } else {
+    const requestedMonths = classItem.durationMonths ?? 0;
+    if (!Number.isInteger(requestedMonths) || requestedMonths < 1 || requestedMonths > 240) return [] as Invoice[];
+    months = requestedMonths;
+  }
+
+  if (months < 1 || months > 240) return [] as Invoice[];
+
   const dueDay = dueDayFor(student, database);
   const now = new Date().toISOString();
   const invoices: Invoice[] = [];
@@ -45,11 +65,15 @@ export function buildFixedCoursePlan(database: SchoolDatabase, student: Student,
   for (let index = 0; index < months; index += 1) {
     const referenceMonth = addMonths(startMonth, index);
     const duplicate = database.invoices.some((item) => item.studentId === student.id && (
-      (item.installmentNumber === index + 1 && item.planGenerated)
+      (item.installmentNumber === index + 1 && item.planGenerated && !options.startDate)
       || (item.reference === referenceMonth && item.status !== "cancelled")
     ));
     if (duplicate) continue;
-    const dueDate = dueDateForMonth(referenceMonth, dueDay);
+
+    let dueDate = dueDateForMonth(referenceMonth, dueDay);
+    if (endDate && dueDate > endDate) dueDate = endDate;
+    if (endDate && dueDate > endDate) continue;
+
     invoices.push({
       id: makeId("cobranca"),
       studentId: student.id,

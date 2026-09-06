@@ -29,13 +29,13 @@ const SELECTED_SCHOOL_KEY = "aulafacil.cloud.selected-school";
 const CLOUD_SCHOOL_CHANGE_EVENT = "aulafacil:cloud-school-change";
 
 const EVENT_LABELS: Record<MessageEventKey, string> = {
-  invoice_before_due: "Mensalidade antes do vencimento",
-  invoice_due: "Mensalidade vencendo hoje",
-  invoice_overdue: "Mensalidade atrasada",
-  payment_confirmed: "Pagamento confirmado",
-  negotiation_due: "Parcela de negociação",
-  absence: "Falta do aluno",
-  notice: "Novo comunicado",
+  invoice_before_due: "Lembrar antes do vencimento",
+  invoice_due: "Avisar no dia do vencimento",
+  invoice_overdue: "Avisar mensalidade atrasada",
+  payment_confirmed: "Confirmar pagamento recebido",
+  negotiation_due: "Lembrar parcela de acordo",
+  absence: "Avisar falta do aluno",
+  notice: "Enviar novo aviso",
 };
 
 const EVENT_DEFAULTS: Record<MessageEventKey, { body: string; offset: number }> = {
@@ -79,8 +79,8 @@ export function MessageAutomationsPanel() {
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState<Message>(null);
 
-  const [channelProvider, setChannelProvider] = useState<MessageProviderKey>("meta");
-  const [channelName, setChannelName] = useState("WhatsApp oficial");
+  const [channelProvider, setChannelProvider] = useState<MessageProviderKey>("robot_webhook");
+  const [channelName, setChannelName] = useState("Robô AulaFácil");
   const [credentialChannelId, setCredentialChannelId] = useState("");
   const [credentials, setCredentials] = useState<Record<string, string>>({});
   const credentialBoxRef = useRef<HTMLDivElement | null>(null);
@@ -170,7 +170,7 @@ export function MessageAutomationsPanel() {
   };
 
   const addChannel = () => void run(async () => {
-    if (!schoolId) throw new Error("Selecione uma instituição no AulaFácil Cloud.");
+    if (!schoolId) throw new Error("Selecione uma instituição no Conta e sincronização.");
     const channel = await createMessageChannel(schoolId, channelProvider, channelName || (channelProvider === "meta" ? "WhatsApp oficial" : "Robô externo"));
     await refresh();
     setCredentialChannelId(channel.id);
@@ -195,12 +195,12 @@ export function MessageAutomationsPanel() {
       setCredentials({});
       setCredentialChannelId("");
       await refresh();
-      setMessage({ tone: "success", text: "Credenciais protegidas no servidor. O aplicativo não consegue exibir o segredo novamente." });
+      setMessage({ tone: "success", text: "Conexão protegida no servidor. O aplicativo não consegue exibir o segredo novamente." });
     });
   };
 
   const addTemplate = () => void run(async () => {
-    if (!schoolId) throw new Error("Selecione uma instituição no AulaFácil Cloud.");
+    if (!schoolId) throw new Error("Selecione uma instituição no Conta e sincronização.");
     if (!templateBody.trim()) throw new Error("Escreva a mensagem do modelo.");
     const created = await createMessageTemplate(schoolId, {
       name: templateName.trim() || EVENT_LABELS[eventKey],
@@ -247,9 +247,9 @@ export function MessageAutomationsPanel() {
   const templateReady = templates.some((template) => template.enabled && (robotReady || Boolean(template.metaTemplateName)));
   const automationReady = automations.some((automation) => automation.enabled);
   const automationNextStep = !cloudEmail
-    ? "Entre no AulaFácil Cloud."
+    ? "Entre no Conta e sincronização."
     : !schoolId
-      ? "Sua conta já está conectada. Crie ou selecione a instituição no bloco AulaFácil Cloud acima."
+      ? "Sua conta já está conectada. Crie ou selecione a instituição no bloco Conta e sincronização acima."
       : !channels.length
         ? "Adicione a Meta ou o Robô AulaFácil."
         : !channelReady
@@ -259,31 +259,29 @@ export function MessageAutomationsPanel() {
             : !templateReady
               ? "Na Meta, associe um template aprovado. No Robô AulaFácil, o texto é enviado diretamente."
               : !automationReady
-                ? "Escolha canal, modelo, horário e destinatário e clique em Ativar automação."
+                ? "Escolha canal, modelo, horário e destinatário e clique em Ligar automação."
                 : "Automação ativa. O servidor continuará processando mensagens mesmo com o computador desligado.";
 
   return (
     <section className="card message-automation-card">
       <div className="message-heading">
-        <div><span className="message-eyebrow">AUTOMAÇÕES</span><h2>WhatsApp e mensagens automáticas</h2><p>Configure lembretes e confirmações que rodam no servidor, mesmo com os computadores da escola desligados.</p></div>
+        <div><span className="message-eyebrow">AUTOMAÇÕES</span><h2>Mensagens automáticas pelo WhatsApp</h2><p>Escolha o que deve ser enviado e quando. Depois de ativado, o servidor trabalha sozinho mesmo com o computador desligado.</p></div>
       </div>
 
-      <div className="automation-setup-guide" aria-label="Etapas para ativar mensagens automáticas">
-        <div className={schoolId ? "done" : cloudEmail ? "current" : ""}><b>1</b><span><strong>Instituição</strong><small>{schoolId ? "Selecionada" : cloudEmail ? "Conta pronta" : "Entrar no Cloud"}</small></span></div>
-        <div className={channels.length ? "done" : schoolId ? "current" : ""}><b>2</b><span><strong>Canal</strong><small>Meta ou Robô AulaFácil</small></span></div>
-        <div className={channelReady ? "done" : channels.length ? "current" : ""}><b>3</b><span><strong>Credenciais</strong><small>Conexão segura</small></span></div>
-        <div className={templateReady ? "done" : channelReady ? "current" : ""}><b>4</b><span><strong>Mensagem</strong><small>Template aprovado</small></span></div>
-        <div className={automationReady ? "done" : templateReady ? "current" : ""}><b>5</b><span><strong>Regra</strong><small>Idade, dia e horário</small></span></div>
-        <div className={automationReady ? "done" : ""}><b>6</b><span><strong>Ativa</strong><small>Servidor 24h</small></span></div>
+      <div className="automation-setup-guide" aria-label="Passos para ativar mensagens automáticas">
+        <div className={schoolId ? "done" : cloudEmail ? "current" : ""}><b>1</b><span><strong>Conta</strong><small>{schoolId ? "Instituição pronta" : cloudEmail ? "Escolher instituição" : "Entrar na conta"}</small></span></div>
+        <div className={channelReady ? "done" : schoolId ? "current" : ""}><b>2</b><span><strong>WhatsApp</strong><small>{channelReady ? "Conectado" : "Ler QR Code"}</small></span></div>
+        <div className={templateReady ? "done" : channelReady ? "current" : ""}><b>3</b><span><strong>Mensagem</strong><small>{templateReady ? "Pronta" : "Escrever texto"}</small></span></div>
+        <div className={automationReady ? "done" : templateReady ? "current" : ""}><b>4</b><span><strong>Quando enviar</strong><small>{automationReady ? "Funcionando" : "Dia e horário"}</small></span></div>
       </div>
       <div className={automationReady ? "automation-readiness success" : "automation-readiness info"}><strong>{automationReady ? "Pronto" : "Próximo passo"}</strong><span>{automationNextStep}</span></div>
 
-      {!schoolId && <div className="message-box warning">{cloudEmail ? <>A conta <strong>{cloudEmail}</strong> está conectada. O que falta é criar ou selecionar a instituição no AulaFácil Cloud acima.</> : <>Entre no AulaFácil Cloud e selecione a instituição para configurar automações.</>}</div>}
+      {!schoolId && <div className="message-box warning">{cloudEmail ? <>A conta <strong>{cloudEmail}</strong> está conectada. O que falta é criar ou selecionar a instituição no Conta e sincronização acima.</> : <>Entre no Conta e sincronização e selecione a instituição para configurar automações.</>}</div>}
       {schoolId && !automationReady && <div className="message-box success">Instituição Cloud reconhecida. Continue pelas etapas destacadas acima.</div>}
       {message && <div className={`message-box ${message.tone}`} role="status">{message.text}</div>}
 
       <div className="message-section">
-        <h3>1. Canal de envio</h3>
+        <h3>1. Conectar o WhatsApp</h3>
         {channels.length > 0 && <div className="message-channel-grid">{channels.map((channel) => (
           <article key={channel.id} className="message-channel-item">
             <div><strong>{channel.displayName}</strong><span>{channel.providerKey === "meta" ? "Meta WhatsApp Cloud API" : "Robô AulaFácil"}</span></div>
@@ -295,7 +293,7 @@ export function MessageAutomationsPanel() {
               )}
             </div>
             <div className="message-actions">
-              {channel.providerKey === "meta" ? <button type="button" onClick={() => { setCredentialChannelId(channel.id); setCredentials({}); }}>{channel.credentialsConfigured ? "Trocar credenciais" : "Configurar"}</button> : <RobotConnectBox channel={channel} disabled={busy} onChanged={() => refresh()} />}
+              {channel.providerKey === "meta" ? <button type="button" onClick={() => { setCredentialChannelId(channel.id); setCredentials({}); }}>{channel.credentialsConfigured ? "Trocar conexão" : "Configurar"}</button> : <RobotConnectBox channel={channel} disabled={busy} onChanged={() => refresh()} />}
               <button type="button" onClick={() => void run(async () => { await updateMessageChannel(channel.id, { enabled: !channel.enabled }); await refresh(); })}>{channel.enabled ? "Pausar" : "Ativar"}</button>
               <button type="button" className="danger" onClick={() => void run(async () => { await removeMessageChannel(channel.id); await refresh(); setMessage({ tone: "success", text: "Canal e segredo associado removidos." }); })}>Remover</button>
             </div>
@@ -303,23 +301,21 @@ export function MessageAutomationsPanel() {
         ))}</div>}
 
         <div className="message-form-grid">
-          <label><span>Tipo</span><select value={channelProvider} onChange={(e) => { const value = e.target.value as MessageProviderKey; setChannelProvider(value); setChannelName(value === "meta" ? "WhatsApp oficial" : "Robô AulaFácil"); }}><option value="meta">Meta WhatsApp Cloud API</option><option value="robot_webhook">Robô AulaFácil · QR Code</option></select></label>
+          <label><span>Tipo</span><select value={channelProvider} onChange={(e) => { const value = e.target.value as MessageProviderKey; setChannelProvider(value); setChannelName(value === "meta" ? "WhatsApp oficial da Meta" : "Robô AulaFácil"); }}><option value="robot_webhook">Robô AulaFácil · QR Code (mais simples)</option><option value="meta">WhatsApp oficial da Meta (avançado)</option></select></label>
           <label><span>Nome</span><input value={channelName} maxLength={120} onChange={(e) => setChannelName(e.target.value)} /></label>
         </div>
         <button type="button" className="secondary-button" disabled={busy || !schoolId || channelProviderAlreadyAdded} onClick={addChannel}>{channelProviderAlreadyAdded ? "Canal já adicionado" : "Adicionar canal"}</button>
 
-        {credentialChannel && credentialChannel.providerKey === "meta" && <div ref={credentialBoxRef} className="message-credential-box"><div><strong>Credenciais protegidas · {credentialChannel.displayName}</strong><p>As credenciais são protegidas no servidor e não entram no backup local.</p></div>{credentialChannel.providerKey === "meta" ? <div className="message-form-grid"><label><span>Access Token *</span><input type="password" autoComplete="off" value={credentials.access_token ?? ""} onChange={(e) => setCredentials((current) => ({ ...current, access_token: e.target.value }))} /></label><label><span>Phone Number ID *</span><input type="password" autoComplete="off" value={credentials.phone_number_id ?? ""} onChange={(e) => setCredentials((current) => ({ ...current, phone_number_id: e.target.value }))} /></label><label><span>Business Account ID</span><input type="password" autoComplete="off" value={credentials.business_account_id ?? ""} onChange={(e) => setCredentials((current) => ({ ...current, business_account_id: e.target.value }))} /></label></div> : <div className="message-form-grid"><label><span>URL HTTPS do robô *</span><input type="password" autoComplete="off" value={credentials.webhook_url ?? ""} onChange={(e) => setCredentials((current) => ({ ...current, webhook_url: e.target.value }))} /></label><label><span>Token do robô</span><input type="password" autoComplete="off" value={credentials.auth_token ?? ""} onChange={(e) => setCredentials((current) => ({ ...current, auth_token: e.target.value }))} /></label></div>}<div className="message-actions"><button className="secondary-button" type="button" onClick={() => { setCredentials({}); setCredentialChannelId(""); }}>Cancelar</button><button className="primary-button" type="button" disabled={busy} onClick={saveCredentials}>Salvar credenciais</button></div></div>}
+        {credentialChannel && credentialChannel.providerKey === "meta" && <div ref={credentialBoxRef} className="message-credential-box"><div><strong>Conexão protegida · {credentialChannel.displayName}</strong><p>As credenciais são protegidas no servidor e não entram no backup local.</p></div>{credentialChannel.providerKey === "meta" ? <div className="message-form-grid"><label><span>Access Token *</span><input type="password" autoComplete="off" value={credentials.access_token ?? ""} onChange={(e) => setCredentials((current) => ({ ...current, access_token: e.target.value }))} /></label><label><span>Phone Number ID *</span><input type="password" autoComplete="off" value={credentials.phone_number_id ?? ""} onChange={(e) => setCredentials((current) => ({ ...current, phone_number_id: e.target.value }))} /></label><label><span>Business Account ID</span><input type="password" autoComplete="off" value={credentials.business_account_id ?? ""} onChange={(e) => setCredentials((current) => ({ ...current, business_account_id: e.target.value }))} /></label></div> : <div className="message-form-grid"><label><span>URL HTTPS do robô *</span><input type="password" autoComplete="off" value={credentials.webhook_url ?? ""} onChange={(e) => setCredentials((current) => ({ ...current, webhook_url: e.target.value }))} /></label><label><span>Token do robô</span><input type="password" autoComplete="off" value={credentials.auth_token ?? ""} onChange={(e) => setCredentials((current) => ({ ...current, auth_token: e.target.value }))} /></label></div>}<div className="message-actions"><button className="secondary-button" type="button" onClick={() => { setCredentials({}); setCredentialChannelId(""); }}>Cancelar</button><button className="primary-button" type="button" disabled={busy} onClick={saveCredentials}>Salvar conexão</button></div></div>}
       </div>
 
       <div className="message-section">
-        <h3>2. Modelo da mensagem</h3>
+        <h3>2. Escolher a mensagem</h3>
         <div className="message-form-grid">
           <label><span>Evento</span><select value={eventKey} onChange={(e) => changeEvent(e.target.value as MessageEventKey)}>{Object.entries(EVENT_LABELS).map(([key, label]) => <option key={key} value={key}>{label}</option>)}</select></label>
-          <label><span>Nome interno</span><input maxLength={120} value={templateName} onChange={(e) => setTemplateName(e.target.value)} /></label>
-          <label className="message-span-2"><span>Texto / prévia</span><textarea rows={4} maxLength={4000} value={templateBody} onChange={(e) => setTemplateBody(e.target.value)} /></label>
-          <label><span>Template aprovado da Meta</span><input placeholder="ex.: mensalidade_vence_amanha" value={metaTemplateName} onChange={(e) => setMetaTemplateName(e.target.value)} /></label>
-          <label><span>Idioma Meta</span><input value={metaLanguage} maxLength={30} onChange={(e) => setMetaLanguage(e.target.value)} /></label>
-          <label className="message-span-2"><span>Parâmetros Meta, na ordem</span><input value={metaParameterKeys} onChange={(e) => setMetaParameterKeys(e.target.value)} /><small>Use os nomes sem chaves, separados por vírgula. Ex.: destinatario, contexto, valor, vencimento.</small></label>
+          <label><span>Nome para identificar</span><input maxLength={120} value={templateName} onChange={(e) => setTemplateName(e.target.value)} /></label>
+          <label className="message-span-2"><span>Mensagem que será enviada</span><textarea rows={4} maxLength={4000} value={templateBody} onChange={(e) => setTemplateBody(e.target.value)} /></label>
+          {(channelProvider === "meta" || metaReady) && <details className="message-advanced message-span-2"><summary>Configuração avançada da Meta</summary><div className="message-form-grid"><label><span>Nome do template aprovado</span><input placeholder="ex.: mensalidade_vence_amanha" value={metaTemplateName} onChange={(e) => setMetaTemplateName(e.target.value)} /></label><label><span>Idioma</span><input value={metaLanguage} maxLength={30} onChange={(e) => setMetaLanguage(e.target.value)} /></label><label className="message-span-2"><span>Campos do template, na ordem</span><input value={metaParameterKeys} onChange={(e) => setMetaParameterKeys(e.target.value)} /><small>Esta parte só é necessária para quem usa a API oficial da Meta.</small></label></div></details>}
         </div>
         <div className="message-variable-help">Variáveis disponíveis: <code>{'{destinatario}'}</code> <code>{'{contexto}'}</code> <code>{'{aluno}'}</code> <code>{'{responsavel}'}</code> <code>{'{valor}'}</code> <code>{'{vencimento}'}</code> <code>{'{referencia}'}</code> <code>{'{escola}'}</code> <code>{'{data}'}</code> <code>{'{link_pagamento}'}</code>. <strong>{'{destinatario}'}</strong> e <strong>{'{contexto}'}</strong> mudam automaticamente conforme a idade.</div>
         <button className="secondary-button" type="button" disabled={busy || !schoolId} onClick={addTemplate}>Salvar novo modelo</button>
@@ -328,17 +324,17 @@ export function MessageAutomationsPanel() {
       </div>
 
       <div className="message-section">
-        <h3>3. Regra automática</h3>
+        <h3>3. Escolher quando enviar</h3>
         <div className="message-form-grid">
           <label><span>Canal</span><select value={automationChannelId} onChange={(e) => setAutomationChannelId(e.target.value)}><option value="">Escolha</option>{channels.map((item) => <option key={item.id} value={item.id}>{item.displayName}</option>)}</select></label>
           <label><span>Modelo</span><select value={automationTemplateId} onChange={(e) => { const id = e.target.value; setAutomationTemplateId(id); const template = templates.find((item) => item.id === id); if (template) setDaysOffset(EVENT_DEFAULTS[template.eventKey].offset); }}><option value="">Escolha</option>{templates.filter((item) => item.enabled).map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}</select></label>
-          <label><span>Dias de antecedência/atraso</span><input type="number" min={0} max={365} value={daysOffset} onChange={(e) => setDaysOffset(Math.max(0, Math.min(365, Math.trunc(Number(e.target.value) || 0))))} /></label>
+          <label><span>Quantos dias antes/depois</span><input type="number" min={0} max={365} value={daysOffset} onChange={(e) => setDaysOffset(Math.max(0, Math.min(365, Math.trunc(Number(e.target.value) || 0))))} /></label>
           <label><span>Hora de envio</span><select value={sendHour} onChange={(e) => setSendHour(Number(e.target.value))}>{Array.from({ length: 24 }, (_, hour) => <option key={hour} value={hour}>{String(hour).padStart(2, "0")}:00</option>)}</select></label>
           <label><span>Destinatário</span><select value={recipientMode} onChange={(e) => setRecipientMode(e.target.value as RecipientMode)}><option value="auto">Automático pela idade (recomendado)</option><option value="guardian">Sempre responsável</option><option value="student">Sempre aluno</option></select></label>
-          <label><span>Evento selecionado</span><input readOnly value={selectedTemplate ? EVENT_LABELS[selectedTemplate.eventKey] : "Escolha um modelo"} /></label>
+          <label><span>O que dispara</span><input readOnly value={selectedTemplate ? EVENT_LABELS[selectedTemplate.eventKey] : "Escolha um modelo"} /></label>
           {recipientMode === "auto" && <div className="message-age-rule message-span-2"><strong>Como o destinatário é escolhido</strong><span>Menores recebem pelo responsável; a partir de 18 anos, pelo telefone do aluno. Se o contato correto não existir, o envio é ignorado com segurança.</span></div>}
         </div>
-        <button className="primary-button" type="button" disabled={busy || !schoolId} onClick={addAutomation}>Ativar automação</button>
+        <button className="primary-button" type="button" disabled={busy || !schoolId} onClick={addAutomation}>Ligar automação</button>
 
         {automations.length > 0 && <div className="automation-list">{automations.map((automation) => { const channel = channels.find((item) => item.id === automation.channelId); const template = templates.find((item) => item.id === automation.templateId); return <article key={automation.id}><div><strong>{template?.name ?? EVENT_LABELS[automation.eventKey]}</strong><span>{channel?.displayName ?? "Canal"} · {String(automation.sendHour).padStart(2, "0")}:00 · {automation.recipientMode === "auto" ? "por idade: menor → responsável, 18+ → aluno" : automation.recipientMode === "guardian" ? "responsável" : "aluno"}</span></div><div className="message-actions"><button type="button" onClick={() => void run(async () => { await updateMessageAutomation(automation.id, { enabled: !automation.enabled }); await refresh(); })}>{automation.enabled ? "Pausar" : "Ativar"}</button><button className="danger" type="button" onClick={() => void run(async () => { await removeMessageAutomation(automation.id); await refresh(); })}>Excluir</button></div></article>; })}</div>}
       </div>

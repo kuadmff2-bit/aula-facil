@@ -29,6 +29,7 @@ import {
   UserPlus,
   Users,
   WalletCards,
+  Zap,
   X,
 } from "lucide-react";
 import {
@@ -78,6 +79,7 @@ import { DateField } from "./date-field";
 import { NoticesCenter } from "./notices-center";
 import { exportStudentsWorkbook } from "./spreadsheet-export";
 import "./app-next.css";
+import "./didactic-ux.css";
 
 type ModalKind = "student" | "student-edit" | "class" | "invoice" | "notice" | "pause" | null;
 type Toast = { message: string; tone: "success" | "warning" | "danger" };
@@ -90,23 +92,25 @@ const navItems = [
   { id: "students" as View, label: "Alunos", icon: Users },
   { id: "classes" as View, label: "Turmas", icon: BookOpen },
   { id: "attendance" as View, label: "Chamada", icon: ClipboardCheck },
-  { id: "finance" as View, label: "Financeiro", icon: WalletCards },
+  { id: "finance" as View, label: "Mensalidades", icon: WalletCards },
   { id: "notices" as View, label: "Avisos", icon: Megaphone },
-  { id: "backup" as View, label: "Backup", icon: DatabaseBackup },
-  { id: "cloud" as View, label: "Conta e nuvem", icon: Cloud },
-  { id: "settings" as View, label: "Configurações", icon: Settings2 },
+  { id: "automations" as View, label: "Automações", icon: Zap },
+  { id: "cloud" as View, label: "Conta e sincronização", icon: Cloud },
+  { id: "backup" as View, label: "Backup e segurança", icon: DatabaseBackup },
+  { id: "settings" as View, label: "Ajustes da escola", icon: Settings2 },
 ];
 
 const viewCopy: Record<View, { title: string; description: string }> = {
-  dashboard: { title: "Visão geral", description: "O que precisa da sua atenção hoje." },
-  students: { title: "Alunos", description: "Cadastro, curso e financeiro em um só lugar." },
-  classes: { title: "Turmas", description: "Cursos, horários, duração e distribuição de alunos." },
-  attendance: { title: "Chamada geral", description: "Veja as turmas do dia como uma planilha e marque a presença." },
-  finance: { title: "Financeiro", description: "Acompanhe mensalidades, pagamentos e atrasos." },
-  notices: { title: "Avisos", description: "Organize comunicados para alunos e responsáveis." },
-  backup: { title: "Proteção dos dados", description: "Faça cópias e restaure o sistema com segurança." },
-  cloud: { title: "Conta e nuvem", description: "Login, instituição, sincronização e estado deste dispositivo." },
-  settings: { title: "Personalização", description: "Adapte o AulaFácil à realidade da sua instituição." },
+  dashboard: { title: "Início", description: "Veja rapidamente o que precisa da sua atenção." },
+  students: { title: "Alunos", description: "Cadastre, consulte e acompanhe cada aluno." },
+  classes: { title: "Turmas", description: "Organize cursos, horários, alunos e data de conclusão." },
+  attendance: { title: "Chamada", description: "Marque presença sem abrir turma por turma." },
+  finance: { title: "Mensalidades", description: "Veja quem pagou, quem está devendo e receba pagamentos." },
+  notices: { title: "Avisos", description: "Envie comunicados para alunos e responsáveis." },
+  automations: { title: "Automações", description: "Deixe o AulaFácil enviar lembretes e confirmações sozinho." },
+  backup: { title: "Backup e segurança", description: "Proteja seus dados e restaure uma cópia quando precisar." },
+  cloud: { title: "Conta e sincronização", description: "Entre na conta e mantenha os dados deste computador alinhados com a nuvem." },
+  settings: { title: "Ajustes da escola", description: "Mude dados, aparência, cobranças, documentos e integrações." },
 };
 
 const classColors = ["#1649b8", "#8b5cf6", "#d97706", "#059669", "#e11d48", "#0891b2"];
@@ -156,7 +160,9 @@ function scheduleText(days: Weekday[], startTime: string, endTime: string) {
 }
 
 function classDurationLabel(item: ClassItem) {
-  return (item.durationType ?? "open_ended") === "fixed" ? `${item.durationMonths ?? "—"} meses` : "Sem prazo definido";
+  if ((item.durationType ?? "open_ended") !== "fixed") return "Sem data de término";
+  if (item.endDate) return `Até ${dateLabel(item.endDate)}`;
+  return item.durationMonths ? `${item.durationMonths} meses` : "Data final não informada";
 }
 
 function paymentForInvoice(database: SchoolDatabase, invoiceId: string) {
@@ -307,20 +313,20 @@ export default function AppNext() {
     const endTime = formValue(form, "endTime");
     const meetingDays = WEEKDAYS.filter((day) => form.get(`day-${day.id}`) === "on").map((day) => day.id);
     const monthlyFee = Number(formValue(form, "monthlyFee"));
-    const durationMonths = classDurationType === "fixed" ? Number(formValue(form, "durationMonths")) : null;
+    const endDate = classDurationType === "fixed" ? formValue(form, "endDate") : "";
     const workloadHours = Number(formValue(form, "workloadHours")) || null;
     if (name.length < 2 || teacher.length < 2 || !startTime || !endTime || startTime >= endTime || !meetingDays.length || !Number.isFinite(monthlyFee) || monthlyFee < 0) {
       notify("Revise nome, professor, dias, horário e mensalidade da turma.", "danger");
       return;
     }
-    if (classDurationType === "fixed" && (!Number.isInteger(durationMonths) || Number(durationMonths) < 1 || Number(durationMonths) > 240)) {
-      notify("Informe uma duração entre 1 e 240 meses.", "danger");
+    if (classDurationType === "fixed" && (genericDateError(endDate) || endDate < localTodayIso())) {
+      notify("Informe uma data de conclusão válida, igual ou posterior a hoje.", "danger");
       return;
     }
     updateDatabase((draft) => draft.classes.push({
       id: makeId("turma"), name, groupName, teacher, room, meetingDays, startTime, endTime,
       schedule: scheduleText(meetingDays, startTime, endTime), monthlyFee,
-      durationType: classDurationType, durationMonths: classDurationType === "fixed" ? Number(durationMonths) : null,
+      durationType: classDurationType, durationMonths: null, endDate: classDurationType === "fixed" ? endDate : null,
       workloadHours, color: classColors[draft.classes.length % classColors.length], createdAt: new Date().toISOString(),
     }));
     setModal(null);
@@ -337,11 +343,16 @@ export default function AppNext() {
     const dueDay = Number(formValue(form, "dueDay"));
     const enrollmentStartDate = formValue(form, "enrollmentStartDate") || localTodayIso();
     const extraFields = collectStudentFields(form, database.settings.studentFields);
+    const selectedClassForEnrollment = classById.get(classId);
     const birthError = birthDateError(birthDate);
     const studentPhoneError = phoneError(extraFields.phone, false);
     const guardianPhoneError = phoneError(extraFields.guardianPhone, false);
     if (name.length < 3 || birthError || studentPhoneError || guardianPhoneError || !classById.has(classId) || !Number.isInteger(dueDay) || !database.settings.finance.allowedDueDays.includes(dueDay) || genericDateError(enrollmentStartDate)) {
       notify(birthError || studentPhoneError || guardianPhoneError || "Preencha os dados obrigatórios com valores válidos.", "danger");
+      return;
+    }
+    if (selectedClassForEnrollment?.durationType === "fixed" && selectedClassForEnrollment.endDate && enrollmentStartDate > selectedClassForEnrollment.endDate) {
+      notify("A matrícula não pode começar depois da data de conclusão da turma.", "danger");
       return;
     }
     let generated = 0;
@@ -386,17 +397,45 @@ export default function AppNext() {
       return;
     }
     let rescheduled = 0;
+    let generatedForNewClass = 0;
+    let cancelledFromOldClass = 0;
     const classChanged = classId !== selectedStudent.classId;
     updateDatabase((draft) => {
       const target = draft.students.find((item) => item.id === selectedStudent.id);
       if (!target) return;
       const oldDueDay = target.dueDay;
+      const today = localTodayIso();
+      if (classChanged) {
+        for (const invoice of draft.invoices) {
+          if (invoice.studentId !== target.id) continue;
+          if (invoice.status !== "pending" && invoice.status !== "overdue") continue;
+          if (invoice.dueDate <= today) continue;
+          invoice.status = "cancelled";
+          invoice.cancelledAt = new Date().toISOString();
+          invoice.cancellationReason = "Aluno transferido para outra turma";
+          cancelledFromOldClass += 1;
+        }
+      }
       Object.assign(target, { name, birthDate, documentNumber, classId, ...extraFields });
       if (oldDueDay !== dueDay) rescheduled = rescheduleFutureInvoices(draft, target.id, dueDay);
       else target.dueDay = dueDay;
+
+      if (classChanged && (target.enrollmentStatus ?? (target.active ? "active" : "paused")) === "active") {
+        const nextClass = draft.classes.find((item) => item.id === classId);
+        if (nextClass?.durationType === "fixed") {
+          const plan = buildFixedCoursePlan(draft, target, nextClass, { startDate: today });
+          draft.invoices.push(...plan);
+          generatedForNewClass = plan.length;
+        } else if (nextClass) {
+          const invoice = ensureOpenEndedInvoiceForMonth(draft, target, nextClass, today.slice(0, 7));
+          if (invoice) { draft.invoices.push(invoice); generatedForNewClass = 1; }
+        }
+      }
     });
     setModal(null);
-    notify(classChanged ? `Cadastro atualizado. As cobranças antigas foram preservadas; ${rescheduled} vencimento${rescheduled === 1 ? "" : "s"} futuro${rescheduled === 1 ? "" : "s"} foi ajustado.` : `Cadastro atualizado${rescheduled ? ` e ${rescheduled} mensalidade${rescheduled === 1 ? "" : "s"} futura${rescheduled === 1 ? "" : "s"} foi${rescheduled === 1 ? "" : "ram"} para o novo vencimento` : ""}.`);
+    notify(classChanged
+      ? `Aluno movido para a nova turma. ${cancelledFromOldClass} cobrança${cancelledFromOldClass === 1 ? "" : "s"} futura${cancelledFromOldClass === 1 ? "" : "s"} da turma anterior foi${cancelledFromOldClass === 1 ? "" : "ram"} cancelada${cancelledFromOldClass === 1 ? "" : "s"} e ${generatedForNewClass} nova${generatedForNewClass === 1 ? "" : "s"} mensalidade${generatedForNewClass === 1 ? "" : "s"} foi${generatedForNewClass === 1 ? "" : "ram"} preparada${generatedForNewClass === 1 ? "" : "s"}.`
+      : `Cadastro atualizado${rescheduled ? ` e ${rescheduled} mensalidade${rescheduled === 1 ? "" : "s"} futura${rescheduled === 1 ? "" : "s"} foi${rescheduled === 1 ? "" : "ram"} para o novo vencimento` : ""}.`);
   };
 
   const addInvoice = (event: FormEvent<HTMLFormElement>) => {
@@ -534,6 +573,50 @@ export default function AppNext() {
     notify("Chamada salva.");
   };
 
+
+  const moveStudentsToClass = (targetClassId: string, studentIds: string[]) => {
+    const selected = new Set(studentIds);
+    const targetClass = classById.get(targetClassId);
+    if (!targetClass || !selected.size) return;
+    const today = localTodayIso();
+    let moved = 0;
+    let cancelled = 0;
+    let generated = 0;
+
+    updateDatabase((draft) => {
+      const destination = draft.classes.find((item) => item.id === targetClassId);
+      if (!destination) return;
+      for (const student of draft.students) {
+        if (!selected.has(student.id) || student.classId === targetClassId) continue;
+
+        for (const invoice of draft.invoices) {
+          if (invoice.studentId !== student.id) continue;
+          if (invoice.status !== "pending" && invoice.status !== "overdue") continue;
+          if (invoice.dueDate <= today) continue;
+          invoice.status = "cancelled";
+          invoice.cancelledAt = new Date().toISOString();
+          invoice.cancellationReason = "Aluno transferido para outra turma";
+          cancelled += 1;
+        }
+
+        student.classId = targetClassId;
+        moved += 1;
+        if ((student.enrollmentStatus ?? (student.active ? "active" : "paused")) !== "active" || !student.active) continue;
+
+        if ((destination.durationType ?? "open_ended") === "fixed") {
+          const plan = buildFixedCoursePlan(draft, student, destination, { startDate: today });
+          draft.invoices.push(...plan);
+          generated += plan.length;
+        } else {
+          const invoice = ensureOpenEndedInvoiceForMonth(draft, student, destination, today.slice(0, 7));
+          if (invoice) { draft.invoices.push(invoice); generated += 1; }
+        }
+      }
+    });
+
+    notify(`${moved} aluno${moved === 1 ? "" : "s"} movido${moved === 1 ? "" : "s"}. ${cancelled} cobrança${cancelled === 1 ? "" : "s"} futura${cancelled === 1 ? "" : "s"} da turma anterior foi${cancelled === 1 ? "" : "ram"} cancelada${cancelled === 1 ? "" : "s"}; ${generated} nova${generated === 1 ? "" : "s"} mensalidade${generated === 1 ? "" : "s"} foi${generated === 1 ? "" : "ram"} preparada${generated === 1 ? "" : "s"}.`);
+  };
+
   const deleteStudent = (student: Student) => confirmAction({ title: "Excluir aluno?", message: `O cadastro de ${student.name} e os registros locais vinculados serão removidos.`, detail: "Prefira trancar a matrícula quando precisar preservar o histórico.", confirmLabel: "Excluir definitivamente", tone: "danger" }, () => {
     updateDatabase((draft) => {
       draft.students = draft.students.filter((item) => item.id !== student.id);
@@ -583,7 +666,7 @@ export default function AppNext() {
     <aside className="sidebar">
       <button className="mobile-menu-close" aria-label="Fechar menu" onClick={() => setMobileMenuOpen(false)}><X size={20}/></button>
       {view !== "dashboard" ? <button className="brand" onClick={() => changeView("dashboard")} aria-label="Ir para o início"><SchoolBrand institution={database.settings.institution}/></button> : <div className="dashboard-sidebar-placeholder" aria-hidden="true"/>}
-      <div className="nav-label">GESTÃO</div>
+      <div className="nav-label">MENU</div>
       <nav className="main-nav">{navItems.map((item) => <button key={item.id} className={view === item.id ? "active" : ""} onClick={() => changeView(item.id)}><item.icon size={20}/><span>{item.label}</span>{item.id === "finance" && overdueInvoices.length > 0 && <b>{overdueInvoices.length}</b>}</button>)}</nav>
       <div className="sidebar-foot"><div className="local-status"><HardDrive size={18}/><span><strong>Cópia local protegida</strong><small>Criptografada no Windows</small></span><CheckCircle2 size={17}/></div><div className="version">AulaFácil Desktop <span>v0.4.4</span></div></div>
     </aside>
@@ -594,7 +677,7 @@ export default function AppNext() {
       <div className="page-content">
         {view === "dashboard" && <section className="stack">
           <div className="metric-grid"><Metric label="Alunos ativos" value={String(activeStudents.length)} helper={`${database.classes.length} turma${database.classes.length === 1 ? "" : "s"}`} icon={Users} tone="blue"/><Metric label="Recebido" value={money(receivedTotal)} helper="Pagamentos confirmados" icon={CircleDollarSign} tone="green"/><Metric label="Em aberto" value={money(pendingTotal)} helper={`${overdueInvoices.length} atrasada${overdueInvoices.length === 1 ? "" : "s"}`} icon={Clock3} tone={overdueInvoices.length ? "red" : "amber"}/><Metric label="Presença hoje" value={attendanceRate === null ? "—" : `${attendanceRate}%`} helper="Chamadas registradas" icon={CalendarCheck2} tone="violet"/></div>
-          <div className="dashboard-home-grid"><div className="dashboard-grid"><div className="card quick-card"><div className="section-heading"><div><h2>Ações rápidas</h2><p>Atalhos da secretaria.</p></div></div><div className="quick-actions"><button onClick={openStudentForm}><span className="blue"><UserPlus/></span><div><strong>Novo aluno</strong><small>Matricular e gerar plano</small></div><ChevronRight/></button><button onClick={() => changeView("attendance")}><span className="violet"><ClipboardCheck/></span><div><strong>Fazer chamada</strong><small>Planilha de todas as turmas</small></div><ChevronRight/></button><button onClick={() => changeView("finance")}><span className="green"><WalletCards/></span><div><strong>Mensalidades</strong><small>Receber e negociar</small></div><ChevronRight/></button><button onClick={() => { setClassDurationType("open_ended"); setModal("class"); }}><span className="amber"><BookOpen/></span><div><strong>Nova turma</strong><small>Curso e horário</small></div><ChevronRight/></button></div></div><div className="card attention-card"><div className="section-heading"><div><h2>Precisa de atenção</h2><p>Mensalidades atrasadas.</p></div>{overdueInvoices.length > 0 && <span className="count-badge">{overdueInvoices.length}</span>}</div>{overdueInvoices.slice(0,5).map((invoice) => <button key={invoice.id} onClick={() => openStudent(invoice.studentId)}><span className="warning-icon"><AlertTriangle size={18}/></span><div><strong>{studentById.get(invoice.studentId)?.name ?? "Aluno"}</strong><small>{invoice.reference} · venceu {dateLabel(invoice.dueDate)}</small></div><b>{money(invoiceAmountDue(invoice,database.settings.finance).totalDue)}</b></button>)}{!overdueInvoices.length && <div className="compact-empty"><CheckCircle2/><strong>Nenhuma cobrança atrasada</strong><span>As pendências aparecerão aqui.</span></div>}</div></div><div className="dashboard-brand-hero"><div><SchoolBrand institution={database.settings.institution}/></div></div></div>
+          <div className="dashboard-home-grid"><div className="dashboard-grid"><div className="card quick-card"><div className="section-heading"><div><h2>Ações rápidas</h2><p>Atalhos da secretaria.</p></div></div><div className="quick-actions"><button onClick={openStudentForm}><span className="blue"><UserPlus/></span><div><strong>Novo aluno</strong><small>Matricular e gerar plano</small></div><ChevronRight/></button><button onClick={() => changeView("attendance")}><span className="violet"><ClipboardCheck/></span><div><strong>Fazer chamada</strong><small>Planilha de todas as turmas</small></div><ChevronRight/></button><button onClick={() => changeView("finance")}><span className="green"><WalletCards/></span><div><strong>Mensalidades</strong><small>Receber e negociar</small></div><ChevronRight/></button><button onClick={() => { setClassDurationType("open_ended"); setModal("class"); }}><span className="amber"><BookOpen/></span><div><strong>Nova turma</strong><small>Curso, horário e conclusão</small></div><ChevronRight/></button></div></div><div className="card attention-card"><div className="section-heading"><div><h2>Precisa de atenção</h2><p>Mensalidades atrasadas.</p></div>{overdueInvoices.length > 0 && <span className="count-badge">{overdueInvoices.length}</span>}</div>{overdueInvoices.slice(0,5).map((invoice) => <button key={invoice.id} onClick={() => openStudent(invoice.studentId)}><span className="warning-icon"><AlertTriangle size={18}/></span><div><strong>{studentById.get(invoice.studentId)?.name ?? "Aluno"}</strong><small>{invoice.reference} · venceu {dateLabel(invoice.dueDate)}</small></div><b>{money(invoiceAmountDue(invoice,database.settings.finance).totalDue)}</b></button>)}{!overdueInvoices.length && <div className="compact-empty"><CheckCircle2/><strong>Nenhuma cobrança atrasada</strong><span>As pendências aparecerão aqui.</span></div>}</div></div><div className="dashboard-brand-hero"><div><SchoolBrand institution={database.settings.institution}/></div></div></div>
         </section>}
 
         {view === "students" && <section className="stack">
@@ -610,6 +693,7 @@ export default function AppNext() {
           database={database}
           onNewClass={() => { setClassDurationType("open_ended"); setModal("class"); }}
           onAddStudent={openStudentFormForClass}
+          onMoveStudents={moveStudentsToClass}
           onDeleteClass={deleteClass}
           onAttendance={() => { setAttendanceDate(localTodayIso()); changeView("attendance"); }}
         />}
@@ -618,14 +702,18 @@ export default function AppNext() {
         {view === "finance" && <FinanceUltimate database={database} onChange={setDatabase} onReceipt={(student,invoice,payment) => setPrintable({ type:"Recibo", student, invoice, payment })}/>} 
         {view === "notices" && <NoticesCenter database={database} onChange={setDatabase} notify={notify}/>} 
         {view === "cloud" && <section className="stack cloud-hub-page"><CloudAccountPanel database={database} onReplaceDatabase={setDatabase}/><CloudSyncPanel database={database} onReplaceDatabase={setDatabase}/></section>}
-        {view === "settings" && <section className="stack settings-page"><InstitutionSettingsPanel value={database.settings.institution} onChange={(institution) => updateDatabase((draft) => { draft.settings.institution = institution; })}/><AppearanceSettings value={database.settings.appearance} onChange={(appearance) => updateDatabase((draft) => { draft.settings.appearance = appearance; })}/><StudentFieldsSettings fields={database.settings.studentFields} onChange={(fields) => updateDatabase((draft) => { draft.settings.studentFields = fields; })}/><FinanceSettingsPanel institution={database.settings.institution} value={database.settings.finance} onChange={(finance) => updateDatabase((draft) => { draft.settings.finance = finance; })}/><DocumentSettingsPanel institution={database.settings.institution} receipt={database.settings.receipt} certificate={database.settings.certificate} onReceiptChange={(receipt) => updateDatabase((draft) => { draft.settings.receipt = receipt; })} onCertificateChange={(certificate) => updateDatabase((draft) => { draft.settings.certificate = certificate; })}/><PaymentConnectionsPanel/><MessageAutomationsPanel/></section>}
+        {view === "automations" && <section className="stack automation-hub-page">
+          <div className="card didactic-guide"><div><span className="didactic-eyebrow">AUTOMAÇÕES</span><h2>Escolha o que o AulaFácil deve fazer sozinho</h2><p>Conecte o WhatsApp uma vez, escreva a mensagem e escolha quando ela deve ser enviada.</p></div><div className="didactic-steps"><span><b>1</b><strong>Conectar WhatsApp</strong><small>Leia o QR Code do Robô AulaFácil.</small></span><span><b>2</b><strong>Escolher a mensagem</strong><small>Ex.: lembrar mensalidade antes de vencer.</small></span><span><b>3</b><strong>Escolher quando enviar</strong><small>Defina o dia e o horário. O servidor cuida do resto.</small></span></div></div>
+          <MessageAutomationsPanel/>
+        </section>}
+        {view === "settings" && <section className="stack settings-page"><div className="card didactic-guide compact"><div><span className="didactic-eyebrow">AJUSTES DA ESCOLA</span><h2>Mude só o que você precisar</h2><p>Os recursos automáticos agora ficam em “Automações”. Aqui ficam dados da escola, aparência, cadastro, cobranças, documentos e formas de pagamento.</p></div></div><InstitutionSettingsPanel value={database.settings.institution} onChange={(institution) => updateDatabase((draft) => { draft.settings.institution = institution; })}/><AppearanceSettings value={database.settings.appearance} onChange={(appearance) => updateDatabase((draft) => { draft.settings.appearance = appearance; })}/><StudentFieldsSettings fields={database.settings.studentFields} onChange={(fields) => updateDatabase((draft) => { draft.settings.studentFields = fields; })}/><FinanceSettingsPanel institution={database.settings.institution} value={database.settings.finance} onChange={(finance) => updateDatabase((draft) => { draft.settings.finance = finance; })}/><DocumentSettingsPanel institution={database.settings.institution} receipt={database.settings.receipt} certificate={database.settings.certificate} onReceiptChange={(receipt) => updateDatabase((draft) => { draft.settings.receipt = receipt; })} onCertificateChange={(certificate) => updateDatabase((draft) => { draft.settings.certificate = certificate; })}/><PaymentConnectionsPanel/></section>}
         {view === "backup" && <BackupPanel database={database} onRestoreCandidate={(restored) => confirmAction({ title:"Restaurar este backup?", message:"Os dados locais atuais serão substituídos pelo arquivo validado.", confirmLabel:"Restaurar backup", tone:"warning" }, () => { setDatabase(restored); setSelectedStudentId(""); notify("Backup restaurado."); })} onReset={() => confirmAction({ title:"Limpar todos os dados locais?", message:"Alunos, turmas, cobranças e registros desta instalação serão removidos.", confirmLabel:"Limpar sistema", tone:"danger" }, () => { setDatabase(emptyDatabase()); setSelectedStudentId(""); notify("Sistema limpo.","warning"); })} onNotify={notify}/>} 
       </div>
     </main>
 
     {selectedStudent && !modal && <StudentDetailsPanel student={selectedStudent} classItem={classById.get(selectedStudent.classId)} database={database} onClose={() => setSelectedStudentId("")} onEdit={openStudentEdit} onPause={() => setModal("pause")} onResume={reactivateStudent} onNewInvoice={() => setModal("invoice")} onDocument={() => setPrintable({ type:"Declaração", student:selectedStudent })} onCertificate={() => { setCertificateStudentId(selectedStudent.id); setSelectedStudentId(""); }} onPay={(invoiceIds) => { setBatchMethod("dinheiro"); setBatchPayment({ studentId:selectedStudent.id, invoiceIds }); }} onCancelInvoice={cancelInvoice} onReopenInvoice={reopenPayment} onReceipt={(invoice) => { const payment = paymentForInvoice(database,invoice.id); if (payment) setPrintable({ type:"Recibo",student:selectedStudent,invoice,payment }); else notify("O pagamento histórico desta mensalidade não foi encontrado.","warning"); }}/>} 
 
-    {modal === "class" && <Modal title="Cadastrar turma" description="Defina curso, horário e duração. Cursos com prazo fixo terão o plano completo gerado na matrícula." onClose={() => setModal(null)}><form className="form-grid" onSubmit={addClass}><Field label="Curso" wide><input name="name" maxLength={160} placeholder="Ex.: Informática" autoFocus required/></Field><Field label="Nome da turma"><input name="groupName" maxLength={120} placeholder="Ex.: Segunda 08h"/></Field><Field label="Professor"><input name="teacher" maxLength={120} required/></Field><Field label="Sala"><input name="room" maxLength={80} placeholder="Sala 1"/></Field><div className="field wide"><span>Dias da semana</span><div className="weekday-picker">{WEEKDAYS.map((day) => <label key={day.id}><input type="checkbox" name={`day-${day.id}`}/><span>{day.label}</span></label>)}</div></div><Field label="Início"><input name="startTime" type="time" required/></Field><Field label="Fim"><input name="endTime" type="time" required/></Field><Field label="Mensalidade"><input name="monthlyFee" type="number" min="0" step="0.01" required/></Field><Field label="Carga horária"><input name="workloadHours" type="number" min="0" max="100000" step="1"/></Field><Field label="Duração do curso" wide><select value={classDurationType} onChange={(event) => setClassDurationType(event.target.value as "fixed"|"open_ended")}><option value="fixed">Duração definida</option><option value="open_ended">Sem previsão de término</option></select></Field>{classDurationType === "fixed" && <Field label="Quantidade de meses" wide><input name="durationMonths" type="number" min="1" max="240" step="1" placeholder="Ex.: 15" required/></Field>}<div className="form-note wide"><BookOpen size={19}/><span>{classDurationType === "fixed" ? "Ao matricular, todas as mensalidades serão criadas de uma vez." : "Será criada somente a mensalidade atual; as próximas serão geradas conforme o aluno continuar."}</span></div><FormActions onCancel={() => setModal(null)} submit="Cadastrar turma"/></form></Modal>}
+    {modal === "class" && <Modal title="Cadastrar turma" description="Cadastre o curso e informe até quando essa turma vai funcionar." onClose={() => setModal(null)}><form className="form-grid" onSubmit={addClass}><Field label="Curso" wide><input name="name" maxLength={160} placeholder="Ex.: Informática" autoFocus required/></Field><Field label="Nome da turma"><input name="groupName" maxLength={120} placeholder="Ex.: Segunda 08h"/></Field><Field label="Professor"><input name="teacher" maxLength={120} required/></Field><Field label="Sala"><input name="room" maxLength={80} placeholder="Sala 1"/></Field><div className="field wide"><span>Dias da semana</span><div className="weekday-picker">{WEEKDAYS.map((day) => <label key={day.id}><input type="checkbox" name={`day-${day.id}`}/><span>{day.label}</span></label>)}</div></div><Field label="Começa às"><input name="startTime" type="time" required/></Field><Field label="Termina às"><input name="endTime" type="time" required/></Field><Field label="Valor da mensalidade"><input name="monthlyFee" type="number" min="0" step="0.01" required/></Field><Field label="Carga horária"><input name="workloadHours" type="number" min="0" max="100000" step="1"/></Field><Field label="A turma tem data para terminar?" wide><select value={classDurationType} onChange={(event) => setClassDurationType(event.target.value as "fixed"|"open_ended")}><option value="fixed">Sim, tem data de conclusão</option><option value="open_ended">Não, ainda não tem data de término</option></select></Field>{classDurationType === "fixed" && <Field label="Data de conclusão da turma" wide><DateField name="endDate" min={localTodayIso()} max="2100-12-31" required/></Field>}<div className="form-note wide"><BookOpen size={19}/><span>{classDurationType === "fixed" ? "Ao matricular um aluno, o AulaFácil cria todas as mensalidades desde o início da matrícula até essa data. Nenhuma cobrança será criada depois da conclusão da turma." : "O AulaFácil cria a mensalidade atual e continua gerando as próximas enquanto o aluno permanecer ativo."}</span></div><FormActions onCancel={() => setModal(null)} submit="Cadastrar turma"/></form></Modal>}
 
     {modal === "student" && <Modal title="Matricular aluno" description="O AulaFácil criará o plano financeiro conforme a duração da turma escolhida." onClose={() => setModal(null)}><form className="form-grid" onSubmit={addStudent}><Field label="Nome completo" wide><input name="name" maxLength={160} autoFocus required/></Field><Field label="Data de nascimento"><DateField name="birthDate" min={MIN_REASONABLE_DATE} max={localTodayIso()} required onIsoChange={setStudentBirthDate}/></Field><Field label="CPF / documento"><input name="documentNumber" maxLength={40} inputMode="numeric" placeholder="CPF ou documento"/></Field><Field label="Turma"><select name="classId" required defaultValue={studentClassPreset}><option value="" disabled>Escolha a turma</option>{database.classes.map((item) => <option key={item.id} value={item.id}>{item.name}{item.groupName ? ` · ${item.groupName}` : ""} · {item.schedule}</option>)}</select></Field><Field label="Início da matrícula"><DateField name="enrollmentStartDate" min={MIN_REASONABLE_DATE} max="2100-12-31" initialIso={localTodayIso()} required/></Field><Field label="Vencimento"><select name="dueDay" required defaultValue={String(database.settings.finance.allowedDueDays[0] ?? 10)}>{database.settings.finance.allowedDueDays.map((day) => <option key={day} value={day}>Dia {day}</option>)}</select></Field><StudentExtraFieldsForm fields={database.settings.studentFields} birthDate={studentBirthDate}/><FormActions onCancel={() => setModal(null)} submit="Matricular aluno"/></form></Modal>}
 

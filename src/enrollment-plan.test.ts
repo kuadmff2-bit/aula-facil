@@ -38,6 +38,31 @@ describe("plano financeiro da matrícula", () => {
     expect(invoices.every((item) => item.planGenerated)).toBe(true);
   });
 
+  it("gera mensalidades somente até a data de conclusão da turma", () => {
+    const database = emptyDatabase();
+    database.settings.finance.allowedDueDays = [10, 31];
+    const klass = classItem({ durationMonths: null, endDate: "2027-11-15" });
+    const person = student(klass.id, { dueDay: 31, enrollmentStartDate: "2026-09-05" });
+    database.classes.push(klass);
+    database.students.push(person);
+
+    const invoices = buildFixedCoursePlan(database, person, klass);
+    expect(invoices).toHaveLength(15);
+    expect(invoices[0].reference).toBe("2026-09");
+    expect(invoices[14].reference).toBe("2027-11");
+    expect(invoices[14].dueDate).toBe("2027-11-15");
+    expect(invoices.every((item) => item.dueDate <= "2027-11-15")).toBe(true);
+  });
+
+  it("não gera cobrança quando a matrícula começa depois da conclusão", () => {
+    const database = emptyDatabase();
+    const klass = classItem({ durationMonths: null, endDate: "2026-09-10" });
+    const person = student(klass.id, { enrollmentStartDate: "2026-10-01" });
+    database.classes.push(klass);
+    database.students.push(person);
+    expect(buildFixedCoursePlan(database, person, klass)).toHaveLength(0);
+  });
+
   it("não duplica uma parcela já criada pelo plano", () => {
     const database = emptyDatabase();
     database.settings.finance.allowedDueDays = [10];
