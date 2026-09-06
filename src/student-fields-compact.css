@@ -1,0 +1,84 @@
+/* Compacta a criação de campos extras sem desperdiçar a área útil. */
+@media screen {
+  .settings-page form.form-grid:has(> .field.wide input[name="label"]) {
+    display: grid !important;
+    grid-template-columns: repeat(12, minmax(0, 1fr)) !important;
+    gap: 12px 14px !important;
+    align-items: end !important;
+    padding: 0 !important;
+  }
+
+  .settings-page form.form-grid:has(> .field.wide input[name="label"]) > .field {
+    min-width: 0;
+    margin: 0;
+  }
+
+  .settings-page form.form-grid:has(> .field.wide input[name="label"]) > .field:nth-child(1) {
+    grid-column: span 5 !important;
+  }
+
+  .settings-page form.form-grid:has(> .field.wide input[name="label"]) > .field:nth-child(2) {
+    grid-column: span 3 !important;
+  }
+
+  .settings-page form.form-grid:has(> .field.wide input[name="label"]) > .field:nth-child(3) {
+    grid-column: span 4 !important;
+  }
+
+  .settings-page form.form-grid:has(> .field.wide input[name="label"]) > .field:nth-child(4) {
+    grid-column: span 6 !important;
+  }
+
+  .settings-page form.form-grid:has(> .field.wide input[name="label"]) > .field:nth-child(5) {
+    grid-column: span 3 !important;
+    justify-content: end !important;
+  }
+
+  .settings-page form.form-grid:has(> .field.wide input[name="label"]) > .field:nth-child(5) > span:last-child {
+    min-height: 46px !important;
+    padding: 0 2px;
+  }
+
+  .settings-page form.form-grid:has(> .field.wide input[name="label"]) > .form-actions {
+    grid-column: span 3 !important;
+    width: 100%;
+    margin: 0 !important;
+    align-self: end;
+    justify-content: stretch;
+  }
+
+  .settings-page form.form-grid:has(> .field.wide input[name="label"]) > .form-actions .primary-button {
+    width: 100% !important;
+    min-height: 46px;
+    justify-content: center;
+  }
+}
+
+@container aulafacil-content (max-width: 980px) {
+  .settings-page form.form-grid:has(> .field.wide input[name="label"]) {
+    grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+  }
+
+  .settings-page form.form-grid:has(> .field.wide input[name="label"]) > .field:nth-child(1),
+  .settings-page form.form-grid:has(> .field.wide input[name="label"]) > .field:nth-child(4) {
+    grid-column: 1 / -1 !important;
+  }
+
+  .settings-page form.form-grid:has(> .field.wide input[name="label"]) > .field:nth-child(2),
+  .settings-page form.form-grid:has(> .field.wide input[name="label"]) > .field:nth-child(3),
+  .settings-page form.form-grid:has(> .field.wide input[name="label"]) > .field:nth-child(5),
+  .settings-page form.form-grid:has(> .field.wide input[name="label"]) > .form-actions {
+    grid-column: span 1 !important;
+  }
+}
+
+@container aulafacil-content (max-width: 620px) {
+  .settings-page form.form-grid:has(> .field.wide input[name="label"]) {
+    grid-template-columns: minmax(0, 1fr) !important;
+  }
+
+  .settings-page form.form-grid:has(> .field.wide input[name="label"]) > .field,
+  .settings-page form.form-grid:has(> .field.wide input[name="label"]) > .form-actions {
+    grid-column: 1 !important;
+  }
+}
