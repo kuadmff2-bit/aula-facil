@@ -1,1 +1,0 @@
-A integração só deve ocorrer depois do quality gate oficial ficar verde.
