@@ -1,0 +1,54 @@
+name: Validar abertura nativa do WhatsApp
+
+on:
+  push:
+    branches:
+      - release/ux-final-2026-09-05
+    paths:
+      - .github/workflows/apply-native-contact.yml
+
+permissions:
+  contents: write
+
+jobs:
+  apply:
+    runs-on: windows-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          ref: release/ux-final-2026-09-05
+
+      - name: Configurar Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Instalar dependências
+        run: npm ci
+
+      - name: Aplicar alterações
+        run: node scripts/apply-native-contact.mjs
+
+      - name: Testes
+        run: npm test
+
+      - name: Frontend
+        run: npm run build
+
+      - name: Gerar ícones
+        run: npm run desktop:icons
+
+      - name: Validar Tauri
+        run: cargo check --manifest-path src-tauri/Cargo.toml
+
+      - name: Publicar alterações validadas
+        shell: bash
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add src-tauri/src/lib.rs src/student-contact.ts src/student-details-panel.tsx
+          git diff --cached --quiet && exit 0
+          git commit -m "Abrir WhatsApp pelo Windows com segurança"
+          git push origin HEAD:release/ux-final-2026-09-05
