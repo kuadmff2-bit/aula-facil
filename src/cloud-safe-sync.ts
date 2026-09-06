@@ -1,5 +1,6 @@
 import { cloud, downloadCloudDatabase, getCloudDataSummary, seedEmptyCloudFromLocal } from "./cloud";
 import { hydrateProfessionalCloudFields } from "./cloud-professional-fields";
+import { buildFixedCoursePlan, ensureContinuousInvoicesDue } from "./enrollment-plan";
 import { ensureUuidDatabase, type SchoolDatabase } from "./model";
 
 export type CloudSyncStatus = "not_linked" | "synced" | "local_changed" | "cloud_changed" | "conflict";
@@ -47,6 +48,21 @@ function isAdmin(role: CloudSyncRole) { return role === "owner" || role === "adm
 function canWriteFinance(role: CloudSyncRole) { return isAdmin(role) || role === "finance"; }
 function canWriteAcademicCore(role: CloudSyncRole) { return isAdmin(role) || role === "teacher" || role === "staff"; }
 
+function repairMissingEnrollmentInvoices(database: SchoolDatabase) {
+  let created = ensureContinuousInvoicesDue(database);
+  for (const student of database.students) {
+    if ((student.enrollmentStatus ?? (student.active ? "active" : "paused")) !== "active" || !student.active) continue;
+    const classItem = database.classes.find((item) => item.id === student.classId);
+    if (!classItem || (classItem.durationType ?? "open_ended") !== "fixed") continue;
+    const plan = buildFixedCoursePlan(database, student, classItem);
+    if (!plan.length) continue;
+    database.invoices.push(...plan);
+    created += plan.length;
+  }
+  if (created) database.updatedAt = new Date().toISOString();
+  return created;
+}
+
 export async function getCloudRevision(schoolId: string) {
   const { data, error } = await cloud.from("school_sync_state").select("revision").eq("school_id", schoolId).single();
   if (error) throw new Error(`Não foi possível conferir a revisão da nuvem: ${error.message}`);
@@ -84,6 +100,7 @@ async function softDeleteMissing(table: string, schoolId: string, keepIds: strin
 
 async function pushSnapshot(schoolId: string, source: SchoolDatabase, role: CloudSyncRole) {
   const database = ensureUuidDatabase(source);
+  if (canWriteFinance(role)) repairMissingEnrollmentInvoices(database);
   const institution = database.settings.institution;
   const finance = database.settings.finance;
 
@@ -157,6 +174,8 @@ export async function safePullFromCloud(schoolId: string, localAppearance: Schoo
   const role = await getCloudSyncRole(schoolId);
   const base = await downloadCloudDatabase(schoolId, localAppearance);
   const database = ensureUuidDatabase(await hydrateProfessionalCloudFields(schoolId, base));
+  const repaired = canWriteFinance(role) ? repairMissingEnrollmentInvoices(database) : 0;
+  if (repaired) await pushSnapshot(schoolId, database, role);
   writeBaseline(schoolId, await getCloudRevision(schoolId), database, role);
   return database;
 }

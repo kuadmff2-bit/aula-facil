@@ -1,4 +1,4 @@
-export type View = "dashboard" | "students" | "classes" | "attendance" | "finance" | "notices" | "backup" | "settings";
+export type View = "dashboard" | "students" | "classes" | "attendance" | "finance" | "notices" | "backup" | "cloud" | "settings";
 
 export type StudentFieldType = "text" | "tel" | "email" | "date" | "number" | "textarea";
 export type StudentFieldVisibility = "always" | "minor" | "adult";

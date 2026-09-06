@@ -155,3 +155,18 @@
 }
 .pdf-export-root.receipt-two-copies>.receipt-cut-line i{display:none!important}
 .pdf-export-root.receipt-two-copies>.receipt-cut-line span{position:absolute;left:18px;top:50%;transform:translateY(-50%);padding:0 5px;background:#fff;font-size:10px;line-height:1}
+
+/* QA-PRINT-COLOR-0.4.1 */
+@media print {
+  html.aulafacil-printing #aulafacil-print-stage,
+  html.aulafacil-printing #aulafacil-print-stage * {
+    -webkit-print-color-adjust: exact !important;
+    print-color-adjust: exact !important;
+    color-adjust: exact !important;
+  }
+  html.aulafacil-printing #aulafacil-print-stage > .professional-certificate,
+  html.aulafacil-printing #aulafacil-print-stage > .professional-certificate * {
+    -webkit-print-color-adjust: exact !important;
+    print-color-adjust: exact !important;
+  }
+}

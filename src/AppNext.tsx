@@ -10,6 +10,7 @@ import {
   CircleDollarSign,
   ClipboardCheck,
   Clock3,
+  Cloud,
   DatabaseBackup,
   FileCheck2,
   FileText,
@@ -92,6 +93,7 @@ const navItems = [
   { id: "finance" as View, label: "Financeiro", icon: WalletCards },
   { id: "notices" as View, label: "Avisos", icon: Megaphone },
   { id: "backup" as View, label: "Backup", icon: DatabaseBackup },
+  { id: "cloud" as View, label: "Conta e nuvem", icon: Cloud },
   { id: "settings" as View, label: "Configurações", icon: Settings2 },
 ];
 
@@ -103,6 +105,7 @@ const viewCopy: Record<View, { title: string; description: string }> = {
   finance: { title: "Financeiro", description: "Acompanhe mensalidades, pagamentos e atrasos." },
   notices: { title: "Avisos", description: "Organize comunicados para alunos e responsáveis." },
   backup: { title: "Proteção dos dados", description: "Faça cópias e restaure o sistema com segurança." },
+  cloud: { title: "Conta e nuvem", description: "Login, instituição, sincronização e estado deste dispositivo." },
   settings: { title: "Personalização", description: "Adapte o AulaFácil à realidade da sua instituição." },
 };
 
@@ -492,7 +495,7 @@ export default function AppNext() {
     try {
       if (schoolId) {
         const syncStatus = await getCloudSyncStatus(schoolId, database);
-        if (syncStatus !== "synced") throw new Error("Sincronize este computador antes de receber várias mensalidades.");
+        if (syncStatus !== "synced") throw new Error("Abra “Conta e nuvem” e sincronize este computador antes de receber várias mensalidades.");
         for (const invoice of invoices) await confirmManualInvoicePayment({ schoolId, invoiceId: invoice.id, method: batchMethod, discount: 0, notes: invoices.length > 1 ? "Pagamento em lote pelo cadastro do aluno" : undefined });
         setDatabase(await safePullFromCloud(schoolId, database.settings.appearance));
       } else {
@@ -614,7 +617,8 @@ export default function AppNext() {
         {view === "attendance" && <ClassRosterBoard database={database} date={attendanceDate} onDateChange={setAttendanceDate} onSaveAttendance={saveClassAttendance}/>} 
         {view === "finance" && <FinanceUltimate database={database} onChange={setDatabase} onReceipt={(student,invoice,payment) => setPrintable({ type:"Recibo", student, invoice, payment })}/>} 
         {view === "notices" && <NoticesCenter database={database} onChange={setDatabase} notify={notify}/>} 
-        {view === "settings" && <section className="stack settings-page"><InstitutionSettingsPanel value={database.settings.institution} onChange={(institution) => updateDatabase((draft) => { draft.settings.institution = institution; })}/><AppearanceSettings value={database.settings.appearance} onChange={(appearance) => updateDatabase((draft) => { draft.settings.appearance = appearance; })}/><StudentFieldsSettings fields={database.settings.studentFields} onChange={(fields) => updateDatabase((draft) => { draft.settings.studentFields = fields; })}/><FinanceSettingsPanel institution={database.settings.institution} value={database.settings.finance} onChange={(finance) => updateDatabase((draft) => { draft.settings.finance = finance; })}/><DocumentSettingsPanel institution={database.settings.institution} receipt={database.settings.receipt} certificate={database.settings.certificate} onReceiptChange={(receipt) => updateDatabase((draft) => { draft.settings.receipt = receipt; })} onCertificateChange={(certificate) => updateDatabase((draft) => { draft.settings.certificate = certificate; })}/><CloudAccountPanel database={database} onReplaceDatabase={setDatabase}/><CloudSyncPanel database={database} onReplaceDatabase={setDatabase}/><PaymentConnectionsPanel/><MessageAutomationsPanel/></section>}
+        {view === "cloud" && <section className="stack cloud-hub-page"><CloudAccountPanel database={database} onReplaceDatabase={setDatabase}/><CloudSyncPanel database={database} onReplaceDatabase={setDatabase}/></section>}
+        {view === "settings" && <section className="stack settings-page"><InstitutionSettingsPanel value={database.settings.institution} onChange={(institution) => updateDatabase((draft) => { draft.settings.institution = institution; })}/><AppearanceSettings value={database.settings.appearance} onChange={(appearance) => updateDatabase((draft) => { draft.settings.appearance = appearance; })}/><StudentFieldsSettings fields={database.settings.studentFields} onChange={(fields) => updateDatabase((draft) => { draft.settings.studentFields = fields; })}/><FinanceSettingsPanel institution={database.settings.institution} value={database.settings.finance} onChange={(finance) => updateDatabase((draft) => { draft.settings.finance = finance; })}/><DocumentSettingsPanel institution={database.settings.institution} receipt={database.settings.receipt} certificate={database.settings.certificate} onReceiptChange={(receipt) => updateDatabase((draft) => { draft.settings.receipt = receipt; })} onCertificateChange={(certificate) => updateDatabase((draft) => { draft.settings.certificate = certificate; })}/><PaymentConnectionsPanel/><MessageAutomationsPanel/></section>}
         {view === "backup" && <BackupPanel database={database} onRestoreCandidate={(restored) => confirmAction({ title:"Restaurar este backup?", message:"Os dados locais atuais serão substituídos pelo arquivo validado.", confirmLabel:"Restaurar backup", tone:"warning" }, () => { setDatabase(restored); setSelectedStudentId(""); notify("Backup restaurado."); })} onReset={() => confirmAction({ title:"Limpar todos os dados locais?", message:"Alunos, turmas, cobranças e registros desta instalação serão removidos.", confirmLabel:"Limpar sistema", tone:"danger" }, () => { setDatabase(emptyDatabase()); setSelectedStudentId(""); notify("Sistema limpo.","warning"); })} onNotify={notify}/>} 
       </div>
     </main>

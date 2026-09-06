@@ -91,6 +91,7 @@ const viewCopy: Record<View, { title: string; description: string }> = {
   finance: { title: "Financeiro", description: "Acompanhe cobranças, atrasos e recebimentos." },
   notices: { title: "Avisos", description: "Organize comunicados para alunos e responsáveis." },
   backup: { title: "Proteção dos dados", description: "Faça cópias e restaure o sistema com segurança." },
+  cloud: { title: "Conta e nuvem", description: "Login, instituição, sincronização e estado deste dispositivo." },
   settings: { title: "Personalização", description: "Adapte o AulaFácil à realidade da sua instituição." },
 };
 
