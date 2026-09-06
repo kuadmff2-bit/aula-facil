@@ -585,7 +585,7 @@ export default function AppNext() {
       {view !== "dashboard" ? <button className="brand" onClick={() => changeView("dashboard")} aria-label="Ir para o início"><SchoolBrand institution={database.settings.institution}/></button> : <div className="dashboard-sidebar-placeholder" aria-hidden="true"/>}
       <div className="nav-label">GESTÃO</div>
       <nav className="main-nav">{navItems.map((item) => <button key={item.id} className={view === item.id ? "active" : ""} onClick={() => changeView(item.id)}><item.icon size={20}/><span>{item.label}</span>{item.id === "finance" && overdueInvoices.length > 0 && <b>{overdueInvoices.length}</b>}</button>)}</nav>
-      <div className="sidebar-foot"><div className="local-status"><HardDrive size={18}/><span><strong>Cópia local protegida</strong><small>Criptografada no Windows</small></span><CheckCircle2 size={17}/></div><div className="version">AulaFácil Desktop <span>v0.4.0</span></div></div>
+      <div className="sidebar-foot"><div className="local-status"><HardDrive size={18}/><span><strong>Cópia local protegida</strong><small>Criptografada no Windows</small></span><CheckCircle2 size={17}/></div><div className="version">AulaFácil Desktop <span>v0.4.3</span></div></div>
     </aside>
     <button className="mobile-menu-scrim" aria-label="Fechar menu" onClick={() => setMobileMenuOpen(false)}/>
 
