@@ -144,13 +144,39 @@ async function createSession(id, forceRestart = false) {
   return state;
 }
 
+function serializedId(value) {
+  if (!value) return "";
+  if (typeof value === "string") return value;
+  if (typeof value?._serialized === "string") return value._serialized;
+  return "";
+}
+
+async function resolveWhatsAppChatId(client, to) {
+  const numberId = await client.getNumberId(to);
+  let chatId = serializedId(numberId);
+  if (!chatId) throw new Error("número não registrado no WhatsApp");
+
+  // WhatsApp passou a usar LIDs em várias contas. Resolver o LID antes do envio
+  // evita o erro "No LID for user" ao forçar diretamente numero@c.us.
+  if (typeof client.getContactLidAndPhone === "function") {
+    try {
+      const mapping = await client.getContactLidAndPhone(chatId);
+      const first = Array.isArray(mapping) ? mapping[0] : mapping;
+      if (first?.lid) chatId = String(first.lid);
+      else if (first?.pn) chatId = String(first.pn);
+    } catch (error) {
+      console.warn("Não foi possível resolver LID; tentando o ID oficial retornado pelo WhatsApp.", String(error?.message || error));
+    }
+  }
+
+  return chatId;
+}
+
 async function enqueueSend(state, to, message) {
   state.queue = state.queue.then(async () => {
     const wait = Math.max(0, MIN_SEND_INTERVAL_MS - (Date.now() - state.lastSendAt));
     if (wait) await new Promise((resolve) => setTimeout(resolve, wait));
-    const chatId = `${to}@c.us`;
-    const registered = await state.client.isRegisteredUser(chatId);
-    if (!registered) throw new Error("número não registrado no WhatsApp");
+    const chatId = await resolveWhatsAppChatId(state.client, to);
     const result = await state.client.sendMessage(chatId, message);
     state.lastSendAt = Date.now();
     return result?.id?._serialized || "";
