@@ -1,0 +1,53 @@
+name: Preparar versão 0.3.1
+
+on:
+  push:
+    branches:
+      - release/ux-final-2026-09-05
+    paths:
+      - .github/workflows/bump-candidate-version.yml
+
+permissions:
+  contents: write
+
+jobs:
+  version:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: release/ux-final-2026-09-05
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - uses: dtolnay/rust-toolchain@stable
+      - run: npm ci
+      - name: Atualizar versões
+        shell: pwsh
+        run: |
+          npm version 0.3.1 --no-git-tag-version --ignore-scripts
+          $cargo = Get-Content src-tauri/Cargo.toml -Raw
+          $cargo = $cargo -replace 'version = "0\.3\.0"', 'version = "0.3.1"'
+          Set-Content src-tauri/Cargo.toml $cargo -NoNewline
+          $tauri = Get-Content src-tauri/tauri.conf.json -Raw
+          $tauri = $tauri -replace '"version": "0\.3\.0"', '"version": "0.3.1"'
+          Set-Content src-tauri/tauri.conf.json $tauri -NoNewline
+      - name: Atualizar lockfile Rust e validar nativo
+        run: |
+          npm run desktop:icons
+          cargo check --manifest-path src-tauri/Cargo.toml
+      - run: npm test
+      - run: npm run build
+      - name: Validar estrutura final
+        run: node scripts/quality-check.mjs
+      - name: Remover workflow temporário e publicar versão
+        shell: bash
+        run: |
+          rm -f .github/workflows/bump-candidate-version.yml
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add package.json package-lock.json src-tauri/Cargo.toml src-tauri/Cargo.lock src-tauri/tauri.conf.json .github/workflows/bump-candidate-version.yml
+          git diff --cached --quiet && exit 0
+          git commit -m "Preparar AulaFácil 0.3.1"
+          git push origin HEAD:release/ux-final-2026-09-05
