@@ -134,11 +134,12 @@ async function createSession(id, forceRestart = false) {
     state.updatedAt = new Date().toISOString();
   });
   // Não há listener de mensagens recebidas: o Robô AulaFácil não atende nem responde usuários.
-  client.initialize().catch((error) => {
+  client.initialize().catch(async (error) => {
     state.status = "error";
     state.error = String(error?.message || "Falha ao abrir o WhatsApp no servidor.");
     state.updatedAt = new Date().toISOString();
     console.error("Falha ao iniciar sessão", id, state.error);
+    await destroySession(state);
   });
   return state;
 }
