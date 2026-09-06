@@ -1,0 +1,34 @@
+name: Validar migração legada
+
+on:
+  push:
+    branches:
+      - test/legacy-migration-0.3.1
+
+permissions:
+  contents: read
+
+jobs:
+  migration:
+    runs-on: windows-latest
+    steps:
+      - name: Baixar código
+        uses: actions/checkout@v4
+
+      - name: Preparar Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Instalar dependências pelo lockfile
+        run: npm ci
+
+      - name: Executar teste realista de migração
+        run: npx vitest run src/legacy-migration.test.ts
+
+      - name: Executar toda a suíte automática
+        run: npm test
+
+      - name: Validar TypeScript e frontend
+        run: npm run build
