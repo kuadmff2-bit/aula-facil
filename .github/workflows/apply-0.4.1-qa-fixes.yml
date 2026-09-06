@@ -1,0 +1,64 @@
+name: Aplicar ajustes QA AulaFácil 0.4.1
+
+on:
+  push:
+    branches: [fix/0.4.1-qa]
+    paths:
+      - "scripts/apply-0.4.1-qa-fixes.py"
+
+permissions:
+  contents: write
+
+concurrency:
+  group: integrate-aulafacil-0-4-1-qa
+  cancel-in-progress: true
+
+jobs:
+  integrate:
+    runs-on: windows-latest
+    steps:
+      - name: Baixar branch QA
+        uses: actions/checkout@v4
+        with:
+          ref: fix/0.4.1-qa
+          fetch-depth: 0
+
+      - name: Preparar Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Preparar Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Aplicar correções encontradas no teste real
+        run: python scripts/apply-0.4.1-qa-fixes.py
+
+      - name: Instalar dependências
+        run: npm ci --no-audit
+
+      - name: Validar estrutura
+        run: node scripts/quality-check.mjs
+
+      - name: Executar testes
+        run: npm test
+
+      - name: Validar TypeScript e frontend
+        run: npm run build
+
+      - name: Validar Tauri
+        run: cargo check --locked --manifest-path src-tauri/Cargo.toml
+
+      - name: Publicar alterações somente se tudo passou
+        shell: bash
+        run: |
+          if git diff --quiet; then
+            echo "Nenhuma alteração pendente."
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A
+          git commit -m "fix: corrigir QA real da 0.4.0"
+          git push origin HEAD:fix/0.4.1-qa
