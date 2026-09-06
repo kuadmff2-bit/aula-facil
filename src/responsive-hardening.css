@@ -1,0 +1,341 @@
+/*
+ * AulaFácil — proteção global de responsividade.
+ *
+ * Esta folha é carregada por último de propósito. Ela impede que telas internas
+ * usem a largura total da janela como referência quando a barra lateral já
+ * consumiu parte desse espaço. A prioridade aqui é nunca esconder conteúdo:
+ * componentes devem encolher, quebrar linha ou reorganizar colunas.
+ */
+
+@media screen {
+  html,
+  body,
+  #root {
+    max-width: 100%;
+    min-width: 0 !important;
+    overflow-x: auto !important;
+  }
+
+  .app-shell,
+  .workspace,
+  .page-content {
+    min-width: 0 !important;
+    max-width: 100% !important;
+    overflow-x: visible !important;
+  }
+
+  /* Usa a largura REAL da área útil, e não apenas a largura da janela. */
+  .page-content {
+    container-name: aulafacil-content;
+    container-type: inline-size;
+  }
+
+  /* Grid/flex nunca pode impor uma largura mínima maior que o espaço disponível. */
+  .page-content *,
+  .modal *,
+  .details-panel *,
+  .student-details-next *,
+  .document-dialog * {
+    min-inline-size: 0;
+  }
+
+  .page-content :where(
+    .card,
+    .settings-block,
+    .professional-settings-card,
+    .cloud-account-card,
+    .cloud-sync-card,
+    .payment-connections-card,
+    .message-automation-card,
+    .finance-ultimate,
+    .debt-negotiation-panel,
+    .debt-panel,
+    .certificate-manager,
+    .backup-panel,
+    .notice-compose,
+    .notice-history,
+    .table-card,
+    .roster-sheet
+  ) {
+    width: 100%;
+    max-width: 100%;
+    min-width: 0;
+  }
+
+  /* Texto nunca deve empurrar a caixa para fora da tela. */
+  .page-content :where(
+    h1, h2, h3, h4, h5, h6,
+    p, span, strong, small, label, b, em, code,
+    td, th, li
+  ),
+  .modal :where(h1, h2, h3, h4, p, span, strong, small, label, b),
+  .details-panel :where(h1, h2, h3, h4, p, span, strong, small, label, b),
+  .student-details-next :where(h1, h2, h3, h4, p, span, strong, small, label, b) {
+    max-width: 100%;
+    overflow-wrap: anywhere;
+    word-break: normal;
+  }
+
+  /* Botões longos podem quebrar em duas linhas em vez de desaparecer. */
+  .page-content button,
+  .modal button,
+  .details-panel button,
+  .student-details-next button,
+  .document-dialog button {
+    max-width: 100%;
+    min-width: 0;
+    height: auto;
+    white-space: normal !important;
+    overflow-wrap: anywhere;
+    line-height: 1.25;
+  }
+
+  .page-content :where(input, select, textarea),
+  .modal :where(input, select, textarea),
+  .details-panel :where(input, select, textarea),
+  .student-details-next :where(input, select, textarea) {
+    width: 100%;
+    max-width: 100%;
+    min-width: 0;
+  }
+
+  /* Filhos de grids/flex conhecidos podem encolher de verdade. */
+  .page-content :where(
+    .form-grid,
+    .settings-form-grid,
+    .message-form-grid,
+    .payment-form-grid,
+    .billing-grid,
+    .finance-metrics,
+    .finance-ultimate-metrics,
+    .student-metrics,
+    .metric-grid,
+    .dashboard-grid,
+    .dashboard-home-grid,
+    .class-grid,
+    .notice-grid,
+    .notice-compose-grid,
+    .record-list,
+    .backup-grid,
+    .debt-form-grid,
+    .debt-preview,
+    .cloud-sync-explainer,
+    .cloud-sync-passwords,
+    .robot-qr,
+    .finance-customizer-layout,
+    .document-customizer-layout
+  ) > * {
+    min-width: 0;
+    max-width: 100%;
+  }
+
+  /* Grupos de ações sempre se reorganizam antes de estourar. */
+  .page-content :where(
+    .top-actions,
+    .details-actions,
+    .settings-inline-actions,
+    .message-actions,
+    .payment-connection-actions,
+    .cloud-sync-actions,
+    .cloud-sync-recovery-actions,
+    .debt-agreement-actions,
+    .document-toolbar,
+    .robot-connect-box
+  ) {
+    min-width: 0;
+    max-width: 100%;
+    flex-wrap: wrap;
+  }
+
+  .cloud-sync-actions > button,
+  .cloud-sync-recovery-actions > button,
+  .details-actions > button,
+  .settings-inline-actions > button,
+  .message-actions > button,
+  .payment-connection-actions > button,
+  .debt-agreement-actions > button {
+    flex: 0 1 auto;
+  }
+
+  /* Não corte modais/painéis: se algo ainda ficar grande, ele rola internamente. */
+  .modal,
+  .document-dialog,
+  .details-panel,
+  .student-details-next {
+    min-width: 0 !important;
+    max-width: min(100%, calc(100dvw - 24px)) !important;
+    max-height: calc(100dvh - 24px);
+    overflow: auto;
+  }
+
+  /* Controles que antes usavam max-content não podem ultrapassar o painel. */
+  .roster-scope,
+  .class-scope-toggle,
+  .preview-switch {
+    max-width: 100%;
+  }
+}
+
+/*
+ * A partir daqui os breakpoints são da área de conteúdo. Isso resolve o caso
+ * clássico: janela de 880–1200 px + sidebar = conteúdo muito menor que o viewport.
+ */
+@container aulafacil-content (max-width: 1050px) {
+  .dashboard-home-grid,
+  .finance-customizer-layout,
+  .document-customizer-layout {
+    grid-template-columns: minmax(0, 1fr) !important;
+  }
+
+  .cloud-sync-explainer {
+    grid-template-columns: minmax(0, 1fr) !important;
+  }
+
+  .dashboard-grid,
+  .dashboard-grid.wide-left {
+    grid-template-columns: minmax(0, 1fr) !important;
+  }
+
+  .metric-grid,
+  .finance-ultimate-metrics,
+  .finance-metrics,
+  .student-metrics {
+    grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+  }
+
+  .debt-form-grid,
+  .payment-form-grid,
+  .message-form-grid,
+  .settings-form-grid,
+  .billing-grid,
+  .notice-compose-grid {
+    grid-template-columns: minmax(0, 1fr) !important;
+  }
+
+  .settings-span-2,
+  .message-span-2,
+  .notice-compose-grid .wide,
+  .wide {
+    grid-column: auto !important;
+  }
+
+  .debt-preview {
+    grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+  }
+
+  .debt-list-head,
+  .debt-heading,
+  .cloud-sync-heading,
+  .payment-connections-heading,
+  .message-heading,
+  .cloud-account-heading,
+  .professional-settings-heading,
+  .page-heading {
+    min-width: 0;
+    max-width: 100%;
+  }
+
+  .debt-list-head {
+    align-items: stretch !important;
+    flex-direction: column !important;
+  }
+
+  .debt-list-head label {
+    min-width: 0 !important;
+    width: 100%;
+  }
+
+  .document-customizer-preview,
+  .finance-customizer-preview {
+    position: static !important;
+  }
+}
+
+@container aulafacil-content (max-width: 760px) {
+  .metric-grid,
+  .finance-ultimate-metrics,
+  .finance-metrics,
+  .student-metrics,
+  .class-grid,
+  .info-grid,
+  .backup-grid,
+  .notice-grid,
+  .record-list,
+  .debt-preview,
+  .cloud-sync-passwords,
+  .robot-qr {
+    grid-template-columns: minmax(0, 1fr) !important;
+  }
+
+  .cloud-sync-heading,
+  .payment-connections-heading,
+  .message-heading,
+  .cloud-account-heading,
+  .professional-settings-heading,
+  .page-heading,
+  .debt-heading,
+  .debt-agreement-main,
+  .data-summary,
+  .danger-zone,
+  .institution-logo-row {
+    align-items: stretch !important;
+    flex-direction: column !important;
+  }
+
+  .cloud-sync-actions,
+  .cloud-sync-recovery-actions,
+  .details-actions,
+  .settings-inline-actions,
+  .message-actions,
+  .payment-connection-actions,
+  .debt-agreement-actions {
+    display: grid !important;
+    grid-template-columns: minmax(0, 1fr) !important;
+    width: 100%;
+  }
+
+  .cloud-sync-actions > button,
+  .cloud-sync-recovery-actions > button,
+  .details-actions > button,
+  .settings-inline-actions > button,
+  .message-actions > button,
+  .payment-connection-actions > button,
+  .debt-agreement-actions > button {
+    width: 100% !important;
+  }
+
+  .debt-agreement-main > div:last-child {
+    text-align: left !important;
+    justify-items: start !important;
+  }
+
+  .roster-scope {
+    width: 100% !important;
+    grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+  }
+}
+
+@container aulafacil-content (max-width: 560px) {
+  .page-content :where(.card, .professional-settings-card) {
+    border-radius: 14px;
+  }
+
+  .debt-invoices label,
+  .debt-entry,
+  .debt-installments > div,
+  .notice-history-item {
+    grid-template-columns: minmax(0, 1fr) !important;
+  }
+
+  .debt-invoices label > *,
+  .debt-entry > *,
+  .debt-installments > div > *,
+  .notice-history-item > * {
+    grid-column: auto !important;
+    grid-row: auto !important;
+  }
+
+  .roster-scope {
+    grid-template-columns: minmax(0, 1fr) !important;
+  }
+}
