@@ -3,6 +3,7 @@ import {
   getCloudSyncRole,
   getCloudSyncStatus,
   reconcileCloud,
+  replaceCloudWithLocal,
   safePullFromCloud,
   type CloudSyncRole,
   type CloudSyncStatus,
@@ -58,6 +59,7 @@ export function CloudSyncPanel({ database, onReplaceDatabase }: Props) {
   const [recoveryPassword, setRecoveryPassword] = useState("");
   const [recoveryConfirmation, setRecoveryConfirmation] = useState("");
   const [recoveryArmed, setRecoveryArmed] = useState(false);
+  const [localWinsArmed, setLocalWinsArmed] = useState(false);
 
   const refresh = async (targetSchoolId = schoolId) => {
     if (!targetSchoolId) {
@@ -114,6 +116,7 @@ export function CloudSyncPanel({ database, onReplaceDatabase }: Props) {
       setRecoveryArmed(false);
       setRecoveryPassword("");
       setRecoveryConfirmation("");
+      setLocalWinsArmed(false);
     }
   }, [status]);
 
@@ -157,6 +160,16 @@ export function CloudSyncPanel({ database, onReplaceDatabase }: Props) {
     setMessage({ tone: "success", text: "A nuvem foi recuperada. A cópia local anterior foi salva em um .afbackup criptografado." });
   });
 
+  const resolveWithLocal = () => void run(async () => {
+    if (!schoolId) throw new Error("Selecione uma instituição no AulaFácil Cloud.");
+    const uploaded = await replaceCloudWithLocal(schoolId, database);
+    onReplaceDatabase(uploaded);
+    setRole(await getCloudSyncRole(schoolId));
+    setStatus("synced");
+    setLocalWinsArmed(false);
+    setMessage({ tone: "success", text: "Conflito resolvido usando os dados deste computador. A nuvem agora está alinhada com esta cópia." });
+  });
+
   const state = schoolId
     ? copy[status]
     : { title: "Selecione a instituição do Cloud", text: "A conta pode estar conectada, mas este computador ainda não tem uma instituição selecionada para sincronizar." };
@@ -192,7 +205,10 @@ export function CloudSyncPanel({ database, onReplaceDatabase }: Props) {
           {busy ? "Sincronizando..." : "Sincronizar agora"}
         </button>
         {needsRecovery && !recoveryArmed && (
-          <button className="secondary-button" disabled={busy} onClick={() => setRecoveryArmed(true)}>Preparar recuperação segura</button>
+          <button className="secondary-button" disabled={busy} onClick={() => setRecoveryArmed(true)}>Usar dados da nuvem</button>
+        )}
+        {status === "conflict" && !localWinsArmed && (
+          <button className="secondary-button" disabled={busy} onClick={() => setLocalWinsArmed(true)}>Usar dados deste computador</button>
         )}
         <button className="secondary-button" disabled={busy || !schoolId} onClick={() => void refresh()}>Verificar novamente</button>
       </div>
@@ -212,8 +228,19 @@ export function CloudSyncPanel({ database, onReplaceDatabase }: Props) {
         </div>
       )}
 
+      {status === "conflict" && localWinsArmed && (
+        <div className="cloud-sync-recovery">
+          <strong>Usar este computador como a cópia correta?</strong>
+          <span>Esta opção envia os dados atuais deste computador para a nuvem e resolve o conflito. Use somente se esta for a cópia que você deseja manter.</span>
+          <div className="cloud-sync-recovery-actions">
+            <button className="secondary-button" disabled={busy} onClick={() => setLocalWinsArmed(false)}>Cancelar</button>
+            <button className="danger-button" disabled={busy} onClick={resolveWithLocal}>Confirmar e alinhar a nuvem</button>
+          </div>
+        </div>
+      )}
+
       {status === "conflict" && (
-        <div className="cloud-sync-warning">Para evitar perda de dados, o AulaFácil não faz merge automático de um conflito. A recuperação exige um backup local criptografado antes de substituir a cópia deste computador.</div>
+        <div className="cloud-sync-warning">O AulaFácil não escolhe um lado sozinho. Você pode manter a nuvem ou, se este computador tiver a cópia correta, alinhar a nuvem com os dados locais.</div>
       )}
     </section>
   );

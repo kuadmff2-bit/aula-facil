@@ -46,11 +46,21 @@ function phone(value) {
 }
 
 function publicState(state) {
-  return { status: state.status, qr: state.qr || null, phone: state.phone || null, updatedAt: state.updatedAt };
+  return { status: state.status, qr: state.qr || null, phone: state.phone || null, sessionError: state.error || null, updatedAt: state.updatedAt };
 }
 
-async function createSession(id) {
-  if (sessions.has(id)) return sessions.get(id);
+async function destroySession(state) {
+  if (!state?.client) return;
+  await state.client.destroy().catch(() => undefined);
+}
+
+async function createSession(id, forceRestart = false) {
+  const existing = sessions.get(id);
+  if (existing && !forceRestart) return existing;
+  if (existing && forceRestart) {
+    await destroySession(existing);
+    sessions.delete(id);
+  }
   if (sessions.size >= MAX_SESSIONS) throw new Error("limite de sessões atingido");
   const state = {
     id,
@@ -61,13 +71,30 @@ async function createSession(id) {
     queue: Promise.resolve(),
     lastSendAt: 0,
     client: null,
+    error: null,
   };
   const client = new Client({
     authStrategy: new LocalAuth({ clientId: id, dataPath: DATA_PATH }),
+    authTimeoutMs: 120000,
+    qrMaxRetries: 8,
     puppeteer: {
       headless: true,
       executablePath: process.env.PUPPETEER_EXECUTABLE_PATH || undefined,
-      args: ["--no-sandbox", "--disable-setuid-sandbox", "--disable-dev-shm-usage", "--disable-gpu"],
+      protocolTimeout: 120000,
+      timeout: 120000,
+      args: [
+        "--no-sandbox",
+        "--disable-setuid-sandbox",
+        "--disable-dev-shm-usage",
+        "--disable-gpu",
+        "--disable-extensions",
+        "--disable-background-networking",
+        "--disable-default-apps",
+        "--disable-sync",
+        "--metrics-recording-only",
+        "--no-first-run",
+        "--no-default-browser-check",
+      ],
     },
   });
   state.client = client;
@@ -76,36 +103,42 @@ async function createSession(id) {
   client.on("qr", async (qr) => {
     state.status = "qr";
     state.qr = await QRCode.toDataURL(qr, { margin: 1, width: 360 });
+    state.error = null;
     state.updatedAt = new Date().toISOString();
   });
   client.on("authenticated", () => {
     state.status = "connecting";
     state.qr = null;
+    state.error = null;
     state.updatedAt = new Date().toISOString();
   });
   client.on("ready", () => {
     state.status = "connected";
     state.qr = null;
+    state.error = null;
     state.phone = client.info?.wid?.user || null;
     state.updatedAt = new Date().toISOString();
   });
   client.on("auth_failure", () => {
     state.status = "auth_failure";
     state.qr = null;
+    state.error = "Falha de autenticação do WhatsApp. Gere um novo QR Code.";
     state.phone = null;
     state.updatedAt = new Date().toISOString();
   });
   client.on("disconnected", () => {
     state.status = "disconnected";
     state.qr = null;
+    state.error = null;
     state.phone = null;
     state.updatedAt = new Date().toISOString();
   });
   // Não há listener de mensagens recebidas: o Robô AulaFácil não atende nem responde usuários.
   client.initialize().catch((error) => {
     state.status = "error";
+    state.error = String(error?.message || "Falha ao abrir o WhatsApp no servidor.");
     state.updatedAt = new Date().toISOString();
-    console.error("Falha ao iniciar sessão", id, error?.message || error);
+    console.error("Falha ao iniciar sessão", id, state.error);
   });
   return state;
 }
@@ -130,7 +163,9 @@ app.use(auth);
 app.post("/sessions/start", async (req, res) => {
   try {
     const id = channelId(req.body?.channelId);
-    const state = await createSession(id);
+    const current = sessions.get(id);
+    const restart = Boolean(current && ["error", "auth_failure", "disconnected"].includes(current.status));
+    const state = await createSession(id, restart);
     res.json({ ok: true, ...publicState(state) });
   } catch (error) {
     res.status(400).json({ error: error instanceof Error ? error.message : "não foi possível iniciar" });
