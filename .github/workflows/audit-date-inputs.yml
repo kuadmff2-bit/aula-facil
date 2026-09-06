@@ -1,0 +1,22 @@
+name: Auditar campos de data
+
+on:
+  push:
+    branches:
+      - release/ux-final-2026-09-05
+    paths:
+      - .github/workflows/audit-date-inputs.yml
+
+jobs:
+  audit:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: release/ux-final-2026-09-05
+      - name: Listar inputs de data e mês
+        run: |
+          echo '=== type=date ==='
+          grep -RIn --include='*.tsx' 'type="date"' src || true
+          echo '=== type=month ==='
+          grep -RIn --include='*.tsx' 'type="month"' src || true
