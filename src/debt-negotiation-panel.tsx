@@ -217,7 +217,7 @@ export function DebtNegotiationPanel({ database, onChange }: Props) {
       <h3>Novo acordo</h3>
       <div className="debt-form-grid">
         <label><span>Aluno inadimplente</span><select value={studentId} onChange={(event) => { setStudentId(event.target.value); setSelected([]); }}><option value="">Escolha</option>{eligibleStudents.map((student) => <option key={student.id} value={student.id}>{student.name} · {overdueByStudent.get(student.id)?.length} pendência(s)</option>)}</select></label>
-        <label><span>Primeiro vencimento</span><input type="date" value={firstDueDate} onChange={(event) => setFirstDueDate(event.target.value)} /></label>
+        <label><span>Primeiro vencimento</span><input type="date" defaultValue={firstDueDate} onChange={(event) => { const next = event.currentTarget.value; if (next) setFirstDueDate(next); }} /></label>
       </div>
 
       {studentId && <div className="debt-invoices">{invoices.map((invoice) => {
