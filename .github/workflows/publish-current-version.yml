@@ -4,6 +4,11 @@ on:
   push:
     branches: [main]
     paths:
+      - "package.json"
+      - "package-lock.json"
+      - "src-tauri/Cargo.toml"
+      - "src-tauri/Cargo.lock"
+      - "src-tauri/tauri.conf.json"
       - ".github/workflows/publish-current-version.yml"
   workflow_dispatch:
 
@@ -71,7 +76,7 @@ jobs:
           retention-days: 30
 
   release:
-    name: Publicar downloads 0.4.0
+    name: Publicar downloads
     needs: build
     runs-on: ubuntu-latest
     steps:
