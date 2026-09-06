@@ -33,6 +33,7 @@
   }
 
   html.aulafacil-printing #aulafacil-print-stage>[data-print-clone="true"]{
+    page:auto!important;
     position:relative!important;
     inset:auto!important;
     width:100%!important;
