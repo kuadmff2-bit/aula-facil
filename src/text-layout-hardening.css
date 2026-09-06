@@ -20,15 +20,25 @@
 
   .app-shell,
   .workspace,
-  .page-content {
-    width: 100%;
+  .page-content,
+  .topbar,
+  .sidebar {
     max-width: 100% !important;
     min-width: 0 !important;
+  }
+
+  .app-shell,
+  .workspace,
+  .page-content,
+  .topbar {
+    width: 100%;
     overflow-x: clip !important;
   }
 
   /* Qualquer item de grid/flex dentro da interface precisa poder encolher. */
   .page-content *,
+  .topbar *,
+  .sidebar *,
   .modal *,
   .details-panel *,
   .student-details-next *,
@@ -38,6 +48,8 @@
 
   /* Textos comuns nunca podem definir a largura da caixa onde estão. */
   .page-content :where(h1,h2,h3,h4,h5,h6,p,span,strong,small,label,b,em,a,li,dt,dd,code,td,th),
+  .topbar :where(h1,h2,h3,h4,p,span,strong,small,label,b,em,a),
+  .sidebar :where(h1,h2,h3,h4,p,span,strong,small,label,b,em,a),
   .modal :where(h1,h2,h3,h4,h5,h6,p,span,strong,small,label,b,em,a,li,dt,dd,code),
   .details-panel :where(h1,h2,h3,h4,h5,h6,p,span,strong,small,label,b,em,a,li,dt,dd,code),
   .student-details-next :where(h1,h2,h3,h4,h5,h6,p,span,strong,small,label,b,em,a,li,dt,dd,code) {
@@ -58,7 +70,14 @@
     .finance-ultimate-head,
     .message-history-title,
     .payment-connection-main,
-    .finance-notice
+    .finance-notice,
+    .debt-heading,
+    .debt-message,
+    .student-section-title,
+    .student-batch-bar,
+    .batch-total,
+    .batch-payment-list > div,
+    .payment-breakdown > div
   ) {
     min-width: 0;
     max-width: 100%;
@@ -76,7 +95,14 @@
     .finance-ultimate-head,
     .message-history-title,
     .payment-connection-main,
-    .finance-notice
+    .finance-notice,
+    .debt-heading,
+    .debt-message,
+    .student-section-title,
+    .student-batch-bar,
+    .batch-total,
+    .batch-payment-list > div,
+    .payment-breakdown > div
   ) > * {
     min-width: 0;
     max-width: 100%;
@@ -112,6 +138,47 @@
     max-width: 100%;
   }
 
+  /* Conta/nuvem: selects e botões devem reorganizar antes de vazar. */
+  .cloud-school-selector {
+    min-width: 0;
+    max-width: 100%;
+    flex-wrap: wrap;
+  }
+
+  .cloud-school-selector label {
+    min-width: 0 !important;
+    max-width: 100%;
+    flex: 1 1 320px;
+  }
+
+  .cloud-create-row,
+  .cloud-sync-actions,
+  .cloud-sync-recovery-actions,
+  .monthly-generator,
+  .class-overview-actions,
+  .student-contact-actions,
+  .student-document-actions,
+  .finance-actions,
+  .message-actions,
+  .payment-connection-actions,
+  .settings-inline-actions,
+  .details-actions {
+    min-width: 0;
+    max-width: 100%;
+  }
+
+  .monthly-generator,
+  .class-overview-actions,
+  .student-contact-actions,
+  .student-document-actions,
+  .finance-actions,
+  .message-actions,
+  .payment-connection-actions,
+  .settings-inline-actions,
+  .details-actions {
+    flex-wrap: wrap;
+  }
+
   /* Status e explicações podem quebrar linha; não devem forçar largura. */
   .cloud-sync-badge,
   .payment-state,
@@ -132,11 +199,12 @@
   /* Ações financeiras tinham largura mínima fixa em telas pequenas. */
   .finance-actions {
     min-width: 0 !important;
-    max-width: 100%;
   }
 
   /* Botões de texto longo quebram em duas linhas em vez de vazar. */
   .page-content button,
+  .topbar button,
+  .sidebar button,
   .modal button,
   .details-panel button,
   .student-details-next button,
@@ -158,9 +226,28 @@
     min-width: 0;
   }
 
+  /* Turmas: a tela usa a largura do conteúdo, não o viewport inteiro. */
+  .class-overview-toolbar,
+  .class-overview-group,
+  .class-overview-group > header,
+  .class-overview-student,
+  .class-transfer-body,
+  .class-transfer-row {
+    min-width: 0;
+    max-width: 100%;
+  }
+
+  .class-overview-title,
+  .class-overview-student > span,
+  .class-transfer-row > span {
+    min-width: 0;
+    max-width: 100%;
+  }
+
   /* Rolagem horizontal só é permitida onde ela é proposital: tabelas. */
   .table-card,
-  .roster-sheet {
+  .roster-sheet,
+  .student-invoice-table {
     width: 100%;
     max-width: 100%;
     min-width: 0;
@@ -171,6 +258,33 @@
   .table-card table,
   .roster-sheet table {
     max-width: none;
+  }
+}
+
+@container aulafacil-content (max-width: 1100px) {
+  .class-overview-toolbar {
+    align-items: stretch !important;
+    flex-direction: column !important;
+  }
+
+  .class-overview-actions {
+    justify-content: flex-start !important;
+  }
+
+  .class-overview-group > header {
+    grid-template-columns: 6px minmax(0, 1fr) auto !important;
+  }
+
+  .class-overview-student {
+    grid-template-columns: 34px minmax(0, 1fr) auto !important;
+  }
+
+  .class-overview-student > span:nth-child(3) {
+    display: none;
+  }
+
+  .welcome-card {
+    grid-template-columns: minmax(0, 1fr) !important;
   }
 }
 
@@ -189,10 +303,46 @@
     .professional-settings-heading,
     .finance-ultimate-head,
     .payment-connection-main,
-    .message-history-title
+    .message-history-title,
+    .debt-heading,
+    .student-section-title,
+    .student-batch-bar
   ) {
     align-items: stretch !important;
     flex-direction: column !important;
+  }
+
+  .cloud-create-row {
+    grid-template-columns: minmax(0, 1fr) !important;
+  }
+
+  .cloud-create-row > button {
+    width: 100% !important;
+  }
+
+  .class-overview-group > header {
+    grid-template-columns: 6px minmax(0, 1fr) !important;
+  }
+
+  .class-overview-group > header > *:not(.class-overview-color):not(.class-overview-title) {
+    grid-column: 2;
+  }
+
+  .class-overview-student {
+    grid-template-columns: 30px minmax(0, 1fr) !important;
+  }
+
+  .class-overview-student > em {
+    grid-column: 2;
+    justify-self: start;
+  }
+
+  .class-scope-toggle {
+    width: 100%;
+  }
+
+  .class-scope-toggle button {
+    flex: 1 1 0;
   }
 }
 
