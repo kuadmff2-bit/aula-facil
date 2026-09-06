@@ -12,6 +12,7 @@ import "./desktop-interactions.css";
 import "./print-document-fixes.css";
 import "./contrast-fixes.css";
 import "./ux-0.4.css";
+import "./responsive-hardening.css";
 
 const root = createRoot(document.getElementById("root")!);
 
