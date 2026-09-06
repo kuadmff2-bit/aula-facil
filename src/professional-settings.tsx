@@ -5,6 +5,7 @@ import type {
   InstitutionSettings,
   ReceiptSettings,
 } from "./model";
+import { CertificateSettingsPreview, FinanceSettingsPreview, ReceiptSettingsPreview } from "./document-live-preview";
 import "./professional-settings.css";
 
 type InstitutionSettingsProps = {
@@ -13,11 +14,13 @@ type InstitutionSettingsProps = {
 };
 
 type FinanceSettingsProps = {
+  institution: InstitutionSettings;
   value: FinanceSettings;
   onChange: (value: FinanceSettings) => void;
 };
 
 type DocumentSettingsProps = {
+  institution: InstitutionSettings;
   receipt: ReceiptSettings;
   certificate: CertificateSettings;
   onReceiptChange: (value: ReceiptSettings) => void;
@@ -108,7 +111,7 @@ export function InstitutionSettingsPanel({ value, onChange }: InstitutionSetting
     <section className="card professional-settings-card">
       <SettingsHeader
         title="Identidade da instituição"
-        description="Esses dados serão usados no sistema, recibos, cobranças, declarações e certificados."
+        description="Logo, nome e contatos usados pelo AulaFácil."
       />
 
       <div className="institution-logo-row">
@@ -155,7 +158,7 @@ export function InstitutionSettingsPanel({ value, onChange }: InstitutionSetting
   );
 }
 
-export function FinanceSettingsPanel({ value, onChange }: FinanceSettingsProps) {
+export function FinanceSettingsPanel({ institution, value, onChange }: FinanceSettingsProps) {
   const update = <K extends keyof FinanceSettings>(key: K, fieldValue: FinanceSettings[K]) => {
     onChange({ ...value, [key]: fieldValue });
   };
@@ -171,12 +174,14 @@ export function FinanceSettingsPanel({ value, onChange }: FinanceSettingsProps) 
     <section className="card professional-settings-card">
       <SettingsHeader
         title="Regras financeiras"
-        description="Configure vencimentos disponíveis, tolerância, multa e juros. O valor original da mensalidade continua preservado."
+        description="Vencimentos, multa, juros e aparência da cobrança."
       />
 
+      <div className="finance-customizer-layout">
+        <div className="finance-customizer-controls">
       <div className="settings-block">
         <strong>Dias de vencimento que a escola oferece</strong>
-        <p>O aluno poderá escolher um dos dias habilitados no cadastro. Dias 29, 30 e 31 usam o último dia quando o mês for menor.</p>
+        <p>O aluno escolhe um dos dias habilitados.</p>
         <div className="due-day-grid">
           {Array.from({ length: 31 }, (_, index) => index + 1).map((day) => (
             <button
@@ -227,11 +232,14 @@ export function FinanceSettingsPanel({ value, onChange }: FinanceSettingsProps) 
         <label className="settings-span-2"><span>Rodapé da cobrança</span><textarea rows={3} maxLength={500} value={value.boletoFooter} onChange={(e) => update("boletoFooter", e.target.value)} /></label>
       </div>
       <label className="settings-checkbox"><input type="checkbox" checked={value.boletoShowLogo} onChange={(e) => update("boletoShowLogo", e.target.checked)} /><span>Mostrar a logo da instituição nos documentos de cobrança personalizados</span></label>
+        </div>
+        <div className="finance-customizer-preview"><span className="live-preview-label">PRÉVIA EM TEMPO REAL</span><FinanceSettingsPreview institution={institution} finance={value}/></div>
+      </div>
     </section>
   );
 }
 
-export function DocumentSettingsPanel({ receipt, certificate, onReceiptChange, onCertificateChange }: DocumentSettingsProps) {
+export function DocumentSettingsPanel({ institution, receipt, certificate, onReceiptChange, onCertificateChange }: DocumentSettingsProps) {
   const updateReceipt = <K extends keyof ReceiptSettings>(key: K, fieldValue: ReceiptSettings[K]) => onReceiptChange({ ...receipt, [key]: fieldValue });
   const updateReceiptField = (index: number, patch: Partial<ReceiptSettings["fields"][number]>) => {
     const fields = receipt.fields.map((field, fieldIndex) => fieldIndex === index ? { ...field, ...patch } : field);
@@ -245,17 +253,20 @@ export function DocumentSettingsPanel({ receipt, certificate, onReceiptChange, o
     updateReceipt("fields", fields);
   };
   const updateCertificate = <K extends keyof CertificateSettings>(key: K, fieldValue: CertificateSettings[K]) => onCertificateChange({ ...certificate, [key]: fieldValue });
+  const [previewKind, setPreviewKind] = useState<"receipt" | "certificate">("receipt");
 
   return (
     <section className="card professional-settings-card">
       <SettingsHeader
         title="Recibos e certificados"
-        description="Personalize os documentos emitidos sem alterar certificados antigos já formalizados."
+        description="Edite e confira o resultado ao mesmo tempo."
       />
 
+      <div className="document-customizer-layout">
+        <div className="document-customizer-controls">
       <div className="settings-subsection">
         <h3>Recibo em duas vias</h3>
-        <p className="receipt-customizer-note">A VIA DO PAGANTE e a VIA DA ESCOLA usam o mesmo número e ficam juntas em uma folha A4. Número do recibo, aluno e total recebido são sempre exibidos para preservar a integridade financeira.</p>
+        <p className="receipt-customizer-note">As duas vias usam o mesmo número e cabem em uma folha A4.</p>
         <div className="settings-form-grid">
           <label><span>Título</span><input value={receipt.title} maxLength={120} onChange={(e) => updateReceipt("title", e.target.value)} /></label>
           <label><span>Rodapé</span><input value={receipt.footer} maxLength={300} onChange={(e) => updateReceipt("footer", e.target.value)} /></label>
@@ -295,6 +306,13 @@ export function DocumentSettingsPanel({ receipt, certificate, onReceiptChange, o
           <label className="settings-span-2"><span>Texto do certificado</span><textarea rows={5} maxLength={3000} value={certificate.bodyTemplate} onChange={(e) => updateCertificate("bodyTemplate", e.target.value)} /><small>Variáveis: {'{aluno}'}, {'{curso}'}, {'{carga_horaria}'}, {'{data}'}, {'{escola}'}</small></label>
           <label className="settings-span-2"><span>Rodapé</span><textarea rows={2} maxLength={500} value={certificate.footerText} onChange={(e) => updateCertificate("footerText", e.target.value)} /></label>
           <label className="settings-span-2"><span>Assinaturas (uma por linha, máximo 6)</span><textarea rows={4} value={certificate.signatures.join("\n")} onChange={(e) => updateCertificate("signatures", e.target.value.split(/\r?\n/).map((item) => item.trim()).filter(Boolean).slice(0, 6))} placeholder={'Direção\nCoordenação\nProfessor'} /></label>
+        </div>
+      </div>
+        </div>
+        <div className="document-customizer-preview">
+          <span className="live-preview-label">PRÉVIA EM TEMPO REAL</span>
+          <div className="preview-switch"><button type="button" className={previewKind === "receipt" ? "active" : ""} onClick={() => setPreviewKind("receipt")}>Recibo</button><button type="button" className={previewKind === "certificate" ? "active" : ""} onClick={() => setPreviewKind("certificate")}>Certificado</button></div>
+          {previewKind === "receipt" ? <ReceiptSettingsPreview institution={institution} receipt={receipt}/> : <CertificateSettingsPreview institution={institution} certificate={certificate}/>}
         </div>
       </div>
     </section>

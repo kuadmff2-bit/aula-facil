@@ -144,6 +144,34 @@ export function rescheduleFutureInvoices(database: SchoolDatabase, studentId: st
   return changed;
 }
 
+export function ensureContinuousInvoicesDue(database: SchoolDatabase, asOf = localDate(), daysAhead = 5) {
+  const normalizedAsOf = /^\d{4}-\d{2}-\d{2}$/.test(asOf) ? asOf : localDate();
+  const horizonDate = new Date(`${normalizedAsOf}T12:00:00Z`);
+  horizonDate.setUTCDate(horizonDate.getUTCDate() + Math.max(0, Math.min(31, Math.trunc(daysAhead))));
+  const horizon = horizonDate.toISOString().slice(0, 10);
+  const horizonMonth = horizon.slice(0, 7);
+  let created = 0;
+
+  for (const student of database.students) {
+    if (!(student.enrollmentStatus ?? (student.active ? "active" : "paused")).includes("active") || !student.active) continue;
+    const classItem = database.classes.find((item) => item.id === student.classId);
+    if (!classItem || (classItem.durationType ?? "open_ended") !== "open_ended" || classItem.monthlyFee <= 0) continue;
+    const startMonth = monthFromDate(student.enrollmentStartDate || student.createdAt.slice(0, 10));
+    for (let offset = 0; offset < 240; offset += 1) {
+      const referenceMonth = addMonths(startMonth, offset);
+      if (referenceMonth > horizonMonth) break;
+      const dueDate = dueDateForMonth(referenceMonth, dueDayFor(student, database));
+      if (dueDate > horizon) continue;
+      if (database.invoices.some((item) => item.studentId === student.id && item.reference === referenceMonth)) continue;
+      const invoice = ensureOpenEndedInvoiceForMonth(database, student, classItem, referenceMonth);
+      if (!invoice) continue;
+      database.invoices.push(invoice);
+      created += 1;
+    }
+  }
+  return created;
+}
+
 export function outstandingStudentInvoices(database: SchoolDatabase, studentId: string) {
   return database.invoices
     .filter((invoice) => invoice.studentId === studentId && (invoice.status === "pending" || invoice.status === "overdue"))

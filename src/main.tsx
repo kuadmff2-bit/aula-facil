@@ -11,6 +11,7 @@ import "./layout-safety.css";
 import "./desktop-interactions.css";
 import "./print-document-fixes.css";
 import "./contrast-fixes.css";
+import "./ux-0.4.css";
 
 const root = createRoot(document.getElementById("root")!);
 

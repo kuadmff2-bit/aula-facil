@@ -132,7 +132,7 @@ export function StudentFieldsSettings({ fields, onChange }: { fields: StudentFie
   return <section className="stack">
     <div className="security-hero card">
       <span><ShieldCheck size={30} /></span>
-      <div><h2>Cadastro montado pela própria escola</h2><p>Nome do aluno, nascimento e turma permanecem como base do sistema. Todos os demais campos podem ser criados, renomeados, tornados obrigatórios ou removidos.</p></div>
+      <div><h2>Campos do cadastro</h2><p>Escolha apenas as informações que sua escola precisa.</p></div>
     </div>
 
     <div className="card" style={{ padding: 24 }}>
@@ -140,7 +140,7 @@ export function StudentFieldsSettings({ fields, onChange }: { fields: StudentFie
       <div style={{ display: "grid", gap: 12 }}>
         {fields.length === 0 && <p className="inline-empty">Nenhum campo extra configurado. O cadastro pedirá apenas nome, nascimento e turma.</p>}
         {fields.map((field) => (
-          <div key={field.id} style={{ display: "grid", gridTemplateColumns: "minmax(180px, 1.3fr) minmax(150px, .8fr) minmax(220px, 1fr) auto auto", gap: 10, alignItems: "center", padding: 14, border: "1px solid var(--border)", borderRadius: 14 }}>
+          <div className="student-field-config-row" key={field.id} style={{ display: "grid", gridTemplateColumns: "minmax(180px, 1.3fr) minmax(150px, .8fr) minmax(220px, 1fr) auto auto", gap: 10, alignItems: "center", padding: 14, border: "1px solid var(--border)", borderRadius: 14 }}>
             <input value={field.label} maxLength={80} aria-label="Nome do campo" onChange={(event) => updateField(field.id, { label: event.target.value })} />
             <select value={field.type} aria-label={`Tipo de ${field.label}`} onChange={(event) => updateField(field.id, { type: event.target.value as StudentFieldType })}>{fieldTypes.map((item) => <option key={item.value} value={item.value}>{item.label}</option>)}</select>
             <select value={field.visibility} aria-label={`Quando mostrar ${field.label}`} onChange={(event) => updateField(field.id, { visibility: event.target.value as StudentFieldVisibility })}>{visibilityOptions.map((item) => <option key={item.value} value={item.value}>{item.label}</option>)}</select>

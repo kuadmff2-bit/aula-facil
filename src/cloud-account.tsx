@@ -223,15 +223,20 @@ export function CloudAccountPanel({ database, onReplaceDatabase }: Props) {
           <p>A criação gera automaticamente o espaço isolado da escola, as regras financeiras e os modelos iniciais.</p>
           <div className="cloud-create-row">
             <input maxLength={160} value={schoolName} onChange={(e) => setSchoolName(e.target.value)} placeholder={database.settings.institution.name || "Nome da instituição"} />
-            <button className="primary-button" disabled={busy} onClick={() => void run(async () => {
+            <button type="button" className="primary-button" disabled={busy} onClick={() => void run(async () => {
               const id = await createCloudSchool(schoolName || database.settings.institution.name);
-              await copyCurrentLegalAcceptanceToSchool(id);
               await refreshSchools();
               setSelectedSchoolId(id);
               setSchoolName("");
-              setMessage({ tone: "success", text: "Instituição criada. Os dados ainda não foram enviados; você decide quando sincronizar." });
-            })}>Criar instituição</button>
+              try {
+                await copyCurrentLegalAcceptanceToSchool(id);
+                setMessage({ tone: "success", text: "Instituição criada. Agora você já pode sincronizar e configurar recebimentos." });
+              } catch {
+                setMessage({ tone: "warning", text: "Instituição criada. Revise a aceitação dos termos antes da primeira sincronização." });
+              }
+            })}>{busy ? "Criando..." : "Criar instituição"}</button>
           </div>
+          {message && <div className={`cloud-message ${message.tone} cloud-empty-school-message`} role="status">{message.text}</div>}
         </div>
       ) : (
         <>
