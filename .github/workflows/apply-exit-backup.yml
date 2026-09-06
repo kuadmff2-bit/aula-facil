@@ -1,0 +1,60 @@
+name: Validar backup automático ao encerrar
+
+on:
+  push:
+    branches:
+      - fix/exit-backup-0.3.1
+    paths:
+      - .github/workflows/apply-exit-backup.yml
+
+permissions:
+  contents: write
+
+jobs:
+  validate:
+    runs-on: windows-latest
+    steps:
+      - name: Baixar o código
+        uses: actions/checkout@v4
+        with:
+          ref: fix/exit-backup-0.3.1
+
+      - name: Preparar Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Preparar Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Instalar dependências
+        run: npm ci
+
+      - name: Aplicar integração do backup de saída
+        run: node scripts/apply-exit-backup.mjs
+
+      - name: Formatar Rust
+        run: cargo fmt --manifest-path src-tauri/Cargo.toml
+
+      - name: Executar testes automáticos
+        run: npm test
+
+      - name: Validar TypeScript e frontend
+        run: npm run build
+
+      - name: Gerar ícones
+        run: npm run desktop:icons
+
+      - name: Validar Tauri
+        run: cargo check --locked --manifest-path src-tauri/Cargo.toml
+
+      - name: Publicar implementação validada
+        shell: bash
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add src-tauri/src/lib.rs src-tauri/src/exit_backup.rs
+          git diff --cached --quiet && exit 0
+          git commit -m "Criar backup protegido ao fechar o AulaFácil"
+          git push origin HEAD:fix/exit-backup-0.3.1
