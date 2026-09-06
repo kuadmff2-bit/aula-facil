@@ -5,6 +5,7 @@ on:
     branches: [refactor/didactic-ux]
     paths:
       - "scripts/apply-didactic-ux-refactor.py"
+      - "scripts/run-didactic-ux-refactor.py"
       - ".github/workflows/apply-didactic-ux-refactor.yml"
 
 permissions:
@@ -34,7 +35,7 @@ jobs:
         uses: dtolnay/rust-toolchain@stable
 
       - name: Aplicar reorganização didática
-        run: python scripts/apply-didactic-ux-refactor.py
+        run: python scripts/run-didactic-ux-refactor.py
 
       - name: Instalar dependências
         run: npm ci --no-audit
