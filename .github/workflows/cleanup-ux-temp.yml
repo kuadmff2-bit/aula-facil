@@ -1,0 +1,47 @@
+name: Limpar utilitários temporários da rodada UX
+
+on:
+  push:
+    branches:
+      - release/ux-final-2026-09-05
+    paths:
+      - .github/workflows/cleanup-ux-temp.yml
+
+permissions:
+  contents: write
+
+jobs:
+  cleanup:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: release/ux-final-2026-09-05
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npm test
+      - run: npm run build
+      - name: Remover somente ferramentas temporárias desta rodada
+        run: |
+          rm -f \
+            scripts/apply-native-contact.mjs \
+            scripts/apply-ux-critical.mjs \
+            scripts/fix-remaining-date-inputs.mjs \
+            scripts/apply-cloud-guidance.mjs \
+            .github/workflows/apply-native-contact.yml \
+            .github/workflows/apply-ux-critical.yml \
+            .github/workflows/audit-date-inputs.yml \
+            .github/workflows/fix-remaining-date-inputs.yml \
+            .github/workflows/apply-cloud-guidance.yml \
+            .github/workflows/cleanup-ux-temp.yml
+      - name: Publicar limpeza
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A
+          git diff --cached --quiet && exit 0
+          git commit -m "Remover utilitários temporários da rodada UX"
+          git push origin HEAD:release/ux-final-2026-09-05
