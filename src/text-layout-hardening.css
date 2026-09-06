@@ -1,0 +1,213 @@
+/*
+ * AulaFácil — proteção final de layout em tela.
+ *
+ * Esta folha deve ser a ÚLTIMA importada pelo entrypoint. Ela funciona como
+ * rede de segurança para impedir que textos, grids, flexboxes, botões ou cards
+ * empurrem a janela para fora da área útil. Tabelas continuam podendo rolar
+ * dentro do próprio card; a página inteira não.
+ */
+
+@media screen {
+  html,
+  body,
+  #root {
+    width: 100%;
+    max-width: 100%;
+    min-width: 0 !important;
+    overflow-x: clip !important;
+    overscroll-behavior-x: none;
+  }
+
+  .app-shell,
+  .workspace,
+  .page-content {
+    width: 100%;
+    max-width: 100% !important;
+    min-width: 0 !important;
+    overflow-x: clip !important;
+  }
+
+  /* Qualquer item de grid/flex dentro da interface precisa poder encolher. */
+  .page-content *,
+  .modal *,
+  .details-panel *,
+  .student-details-next *,
+  .document-dialog * {
+    min-inline-size: 0;
+  }
+
+  /* Textos comuns nunca podem definir a largura da caixa onde estão. */
+  .page-content :where(h1,h2,h3,h4,h5,h6,p,span,strong,small,label,b,em,a,li,dt,dd,code,td,th),
+  .modal :where(h1,h2,h3,h4,h5,h6,p,span,strong,small,label,b,em,a,li,dt,dd,code),
+  .details-panel :where(h1,h2,h3,h4,h5,h6,p,span,strong,small,label,b,em,a,li,dt,dd,code),
+  .student-details-next :where(h1,h2,h3,h4,h5,h6,p,span,strong,small,label,b,em,a,li,dt,dd,code) {
+    max-width: 100%;
+    overflow-wrap: anywhere;
+    word-break: normal;
+  }
+
+  /* Cabeçalhos com ações/badges quebram linha antes de apertar o texto. */
+  :where(
+    .section-heading,
+    .page-heading,
+    .cloud-sync-heading,
+    .cloud-account-heading,
+    .payment-connections-heading,
+    .message-heading,
+    .professional-settings-heading,
+    .finance-ultimate-head,
+    .message-history-title,
+    .payment-connection-main,
+    .finance-notice
+  ) {
+    min-width: 0;
+    max-width: 100%;
+    flex-wrap: wrap;
+  }
+
+  :where(
+    .section-heading,
+    .page-heading,
+    .cloud-sync-heading,
+    .cloud-account-heading,
+    .payment-connections-heading,
+    .message-heading,
+    .professional-settings-heading,
+    .finance-ultimate-head,
+    .message-history-title,
+    .payment-connection-main,
+    .finance-notice
+  ) > * {
+    min-width: 0;
+    max-width: 100%;
+  }
+
+  /* Estes cards historicamente dependiam de padding externo e podiam ficar
+     com o texto encostado na borda. Agora possuem respiro próprio. */
+  .cloud-sync-card,
+  .payment-connections-card,
+  .message-automation-card {
+    width: 100%;
+    max-width: 100%;
+    min-width: 0;
+    padding: clamp(16px, 2vw, 24px);
+    overflow: clip;
+  }
+
+  /* Grades informativas se adaptam à largura REAL do conteúdo, não à janela. */
+  .cloud-sync-explainer,
+  .cloud-summary-grid,
+  .payment-setup-guide,
+  .automation-setup-guide,
+  .didactic-steps {
+    grid-template-columns: repeat(auto-fit, minmax(min(100%, 220px), 1fr)) !important;
+  }
+
+  .cloud-sync-explainer > *,
+  .cloud-summary-grid > *,
+  .payment-setup-guide > *,
+  .automation-setup-guide > *,
+  .didactic-steps > * {
+    min-width: 0;
+    max-width: 100%;
+  }
+
+  /* Status e explicações podem quebrar linha; não devem forçar largura. */
+  .cloud-sync-badge,
+  .payment-state,
+  .payment-default-chip,
+  .cloud-role-chip,
+  .message-history-status,
+  .count-badge {
+    max-width: 100%;
+  }
+
+  .cloud-sync-badge,
+  .payment-readiness strong,
+  .automation-readiness strong {
+    white-space: normal !important;
+    overflow-wrap: anywhere;
+  }
+
+  /* Ações financeiras tinham largura mínima fixa em telas pequenas. */
+  .finance-actions {
+    min-width: 0 !important;
+    max-width: 100%;
+  }
+
+  /* Botões de texto longo quebram em duas linhas em vez de vazar. */
+  .page-content button,
+  .modal button,
+  .details-panel button,
+  .student-details-next button,
+  .document-dialog button {
+    max-width: 100%;
+    min-width: 0;
+    height: auto;
+    white-space: normal !important;
+    overflow-wrap: anywhere;
+    line-height: 1.25;
+  }
+
+  /* Campos nunca ultrapassam o card. */
+  .page-content :where(input,select,textarea),
+  .modal :where(input,select,textarea),
+  .details-panel :where(input,select,textarea),
+  .student-details-next :where(input,select,textarea) {
+    max-width: 100%;
+    min-width: 0;
+  }
+
+  /* Rolagem horizontal só é permitida onde ela é proposital: tabelas. */
+  .table-card,
+  .roster-sheet {
+    width: 100%;
+    max-width: 100%;
+    min-width: 0;
+    overflow-x: auto !important;
+    overscroll-behavior-x: contain;
+  }
+
+  .table-card table,
+  .roster-sheet table {
+    max-width: none;
+  }
+}
+
+@container aulafacil-content (max-width: 760px) {
+  .cloud-sync-card,
+  .payment-connections-card,
+  .message-automation-card {
+    padding: 16px;
+  }
+
+  :where(
+    .cloud-sync-heading,
+    .cloud-account-heading,
+    .payment-connections-heading,
+    .message-heading,
+    .professional-settings-heading,
+    .finance-ultimate-head,
+    .payment-connection-main,
+    .message-history-title
+  ) {
+    align-items: stretch !important;
+    flex-direction: column !important;
+  }
+}
+
+@container aulafacil-content (max-width: 520px) {
+  .cloud-sync-card,
+  .payment-connections-card,
+  .message-automation-card {
+    padding: 14px;
+  }
+
+  .cloud-sync-explainer,
+  .cloud-summary-grid,
+  .payment-setup-guide,
+  .automation-setup-guide,
+  .didactic-steps {
+    grid-template-columns: minmax(0, 1fr) !important;
+  }
+}
