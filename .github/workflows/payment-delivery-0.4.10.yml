@@ -1,4 +1,4 @@
-name: Preparar AulaFácil 0.4.10 - envio de cobrança
+name: Preparar AulaFácil 0.4.11 - envio de cobrança
 
 on:
   push:
@@ -39,7 +39,6 @@ jobs:
                   raise SystemExit(f"Trecho não encontrado: {label}")
               return text.replace(old, new, 1)
 
-          # billing.ts: transportar ambiente e status real do envio
           path = "src/billing.ts"
           text = read(path)
           text = repl(text,
@@ -100,7 +99,6 @@ jobs:
               metadata: data?.metadata && typeof data.metadata === "object" ? data.metadata : {},''', "mapa da cobrança")
           write(path, text)
 
-          # finance-ultimate.tsx: feedback inequívoco ao gerar
           path = "src/finance-ultimate.tsx"
           text = read(path)
           text = repl(text,
@@ -120,13 +118,11 @@ jobs:
                 } else {
                   setNotice({ tone: "success", text: charge.reused ? "Cobrança já existente recuperada e sincronizada com segurança." : "Cobrança bancária gerada e sincronizada com sucesso." });
                 }''', "feedback após gerar")
-
           marker = '''<div className="generated-charge"><strong>{generatedCharge.reused ? "Cobrança recuperada" : "Cobrança criada"} · {generatedCharge.provider}</strong>'''
           replacement = '''<div className="generated-charge"><strong>{generatedCharge.reused ? "Cobrança recuperada" : "Cobrança criada"} · {generatedCharge.provider}</strong>{generatedCharge.environment === "sandbox" && <div className="payment-message warning" role="alert"><strong>🧪 AMBIENTE DE TESTE</strong><span>Esta cobrança não é real e não movimenta dinheiro. Troque o Asaas para Produção antes de cobrar alunos de verdade.</span></div>}{generatedCharge.delivery && <div className={`payment-message ${generatedCharge.delivery.status === "sent" ? "success" : "warning"}`} role="status"><strong>Envio ao aluno</strong><span>{generatedCharge.delivery.message}</span></div>}'''
           text = repl(text, marker, replacement, "status visual da cobrança")
           write(path, text)
 
-          # payment-connections-panel.tsx: sandbox impossível de confundir com produção
           path = "src/payment-connections-panel.tsx"
           text = read(path)
           text = repl(text,
@@ -142,17 +138,17 @@ jobs:
           '''<span>{connection.environment === "sandbox" ? "⚠ TESTE — não cobra de verdade" : "Produção — cobrança real"}</span>''', "rótulo ambiente")
           write(path, text)
 
-      - name: Atualizar versão para 0.4.10
+      - name: Atualizar versão para 0.4.11
         shell: pwsh
         run: |
-          npm version 0.4.10 --no-git-tag-version
+          npm version 0.4.11 --no-git-tag-version
           $tauriPath = "src-tauri/tauri.conf.json"
           $tauri = Get-Content $tauriPath -Raw | ConvertFrom-Json
-          $tauri.version = "0.4.10"
+          $tauri.version = "0.4.11"
           $tauri | ConvertTo-Json -Depth 30 | Set-Content $tauriPath -Encoding utf8
           $cargoPath = "src-tauri/Cargo.toml"
           $cargo = Get-Content $cargoPath -Raw
-          $cargo = $cargo.Replace('version = "0.4.9"', 'version = "0.4.10"')
+          $cargo = $cargo.Replace('version = "0.4.10"', 'version = "0.4.11"')
           Set-Content $cargoPath $cargo -Encoding utf8
 
       - name: Instalar dependências
