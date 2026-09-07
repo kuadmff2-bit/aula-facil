@@ -29,7 +29,7 @@ jobs:
       - name: Instalar dependências
         run: npm ci
       - name: Validar Edge Function
-        run: deno check supabase/functions/payment-charge-link/index.ts
+        run: deno check --node-modules-dir=auto supabase/functions/payment-charge-link/index.ts
       - name: Testar aplicativo
         run: npm test
       - name: Validar build
