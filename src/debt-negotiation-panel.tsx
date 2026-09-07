@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { CheckCircle2, HandCoins, ReceiptText, X } from "lucide-react";
-import { getCloudSyncStatus, safePullFromCloud } from "./cloud-safe-sync";
+import { reconcileCloud, safePullFromCloud } from "./cloud-safe-sync";
 import { invoiceAmountDue } from "./finance-utils";
 import {
   cancelDebtNegotiation,
@@ -106,10 +106,9 @@ export function DebtNegotiationPanel({ database, onChange }: Props) {
 
   const requireSynced = async () => {
     if (!schoolId) throw new Error("Selecione a instituição no AulaFácil Cloud.");
-    const status = await getCloudSyncStatus(schoolId, database);
-    if (status !== "synced") {
-      throw new Error("Sincronize este computador antes desta operação financeira. Isso evita usar ou sobrescrever dados antigos.");
-    }
+    const reconciled = await reconcileCloud(schoolId, database);
+    if (reconciled.database !== database) onChange(reconciled.database);
+    return reconciled.database;
   };
 
   const adoptRemoteChanges = async () => {

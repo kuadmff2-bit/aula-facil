@@ -1,5 +1,5 @@
 import packageInfo from "../package.json";
-import { type FormEvent, type ReactNode, useEffect, useMemo, useState } from "react";
+import { type FormEvent, type ReactNode, useEffect, useMemo, useRef, useState } from "react";
 import {
   AlertTriangle,
   Bell,
@@ -74,7 +74,7 @@ import {
   resumeEnrollment,
 } from "./enrollment-plan";
 import { confirmManualInvoicePayment, reopenInvoicePayment } from "./manual-payment";
-import { clearSelectedSchoolPendingCloudDeletions, getCloudSyncStatus, invalidateSelectedSchoolSyncBaseline, queueCloudDeletion, safePullFromCloud } from "./cloud-safe-sync";
+import { clearSelectedSchoolPendingCloudDeletions, invalidateSelectedSchoolSyncBaseline, queueCloudDeletion, reconcileCloud, safePullFromCloud } from "./cloud-safe-sync";
 import { birthDateError, genericDateError, localTodayIso, MIN_REASONABLE_DATE, phoneError } from "./validation";
 import { exportElementToPdf } from "./pdf-export";
 import { DateField } from "./date-field";
@@ -193,8 +193,57 @@ export default function AppNext() {
   const [batchMethod, setBatchMethod] = useState("dinheiro");
   const [busy, setBusy] = useState(false);
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+  const [autoSyncWake, setAutoSyncWake] = useState(0);
+  const autoSyncInFlight = useRef(false);
+  const autoSyncPending = useRef(false);
+  const autoSyncLastAttention = useRef("");
 
   useEffect(() => saveDatabase(database), [database]);
+  useEffect(() => {
+    const wake = () => setAutoSyncWake((value) => value + 1);
+    const interval = window.setInterval(wake, 60_000);
+    window.addEventListener("online", wake);
+    window.addEventListener("aulafacil:cloud-school-change", wake);
+    return () => {
+      window.clearInterval(interval);
+      window.removeEventListener("online", wake);
+      window.removeEventListener("aulafacil:cloud-school-change", wake);
+    };
+  }, []);
+  useEffect(() => {
+    const schoolId = localStorage.getItem("aulafacil.cloud.selected-school") ?? "";
+    if (!schoolId || !navigator.onLine) return;
+    const snapshotUpdatedAt = database.updatedAt;
+    let disposed = false;
+    const run = () => {
+      if (disposed) return;
+      if (autoSyncInFlight.current) { autoSyncPending.current = true; return; }
+      autoSyncInFlight.current = true;
+      autoSyncPending.current = false;
+      void reconcileCloud(schoolId, database)
+        .then((result) => {
+          if (disposed) return;
+          autoSyncLastAttention.current = "";
+          if (result.database !== database) {
+            setDatabase((current) => current.updatedAt === snapshotUpdatedAt ? result.database : current);
+          }
+        })
+        .catch((error) => {
+          if (disposed) return;
+          const message = error instanceof Error ? error.message : String(error ?? "");
+          if (/conflito|recuperação inicial|já possui dados na nuvem|base de sincronização/i.test(message) && autoSyncLastAttention.current !== message) {
+            autoSyncLastAttention.current = message;
+            setToast({ message: `Sincronização automática precisa de atenção: ${message}`, tone: "warning" });
+          }
+        })
+        .finally(() => {
+          autoSyncInFlight.current = false;
+          if (autoSyncPending.current) { autoSyncPending.current = false; setAutoSyncWake((value) => value + 1); }
+        });
+    };
+    const timeout = window.setTimeout(run, 900);
+    return () => { disposed = true; window.clearTimeout(timeout); };
+  }, [database.updatedAt, autoSyncWake]);
   useEffect(() => {
     setDatabase((current) => {
       const next = structuredClone(current);
@@ -501,9 +550,11 @@ export default function AppNext() {
       setBusy(true);
       try {
         if (schoolId) {
-          const status = await getCloudSyncStatus(schoolId, database);
-          if (status !== "synced") throw new Error("Sincronize este computador antes de reabrir o pagamento.");
-          await reopenInvoicePayment({ schoolId, invoiceId: invoice.id, reason: "Pagamento marcado como pago por engano" });
+          const reconciled = await reconcileCloud(schoolId, database);
+          const syncedInvoice = reconciled.database.invoices.find((item) => item.id === invoice.id)
+            ?? reconciled.database.invoices.find((item) => item.studentId === invoice.studentId && item.reference === invoice.reference);
+          if (!syncedInvoice) throw new Error("A mensalidade não foi encontrada depois da sincronização automática.");
+          await reopenInvoicePayment({ schoolId, invoiceId: syncedInvoice.id, reason: "Pagamento marcado como pago por engano" });
           setDatabase(await safePullFromCloud(schoolId, database.settings.appearance));
         } else {
           updateDatabase((draft) => {
@@ -535,9 +586,14 @@ export default function AppNext() {
     setBusy(true);
     try {
       if (schoolId) {
-        const syncStatus = await getCloudSyncStatus(schoolId, database);
-        if (syncStatus !== "synced") throw new Error("Abra “Nuvem e salvamento” e sincronize este computador antes de receber várias mensalidades.");
-        for (const invoice of invoices) await confirmManualInvoicePayment({ schoolId, invoiceId: invoice.id, method: batchMethod, discount: 0, notes: invoices.length > 1 ? "Pagamento em lote pelo cadastro do aluno" : undefined });
+        const reconciled = await reconcileCloud(schoolId, database);
+        const syncedInvoices = invoices.map((invoice) => reconciled.database.invoices.find((item) => item.id === invoice.id)
+          ?? reconciled.database.invoices.find((item) => item.studentId === invoice.studentId && item.reference === invoice.reference));
+        if (syncedInvoices.some((item) => !item)) throw new Error("Uma das mensalidades não foi encontrada depois da sincronização automática.");
+        for (const invoice of syncedInvoices) {
+          if (!invoice || ["paid", "cancelled", "negotiated"].includes(invoice.status)) continue;
+          await confirmManualInvoicePayment({ schoolId, invoiceId: invoice.id, method: batchMethod, discount: 0, notes: invoices.length > 1 ? "Pagamento em lote pelo cadastro do aluno" : undefined });
+        }
         setDatabase(await safePullFromCloud(schoolId, database.settings.appearance));
       } else {
         const now = new Date().toISOString();

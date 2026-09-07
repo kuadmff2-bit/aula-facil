@@ -24,8 +24,8 @@ type Message = { tone: "success" | "warning" | "danger"; text: string } | null;
 const copy: Record<CloudSyncStatus, { title: string; text: string }> = {
   not_linked: { title: "Primeira sincronização necessária", text: "Este computador ainda precisa escolher uma base segura para esta instituição." },
   synced: { title: "Computador e nuvem estão iguais", text: "Na última verificação, as duas cópias estavam atualizadas." },
-  local_changed: { title: "Há mudanças para enviar", text: "Elas já estão salvas neste computador. Sincronize para atualizar também a nuvem." },
-  cloud_changed: { title: "Há novidades para baixar", text: "A nuvem mudou em outro dispositivo ou automação. Sincronize para receber as alterações." },
+  local_changed: { title: "Sincronização automática em andamento", text: "As alterações estão salvas neste computador e serão enviadas automaticamente para a nuvem." },
+  cloud_changed: { title: "Há novidades na nuvem", text: "O AulaFácil baixa automaticamente as alterações quando a conexão está disponível." },
   conflict: { title: "Mudanças nos dois lados", text: "Nada foi apagado. Escolha com cuidado qual cópia deve prevalecer." },
 };
 
@@ -194,7 +194,7 @@ export function CloudSyncPanel({ database, onReplaceDatabase }: Props) {
         <div className={`cloud-sync-badge ${schoolId ? status : "not_linked"}`}>{!navigator.onLine ? "sem internet" : schoolId ? statusLabel[status] : "escola não selecionada"}</div>
       </div>
 
-      <div className="cloud-sync-plain-note"><strong>No uso normal, é simples:</strong> clique apenas em “Sincronizar agora”. As opções de escolher uma cópia só aparecem quando existe algo que precisa da sua decisão.</div>
+      <div className="cloud-sync-plain-note"><strong>No uso normal, você não precisa fazer nada:</strong> o AulaFácil sincroniza sozinho ao abrir, depois de alterações e quando a internet volta. O botão abaixo serve apenas para forçar uma conferência imediata.</div>
 
       {!schoolId && <div className="cloud-sync-warning">Escolha ou crie a escola no bloco acima. Depois clique em “Sincronizar agora”.</div>}
 
@@ -212,7 +212,7 @@ export function CloudSyncPanel({ database, onReplaceDatabase }: Props) {
 
       <div className="cloud-sync-actions">
         <button className="primary-button" disabled={busy || !schoolId || status === "conflict"} onClick={syncNow}>
-          {busy ? "Sincronizando..." : "Sincronizar agora"}
+          {busy ? "Sincronizando..." : "Sincronizar agora (opcional)"}
         </button>
         {needsRecovery && !recoveryArmed && (
           <button className="secondary-button" disabled={busy} onClick={() => setRecoveryArmed(true)}>Usar cópia da nuvem</button>

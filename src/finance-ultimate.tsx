@@ -5,7 +5,7 @@ import { invoiceAmountDue, referenceMonthFromDate } from "./finance-utils";
 import { ensureOpenEndedInvoiceForMonth } from "./enrollment-plan";
 import { makeId, type Invoice, type Payment, type SchoolDatabase, type Student } from "./model";
 import { DebtNegotiationPanel } from "./debt-negotiation-panel";
-import { getCloudSyncStatus, safePullFromCloud } from "./cloud-safe-sync";
+import { reconcileCloud, safePullFromCloud } from "./cloud-safe-sync";
 import { confirmManualInvoicePayment, reopenInvoicePayment } from "./manual-payment";
 import "./finance-ultimate.css";
 
@@ -64,6 +64,12 @@ function paymentForInvoice(database: SchoolDatabase, invoiceId: string) {
   return database.payments
     .filter((item) => item.invoiceId === invoiceId && item.status === "confirmed")
     .sort((a, b) => (b.paidAt ?? b.createdAt).localeCompare(a.paidAt ?? a.createdAt))[0] ?? null;
+}
+
+function resolveSyncedInvoice(database: SchoolDatabase, invoice: Invoice) {
+  return database.invoices.find((item) => item.id === invoice.id)
+    ?? database.invoices.find((item) => item.studentId === invoice.studentId && item.reference === invoice.reference)
+    ?? null;
 }
 
 function localReceiptNumber() {
@@ -162,52 +168,55 @@ export function FinanceUltimate({ database, onChange, onReceipt }: Props) {
   const confirmPayment = () => void (async () => {
     if (!modal || modal.kind !== "pay" || busy) return;
     const currentModal = modal;
-    const breakdown = invoiceAmountDue(currentModal.invoice, database.settings.finance);
-    const safeDiscount = Math.min(Math.max(0, Number(discount) || 0), breakdown.totalDue);
-    const amountReceived = Math.round((breakdown.totalDue - safeDiscount) * 100) / 100;
-    if (amountReceived <= 0) {
-      setNotice({ tone: "danger", text: "O valor final do pagamento precisa ser maior que zero." });
-      return;
-    }
-
     const schoolId = localStorage.getItem(SELECTED_SCHOOL_KEY) ?? "";
+
     if (schoolId) {
       setBusy(true);
-      setNotice(null);
+      setNotice({ tone: "warning", text: "Conferindo a nuvem automaticamente antes de registrar o pagamento..." });
       try {
-        const syncStatus = await getCloudSyncStatus(schoolId, database);
-        if (syncStatus !== "synced") throw new Error("Sincronize este computador antes de registrar o pagamento. A baixa foi bloqueada para evitar recibos ou saldos divergentes.");
-        const payment = await confirmManualInvoicePayment({ schoolId, invoiceId: currentModal.invoice.id, method: paymentMethod, discount: safeDiscount });
-        const restored = await safePullFromCloud(schoolId, database.settings.appearance);
+        const reconciled = await reconcileCloud(schoolId, database);
+        if (reconciled.database !== database) onChange(reconciled.database);
+        const syncedInvoice = resolveSyncedInvoice(reconciled.database, currentModal.invoice);
+        if (!syncedInvoice) throw new Error("A mensalidade não foi encontrada depois da sincronização automática.");
+        if (["paid", "cancelled", "negotiated"].includes(syncedInvoice.status)) {
+          throw new Error(syncedInvoice.status === "paid"
+            ? "Esta mensalidade já consta como paga na nuvem. A tela foi atualizada para impedir pagamento duplicado."
+            : "Esta mensalidade não está mais disponível para pagamento.");
+        }
+        const breakdown = invoiceAmountDue(syncedInvoice, reconciled.database.settings.finance);
+        const safeDiscount = Math.min(Math.max(0, Number(discount) || 0), breakdown.totalDue);
+        if (Math.round((breakdown.totalDue - safeDiscount) * 100) / 100 <= 0) throw new Error("O valor final do pagamento precisa ser maior que zero.");
+        const payment = await confirmManualInvoicePayment({ schoolId, invoiceId: syncedInvoice.id, method: paymentMethod, discount: safeDiscount });
+        const restored = await safePullFromCloud(schoolId, reconciled.database.settings.appearance);
         onChange(restored);
-        const syncedInvoice = restored.invoices.find((item) => item.id === currentModal.invoice.id) ?? { ...currentModal.invoice, status: "paid" as const, paidAt: payment.paidAt };
+        const paidInvoice = restored.invoices.find((item) => item.id === payment.invoiceId) ?? resolveSyncedInvoice(restored, syncedInvoice) ?? { ...syncedInvoice, status: "paid" as const, paidAt: payment.paidAt };
         setModal(null);
         setNotice({ tone: "success", text: `Pagamento de ${money(payment.amountReceived)} confirmado no servidor. Recibo ${payment.receiptNumber ?? payment.id}.` });
-        onReceipt(currentModal.student, syncedInvoice, payment);
+        onReceipt(currentModal.student, paidInvoice, payment);
       } catch (error) {
         setNotice({ tone: "danger", text: error instanceof Error ? error.message : "Não foi possível confirmar o pagamento." });
       } finally { setBusy(false); }
       return;
     }
 
+    const breakdown = invoiceAmountDue(currentModal.invoice, database.settings.finance);
+    const safeDiscount = Math.min(Math.max(0, Number(discount) || 0), breakdown.totalDue);
+    const amountReceived = Math.round((breakdown.totalDue - safeDiscount) * 100) / 100;
+    if (amountReceived <= 0) { setNotice({ tone: "danger", text: "O valor final do pagamento precisa ser maior que zero." }); return; }
     const now = new Date().toISOString();
     const payment: Payment = {
       id: makeId("pagamento"), studentId: currentModal.student.id, invoiceId: currentModal.invoice.id,
-      amountReceived, principalAmount: breakdown.baseAmount, lateFeeAmount: breakdown.lateFee,
-      interestAmount: breakdown.interest, discountAmount: safeDiscount, paymentMethod,
-      status: "confirmed", paidAt: now, receiptNumber: localReceiptNumber(),
+      amountReceived, principalAmount: breakdown.baseAmount, lateFeeAmount: breakdown.lateFee, interestAmount: breakdown.interest,
+      discountAmount: safeDiscount, paymentMethod, status: "confirmed", paidAt: now, receiptNumber: localReceiptNumber(),
       notes: "Pagamento registrado em modo local/offline.", reversedAt: null, reversalReason: "", createdAt: now,
     };
     const next = replaceDatabase(database, (draft) => {
       const invoice = draft.invoices.find((item) => item.id === currentModal.invoice.id);
-      if (!invoice) return;
-      invoice.status = "paid";
-      invoice.paidAt = now;
-      draft.payments.push(payment);
+      if (!invoice) return; invoice.status = "paid"; invoice.paidAt = now; draft.payments.push(payment);
     });
     onChange(next);
     setModal(null);
-    setNotice({ tone: "warning", text: `Pagamento registrado apenas neste dispositivo. Recibo ${payment.receiptNumber}. Ative o Cloud para recibos oficiais sincronizados.` });
+    setNotice({ tone: "warning", text: `Pagamento registrado neste dispositivo. Recibo ${payment.receiptNumber}. Quando a internet voltar, o AulaFácil sincronizará automaticamente.` });
     onReceipt(currentModal.student, { ...currentModal.invoice, status: "paid", paidAt: now }, payment);
   })();
 
@@ -227,10 +236,12 @@ export function FinanceUltimate({ database, onChange, onReceipt }: Props) {
     try {
       const schoolId = localStorage.getItem(SELECTED_SCHOOL_KEY) ?? "";
       if (schoolId) {
-        const syncStatus = await getCloudSyncStatus(schoolId, database);
-        if (syncStatus !== "synced") throw new Error("Sincronize este computador antes de reabrir o pagamento.");
-        await reopenInvoicePayment({ schoolId, invoiceId: invoice.id, reason: "Pagamento marcado como pago por engano" });
-        onChange(await safePullFromCloud(schoolId, database.settings.appearance));
+        const reconciled = await reconcileCloud(schoolId, database);
+        if (reconciled.database !== database) onChange(reconciled.database);
+        const syncedInvoice = resolveSyncedInvoice(reconciled.database, invoice);
+        if (!syncedInvoice) throw new Error("A mensalidade não foi encontrada depois da sincronização automática.");
+        await reopenInvoicePayment({ schoolId, invoiceId: syncedInvoice.id, reason: "Pagamento marcado como pago por engano" });
+        onChange(await safePullFromCloud(schoolId, reconciled.database.settings.appearance));
       } else {
         onChange(replaceDatabase(database, (draft) => {
           const target = draft.invoices.find((item) => item.id === invoice.id);
@@ -296,10 +307,11 @@ export function FinanceUltimate({ database, onChange, onReceipt }: Props) {
     }
     setBusy(true);
     try {
-      const syncStatus = await getCloudSyncStatus(schoolId, database);
-      if (syncStatus !== "synced") throw new Error("Sincronize este computador antes de solicitar o estorno.");
-      const result = await requestProviderRefund({ paymentId: modal.payment.id, amount, reason: refundReason });
-      const restored = await safePullFromCloud(schoolId, database.settings.appearance);
+      const reconciled = await reconcileCloud(schoolId, database);
+      if (reconciled.database !== database) onChange(reconciled.database);
+      const syncedPayment = reconciled.database.payments.find((item) => item.id === modal.payment.id) ?? modal.payment;
+      const result = await requestProviderRefund({ paymentId: syncedPayment.id, amount, reason: refundReason });
+      const restored = await safePullFromCloud(schoolId, reconciled.database.settings.appearance);
       onChange(restored);
       setModal(null);
       setRefundArmed(false);
@@ -346,12 +358,18 @@ export function FinanceUltimate({ database, onChange, onReceipt }: Props) {
     setBusy(true);
     setNotice({ tone: "warning", text: `Gerando ${chargeMethod === "pix" ? "Pix" : "boleto"} no provedor. Aguarde a resposta do servidor...` });
     try {
-      const syncStatus = await getCloudSyncStatus(schoolId, database);
-      if (syncStatus !== "synced") throw new Error("Sincronize este computador antes de gerar Pix ou boleto. Isso evita misturar uma cobrança antiga com alterações locais ainda não enviadas.");
+      const reconciled = await reconcileCloud(schoolId, database);
+      if (reconciled.database !== database) onChange(reconciled.database);
+      const syncedInvoice = resolveSyncedInvoice(reconciled.database, modal.invoice);
+      if (!syncedInvoice) throw new Error("A mensalidade não foi encontrada depois da sincronização automática.");
+      if (["paid", "cancelled", "negotiated"].includes(syncedInvoice.status)) {
+        setModal({ ...modal, invoice: syncedInvoice });
+        throw new Error(syncedInvoice.status === "paid" ? "Esta mensalidade já consta como paga na nuvem. O AulaFácil atualizou a tela e bloqueou uma cobrança duplicada." : "Esta mensalidade não está mais disponível para gerar Pix ou boleto.");
+      }
       await saveBillingProfile(schoolId, modal.student.id, billing);
-      const charge = await generateProviderCharge({ invoiceId: modal.invoice.id, method: chargeMethod, billingProfile: billing });
+      const charge = await generateProviderCharge({ invoiceId: syncedInvoice.id, method: chargeMethod, billingProfile: billing });
       setGeneratedCharge(charge);
-      onChange(await safePullFromCloud(schoolId, database.settings.appearance));
+      onChange(await safePullFromCloud(schoolId, reconciled.database.settings.appearance));
       if (charge.environment === "sandbox") {
         setNotice({ tone: "warning", text: charge.delivery?.status === "sent"
           ? "Cobrança de TESTE criada e enviada pelo WhatsApp. Ela não movimenta dinheiro real."
@@ -383,10 +401,12 @@ export function FinanceUltimate({ database, onChange, onReceipt }: Props) {
     setNotice(null);
     try {
       if (schoolId) {
-        const syncStatus = await getCloudSyncStatus(schoolId, database);
-        if (syncStatus !== "synced") throw new Error("Sincronize este computador antes de cancelar a mensalidade. O cancelamento foi bloqueado para não deixar Pix ou boleto ativo no provedor.");
-        const result = await cancelProviderCharge({ invoiceId: invoice.id, cancelInvoice: true, reason: "Cancelada manualmente no financeiro" });
-        onChange(await safePullFromCloud(schoolId, database.settings.appearance));
+        const reconciled = await reconcileCloud(schoolId, database);
+        if (reconciled.database !== database) onChange(reconciled.database);
+        const syncedInvoice = resolveSyncedInvoice(reconciled.database, invoice);
+        if (!syncedInvoice) throw new Error("A mensalidade não foi encontrada depois da sincronização automática.");
+        const result = await cancelProviderCharge({ invoiceId: syncedInvoice.id, cancelInvoice: true, reason: "Cancelada manualmente no financeiro" });
+        onChange(await safePullFromCloud(schoolId, reconciled.database.settings.appearance));
         setNotice({ tone: "success", text: result.providerChargeCancelled
           ? "Mensalidade cancelada. A cobrança bancária também foi cancelada no provedor e o histórico foi preservado."
           : "Mensalidade cancelada com segurança. Não havia cobrança bancária externa ativa." });
@@ -422,10 +442,12 @@ export function FinanceUltimate({ database, onChange, onReceipt }: Props) {
     }
     setBusy(true);
     try {
-      const syncStatus = await getCloudSyncStatus(schoolId, database);
-      if (syncStatus !== "synced") throw new Error("Sincronize este computador antes de remover a cobrança bancária para reemissão.");
-      const result = await cancelProviderCharge({ invoiceId: modal.invoice.id, cancelInvoice: false, reason: "Cobrança bancária removida para reemissão" });
-      const restored = await safePullFromCloud(schoolId, database.settings.appearance);
+      const reconciled = await reconcileCloud(schoolId, database);
+      if (reconciled.database !== database) onChange(reconciled.database);
+      const syncedInvoice = resolveSyncedInvoice(reconciled.database, modal.invoice);
+      if (!syncedInvoice) throw new Error("A mensalidade não foi encontrada depois da sincronização automática.");
+      const result = await cancelProviderCharge({ invoiceId: syncedInvoice.id, cancelInvoice: false, reason: "Cobrança bancária removida para reemissão" });
+      const restored = await safePullFromCloud(schoolId, reconciled.database.settings.appearance);
       onChange(restored);
       const refreshed = restored.invoices.find((item) => item.id === modal.invoice.id);
       if (refreshed) setModal({ ...modal, invoice: refreshed });
