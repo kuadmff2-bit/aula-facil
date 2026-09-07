@@ -1,4 +1,4 @@
-import { cloud, downloadCloudDatabase, getCloudDataSummary, seedEmptyCloudFromLocal } from "./cloud";
+import { cloud, downloadCloudDatabase, getCloudDataSummary } from "./cloud";
 import { hydrateProfessionalCloudFields } from "./cloud-professional-fields";
 import { buildFixedCoursePlan, ensureContinuousInvoicesDue } from "./enrollment-plan";
 import { ensureUuidDatabase, type SchoolDatabase } from "./model";
@@ -10,6 +10,63 @@ type SyncBaseline = { revision: number; localUpdatedAt: string; localSignature?:
 const SELECTED_SCHOOL_KEY = "aulafacil.cloud.selected-school";
 const baselineKey = (schoolId: string) => `aulafacil.cloud.sync-baseline.${schoolId}`;
 const pushAttemptKey = (schoolId: string) => `aulafacil.cloud.push-attempt.${schoolId}`;
+const pendingDeletionKey = (schoolId: string) => `aulafacil.cloud.pending-deletions.${schoolId}`;
+
+export type CloudDeletionTable = "students" | "classes" | "student_fields" | "notices" | "attendance" | "grades" | "invoices";
+type PendingCloudDeletion = { table: CloudDeletionTable; id: string; queuedAt: string };
+
+function readPendingCloudDeletions(schoolId: string): PendingCloudDeletion[] {
+  if (!schoolId) return [];
+  try {
+    const raw = localStorage.getItem(pendingDeletionKey(schoolId));
+    if (!raw) return [];
+    const parsed = JSON.parse(raw);
+    if (!Array.isArray(parsed)) return [];
+    return parsed.filter((item): item is PendingCloudDeletion => Boolean(item)
+      && typeof item.id === "string"
+      && typeof item.queuedAt === "string"
+      && ["students", "classes", "student_fields", "notices", "attendance", "grades", "invoices"].includes(item.table));
+  } catch { return []; }
+}
+
+function writePendingCloudDeletions(schoolId: string, items: PendingCloudDeletion[]) {
+  if (!schoolId) return;
+  if (!items.length) localStorage.removeItem(pendingDeletionKey(schoolId));
+  else localStorage.setItem(pendingDeletionKey(schoolId), JSON.stringify(items));
+}
+
+export function queueCloudDeletion(table: CloudDeletionTable, id: string) {
+  const schoolId = localStorage.getItem(SELECTED_SCHOOL_KEY) ?? "";
+  if (!schoolId || !id) return;
+  const current = readPendingCloudDeletions(schoolId);
+  if (current.some((item) => item.table === table && item.id === id)) return;
+  current.push({ table, id, queuedAt: new Date().toISOString() });
+  writePendingCloudDeletions(schoolId, current);
+}
+
+export function clearSelectedSchoolPendingCloudDeletions() {
+  const schoolId = localStorage.getItem(SELECTED_SCHOOL_KEY) ?? "";
+  if (schoolId) localStorage.removeItem(pendingDeletionKey(schoolId));
+}
+
+async function flushPendingCloudDeletions(schoolId: string) {
+  const pending = readPendingCloudDeletions(schoolId);
+  if (!pending.length) return 0;
+  const grouped = new Map<CloudDeletionTable, string[]>();
+  for (const item of pending) grouped.set(item.table, [...(grouped.get(item.table) ?? []), item.id]);
+  let processed = 0;
+  for (const [table, ids] of grouped) {
+    const { error } = await cloud.rpc("aulafacil_explicit_soft_delete", {
+      p_school_id: schoolId,
+      p_table: table,
+      p_ids: ids,
+    });
+    if (error) throw new Error(`Não foi possível concluir uma exclusão confirmada (${table}): ${error.message}`);
+    processed += ids.length;
+  }
+  writePendingCloudDeletions(schoolId, []);
+  return processed;
+}
 
 type SyncPushAttempt = {
   role: CloudSyncRole;
@@ -246,10 +303,10 @@ export async function safePushToCloud(schoolId: string, database: SchoolDatabase
     };
     writePushAttempt(schoolId, attempt);
     try {
-      if (firstSync && summary.totalOperationalRecords === 0) {
-        await seedEmptyCloudFromLocal(schoolId, normalized);
-      }
-      const pushed = await pushSnapshot(schoolId, normalized, role);
+    // A primeira sincronização usa o mesmo snapshot granular das demais.
+    // Nenhuma limpeza genérica é feita antes do envio.
+    const pushed = await pushSnapshot(schoolId, normalized, role);
+    await flushPendingCloudDeletions(schoolId);
       const revision = await getCloudRevision(schoolId);
       writeBaseline(schoolId, revision, pushed, role);
       clearPushAttempt(schoolId);
@@ -277,12 +334,13 @@ export async function safePushToCloud(schoolId: string, database: SchoolDatabase
 
 export async function replaceCloudWithLocal(schoolId: string, database: SchoolDatabase) {
   const role = await getCloudSyncRole(schoolId);
-  if (!isAdmin(role)) throw new Error("Somente proprietário ou administrador pode escolher a cópia deste computador para resolver um conflito.");
-  const normalized = await pushSnapshot(schoolId, database, role);
-  const revision = await getCloudRevision(schoolId);
-  writeBaseline(schoolId, revision, normalized, role);
+  if (!isAdmin(role)) throw new Error("Somente proprietário ou administrador pode aplicar alterações deste computador durante um conflito.");
+  await pushSnapshot(schoolId, database, role);
+  await flushPendingCloudDeletions(schoolId);
   clearPushAttempt(schoolId);
-  return normalized;
+  // Depois de aplicar as alterações locais, baixa novamente a cópia final.
+  // Registros existentes apenas na nuvem são preservados; exclusões confirmadas são respeitadas.
+  return safePullFromCloud(schoolId, database.settings.appearance);
 }
 
 export async function safePullFromCloud(schoolId: string, localAppearance: SchoolDatabase["settings"]["appearance"] = "system") {
@@ -292,6 +350,7 @@ export async function safePullFromCloud(schoolId: string, localAppearance: Schoo
   const repaired = canWriteFinance(role) ? repairMissingEnrollmentInvoices(database) : 0;
   if (repaired) await pushSnapshot(schoolId, database, role);
   writeBaseline(schoolId, await getCloudRevision(schoolId), database, role);
+  writePendingCloudDeletions(schoolId, []);
   return database;
 }
 

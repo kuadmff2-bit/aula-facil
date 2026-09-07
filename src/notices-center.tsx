@@ -1,6 +1,7 @@
 import { CheckCircle2, Clock3, Megaphone, Plus, Send, Trash2, XCircle } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import { cloud } from "./cloud";
+import { queueCloudDeletion } from "./cloud-safe-sync";
 import { listMessageChannels, listRecentOutbox, type MessageChannel, type OutboxItem } from "./message-automations";
 import { makeId, type SchoolDatabase } from "./model";
 
@@ -137,12 +138,13 @@ export function NoticesCenter({ database, onChange, notify }: Props) {
       setDeleteArmed(id);
       return;
     }
+    queueCloudDeletion("notices", id);
     const next = structuredClone(database);
     next.notices = next.notices.filter((item) => item.id !== id);
     next.updatedAt = new Date().toISOString();
     onChange(next);
     setDeleteArmed("");
-    notify("Aviso removido do mural.", "warning");
+    notify("Aviso removido. A nuvem será atualizada na próxima sincronização.", "warning");
   };
 
   return (

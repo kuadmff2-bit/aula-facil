@@ -74,7 +74,7 @@ import {
   resumeEnrollment,
 } from "./enrollment-plan";
 import { confirmManualInvoicePayment, reopenInvoicePayment } from "./manual-payment";
-import { getCloudSyncStatus, safePullFromCloud } from "./cloud-safe-sync";
+import { clearSelectedSchoolPendingCloudDeletions, getCloudSyncStatus, invalidateSelectedSchoolSyncBaseline, queueCloudDeletion, safePullFromCloud } from "./cloud-safe-sync";
 import { birthDateError, genericDateError, localTodayIso, MIN_REASONABLE_DATE, phoneError } from "./validation";
 import { exportElementToPdf } from "./pdf-export";
 import { DateField } from "./date-field";
@@ -567,13 +567,15 @@ export default function AppNext() {
   })();
 
   const saveClassAttendance = (classId: string, date: string, marks: Record<string, "present" | "absent">) => {
-    updateDatabase((draft) => {
-      const ids = new Set(Object.keys(marks));
-      draft.attendance = draft.attendance.filter((item) => !(item.classId === classId && item.date === date && ids.has(item.studentId)));
-      for (const [studentId, status] of Object.entries(marks)) draft.attendance.push({ id: makeId("presenca"), studentId, classId, date, status });
-    });
-    notify("Chamada salva.");
-  };
+  updateDatabase((draft) => {
+    for (const [studentId, status] of Object.entries(marks)) {
+      const existing = draft.attendance.find((item) => item.classId === classId && item.date === date && item.studentId === studentId);
+      if (existing) existing.status = status;
+      else draft.attendance.push({ id: makeId("presenca"), studentId, classId, date, status });
+    }
+  });
+  notify("Chamada salva.");
+};
 
 
   const moveStudentsToClass = (targetClassId: string, studentIds: string[]) => {
@@ -619,21 +621,55 @@ export default function AppNext() {
     notify(`${moved} aluno${moved === 1 ? "" : "s"} movido${moved === 1 ? "" : "s"}. ${cancelled} cobrança${cancelled === 1 ? "" : "s"} futura${cancelled === 1 ? "" : "s"} da turma anterior foi${cancelled === 1 ? "" : "ram"} cancelada${cancelled === 1 ? "" : "s"}; ${generated} nova${generated === 1 ? "" : "s"} mensalidade${generated === 1 ? "" : "s"} foi${generated === 1 ? "" : "ram"} preparada${generated === 1 ? "" : "s"}.`);
   };
 
-  const deleteStudent = (student: Student) => confirmAction({ title: "Excluir aluno?", message: `O cadastro de ${student.name} e os registros locais vinculados serão removidos.`, detail: "Prefira trancar a matrícula quando precisar preservar o histórico.", confirmLabel: "Excluir definitivamente", tone: "danger" }, () => {
+  const deleteStudent = (student: Student) => {
+  const hasAcademicHistory = database.attendance.some((item) => item.studentId === student.id)
+    || database.grades.some((item) => item.studentId === student.id);
+  const hasPaymentHistory = database.payments.some((item) => item.studentId === student.id);
+  if (hasAcademicHistory || hasPaymentHistory) {
+    notify("Este aluno já possui histórico acadêmico ou de pagamentos. Para preservar os registros, tranque a matrícula em vez de excluir o cadastro.", "warning");
+    return;
+  }
+  confirmAction({
+    title: "Excluir este aluno?",
+    message: `O cadastro de ${student.name} será removido deste computador e, na próxima sincronização, também da nuvem.`,
+    detail: "Mensalidades ainda sem pagamento ligadas a este cadastro também serão removidas. Esta opção é indicada apenas para cadastros criados por engano.",
+    confirmLabel: "Excluir cadastro",
+    tone: "danger",
+  }, () => {
+    const invoiceIds = database.invoices.filter((item) => item.studentId === student.id).map((item) => item.id);
+    queueCloudDeletion("students", student.id);
+    invoiceIds.forEach((id) => queueCloudDeletion("invoices", id));
     updateDatabase((draft) => {
       draft.students = draft.students.filter((item) => item.id !== student.id);
       draft.invoices = draft.invoices.filter((item) => item.studentId !== student.id);
-      draft.attendance = draft.attendance.filter((item) => item.studentId !== student.id);
-      draft.grades = draft.grades.filter((item) => item.studentId !== student.id);
     });
     setSelectedStudentId("");
-    notify("Aluno removido.", "warning");
+    notify("Cadastro removido. A exclusão na nuvem será concluída na próxima sincronização.", "warning");
   });
+};
 
   const deleteClass = (classItem: ClassItem) => {
-    if (database.students.some((student) => student.classId === classItem.id)) { notify("Mova ou remova os alunos desta turma antes de excluí-la.", "warning"); return; }
-    confirmAction({ title: "Excluir turma?", message: `${classItem.name}${classItem.groupName ? ` · ${classItem.groupName}` : ""} será removida.`, confirmLabel: "Excluir turma", tone: "danger" }, () => updateDatabase((draft) => { draft.classes = draft.classes.filter((item) => item.id !== classItem.id); }));
-  };
+  if (database.students.some((student) => student.classId === classItem.id)) {
+    notify("Esta turma ainda possui alunos. Mova os alunos para outra turma antes de excluí-la.", "warning");
+    return;
+  }
+  const hasAcademicHistory = database.attendance.some((item) => item.classId === classItem.id)
+    || database.grades.some((item) => item.classId === classItem.id);
+  if (hasAcademicHistory) {
+    notify("Esta turma possui histórico de chamadas ou notas e será mantida para não perder registros acadêmicos.", "warning");
+    return;
+  }
+  confirmAction({
+    title: "Excluir esta turma?",
+    message: `${classItem.name}${classItem.groupName ? ` · ${classItem.groupName}` : ""} será removida deste computador e da nuvem na próxima sincronização.`,
+    confirmLabel: "Excluir turma",
+    tone: "danger",
+  }, () => {
+    queueCloudDeletion("classes", classItem.id);
+    updateDatabase((draft) => { draft.classes = draft.classes.filter((item) => item.id !== classItem.id); });
+    notify("Turma removida. A nuvem será atualizada na próxima sincronização.", "warning");
+  });
+};
 
   const addNotice = (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
@@ -708,9 +744,20 @@ export default function AppNext() {
           <div className="card didactic-guide"><div><span className="didactic-eyebrow">AUTOMAÇÕES</span><h2>Escolha o que o AulaFácil deve fazer sozinho</h2><p>Conecte o WhatsApp uma vez, escreva a mensagem e escolha quando ela deve ser enviada.</p></div><div className="didactic-steps"><span><b>1</b><strong>Conectar WhatsApp</strong><small>Leia o QR Code do Robô AulaFácil.</small></span><span><b>2</b><strong>Escolher a mensagem</strong><small>Ex.: lembrar mensalidade antes de vencer.</small></span><span><b>3</b><strong>Escolher quando enviar</strong><small>Defina o dia e o horário. O servidor cuida do resto.</small></span></div></div>
           <MessageAutomationsPanel/>
         </section>}
-        {view === "settings" && <section className="stack settings-page"><div className="card didactic-guide compact"><div><span className="didactic-eyebrow">AJUSTES DA ESCOLA</span><h2>Mude só o que você precisar</h2><p>Os recursos automáticos agora ficam em “Automações”. Aqui ficam dados da escola, aparência, cadastro, cobranças, documentos e formas de pagamento.</p></div></div><InstitutionSettingsPanel value={database.settings.institution} onChange={(institution) => updateDatabase((draft) => { draft.settings.institution = institution; })}/><AppearanceSettings value={database.settings.appearance} onChange={(appearance) => updateDatabase((draft) => { draft.settings.appearance = appearance; })}/><StudentFieldsSettings fields={database.settings.studentFields} onChange={(fields) => updateDatabase((draft) => { draft.settings.studentFields = fields; })}/><FinanceSettingsPanel institution={database.settings.institution} value={database.settings.finance} onChange={(finance) => updateDatabase((draft) => { draft.settings.finance = finance; })}/><DocumentSettingsPanel institution={database.settings.institution} receipt={database.settings.receipt} certificate={database.settings.certificate} onReceiptChange={(receipt) => updateDatabase((draft) => { draft.settings.receipt = receipt; })} onCertificateChange={(certificate) => updateDatabase((draft) => { draft.settings.certificate = certificate; })}/><PaymentConnectionsPanel/></section>}
-        {view === "backup" && <BackupPanel database={database} onRestoreCandidate={(restored) => confirmAction({ title:"Restaurar este backup?", message:"Os dados locais atuais serão substituídos pelo arquivo validado.", confirmLabel:"Restaurar backup", tone:"warning" }, () => { setDatabase(restored); setSelectedStudentId(""); notify("Backup restaurado."); })} onReset={() => confirmAction({ title:"Limpar todos os dados locais?", message:"Alunos, turmas, cobranças e registros desta instalação serão removidos.", confirmLabel:"Limpar sistema", tone:"danger" }, () => { setDatabase(emptyDatabase()); setSelectedStudentId(""); notify("Sistema limpo.","warning"); })} onNotify={notify}/>} 
-      </div>
+        {view === "settings" && <section className="stack settings-page"><div className="card didactic-guide compact"><div><span className="didactic-eyebrow">AJUSTES DA ESCOLA</span><h2>Mude só o que você precisar</h2><p>Os recursos automáticos agora ficam em “Automações”. Aqui ficam dados da escola, aparência, cadastro, cobranças, documentos e formas de pagamento.</p></div></div><InstitutionSettingsPanel value={database.settings.institution} onChange={(institution) => updateDatabase((draft) => { draft.settings.institution = institution; })}/><AppearanceSettings value={database.settings.appearance} onChange={(appearance) => updateDatabase((draft) => { draft.settings.appearance = appearance; })}/><StudentFieldsSettings fields={database.settings.studentFields} onChange={(fields) => {
+      const nextIds = new Set(fields.map((field) => field.id));
+      const removedIds = database.settings.studentFields.filter((field) => !nextIds.has(field.id)).map((field) => field.id);
+      removedIds.forEach((id) => queueCloudDeletion("student_fields", id));
+      updateDatabase((draft) => {
+        draft.settings.studentFields = fields;
+        for (const student of draft.students) {
+          for (const id of removedIds) delete student.customFields[id];
+        }
+      });
+    }}/>
+    <FinanceSettingsPanel institution={database.settings.institution} value={database.settings.finance} onChange={(finance) => updateDatabase((draft) => { draft.settings.finance = finance; })}/><DocumentSettingsPanel institution={database.settings.institution} receipt={database.settings.receipt} certificate={database.settings.certificate} onReceiptChange={(receipt) => updateDatabase((draft) => { draft.settings.receipt = receipt; })} onCertificateChange={(certificate) => updateDatabase((draft) => { draft.settings.certificate = certificate; })}/><PaymentConnectionsPanel/></section>}
+        {view === "backup" && <BackupPanel database={database} onRestoreCandidate={(restored) => confirmAction({ title:"Restaurar este backup?", message:"Os dados deste computador serão substituídos pelo arquivo validado. A nuvem não será alterada até uma sincronização posterior.", confirmLabel:"Restaurar backup", tone:"warning" }, () => { invalidateSelectedSchoolSyncBaseline(); clearSelectedSchoolPendingCloudDeletions(); setDatabase(restored); setSelectedStudentId(""); notify("Backup restaurado neste computador. Confira Nuvem e salvamento antes de sincronizar.", "warning"); })} onReset={() => confirmAction({ title:"Apagar dados deste computador?", message:"Isso apaga apenas a cópia local deste Windows. Os dados do AulaFácil Cloud e seus arquivos de backup não serão apagados.", detail:"Depois disso, este computador precisará recuperar ou iniciar novamente a sincronização antes de enviar dados para a nuvem.", confirmLabel:"Apagar só deste computador", tone:"danger" }, () => { invalidateSelectedSchoolSyncBaseline(); clearSelectedSchoolPendingCloudDeletions(); setDatabase(emptyDatabase()); setSelectedStudentId(""); notify("Dados deste computador apagados. A nuvem não foi alterada.","warning"); })} onNotify={notify}/>} 
+    </div>
     </main>
 
     {selectedStudent && !modal && <StudentDetailsPanel student={selectedStudent} classItem={classById.get(selectedStudent.classId)} database={database} onClose={() => setSelectedStudentId("")} onEdit={openStudentEdit} onPause={() => setModal("pause")} onResume={reactivateStudent} onNewInvoice={() => setModal("invoice")} onDocument={() => setPrintable({ type:"Declaração", student:selectedStudent })} onCertificate={() => { setCertificateStudentId(selectedStudent.id); setSelectedStudentId(""); }} onPay={(invoiceIds) => { setBatchMethod("dinheiro"); setBatchPayment({ studentId:selectedStudent.id, invoiceIds }); }} onCancelInvoice={cancelInvoice} onReopenInvoice={reopenPayment} onReceipt={(invoice) => { const payment = paymentForInvoice(database,invoice.id); if (payment) setPrintable({ type:"Recibo",student:selectedStudent,invoice,payment }); else notify("O pagamento histórico desta mensalidade não foi encontrado.","warning"); }}/>} 

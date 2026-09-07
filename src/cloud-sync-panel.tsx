@@ -141,7 +141,7 @@ export function CloudSyncPanel({ database, onReplaceDatabase }: Props) {
   };
 
   const syncNow = () => void run(async () => {
-    if (!schoolId) throw new Error("Selecione uma escola em Conta e sincronização.");
+    if (!schoolId) throw new Error("Selecione uma escola em Nuvem e salvamento.");
     if (!navigator.onLine) throw new Error("Sem internet. Você pode continuar trabalhando e sincronizar quando a conexão voltar.");
     const result = await reconcileCloud(schoolId, database);
     if (result.database.updatedAt !== database.updatedAt || result.database !== database) {
@@ -153,7 +153,7 @@ export function CloudSyncPanel({ database, onReplaceDatabase }: Props) {
   });
 
   const recoverCloud = () => void run(async () => {
-    if (!schoolId) throw new Error("Selecione uma escola em Conta e sincronização.");
+    if (!schoolId) throw new Error("Selecione uma escola em Nuvem e salvamento.");
     if (recoveryPassword !== recoveryConfirmation) throw new Error("As duas senhas do backup precisam ser iguais.");
     validateBackupPassword(recoveryPassword);
     const encryptedBackup = await createEncryptedBackup(database, recoveryPassword);
@@ -169,13 +169,13 @@ export function CloudSyncPanel({ database, onReplaceDatabase }: Props) {
   });
 
   const resolveWithLocal = () => void run(async () => {
-    if (!schoolId) throw new Error("Selecione uma escola em Conta e sincronização.");
+    if (!schoolId) throw new Error("Selecione uma escola em Nuvem e salvamento.");
     const uploaded = await replaceCloudWithLocal(schoolId, database);
     onReplaceDatabase(uploaded);
     setRole(await getCloudSyncRole(schoolId));
     setStatus("synced");
     setLocalWinsArmed(false);
-    setMessage({ tone: "success", text: "Pronto. Os dados deste computador foram mantidos e a nuvem foi atualizada." });
+    setMessage({ tone: "success", text: "Pronto. Suas alterações foram aplicadas e a cópia final foi conferida com a nuvem." });
   });
 
   const state = schoolId
@@ -218,7 +218,7 @@ export function CloudSyncPanel({ database, onReplaceDatabase }: Props) {
           <button className="secondary-button" disabled={busy} onClick={() => setRecoveryArmed(true)}>Usar cópia da nuvem</button>
         )}
         {status === "conflict" && !localWinsArmed && (
-          <button className="secondary-button" disabled={busy} onClick={() => setLocalWinsArmed(true)}>Manter cópia deste computador</button>
+          <button className="secondary-button" disabled={busy} onClick={() => setLocalWinsArmed(true)}>Manter minhas alterações</button>
         )}
         <button className="secondary-button" disabled={busy || !schoolId} onClick={() => void refresh()}>Verificar novamente</button>
       </div>
@@ -240,11 +240,11 @@ export function CloudSyncPanel({ database, onReplaceDatabase }: Props) {
 
       {status === "conflict" && localWinsArmed && (
         <div className="cloud-sync-recovery">
-          <strong>Manter os dados deste computador?</strong>
-          <span>O AulaFácil vai usar esta cópia como a correta e atualizar a nuvem. Faça isso somente se os dados deste computador forem os que você quer manter.</span>
+          <strong>Aplicar as alterações deste computador?</strong>
+          <span>O AulaFácil vai aplicar as alterações deste computador sem apagar registros que existam somente na nuvem. Exclusões que você confirmou serão respeitadas.</span>
           <div className="cloud-sync-recovery-actions">
             <button className="secondary-button" disabled={busy} onClick={() => setLocalWinsArmed(false)}>Cancelar</button>
-            <button className="danger-button" disabled={busy} onClick={resolveWithLocal}>Sim, manter estes dados</button>
+            <button className="danger-button" disabled={busy} onClick={resolveWithLocal}>Aplicar minhas alterações</button>
           </div>
         </div>
       )}

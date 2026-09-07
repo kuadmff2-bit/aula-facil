@@ -118,15 +118,15 @@ export function BackupPanel({ database, onRestoreCandidate, onReset, onNotify }:
       <div className="security-hero card">
         <span><ShieldCheck size={30} /></span>
         <div>
-          <h2>Backup portátil criptografado</h2>
-          <p>O arquivo .afbackup usa AES-256-GCM e uma chave derivada da senha escolhida. Ele pode ser levado para outro computador sem depender da proteção DPAPI do Windows deste dispositivo.</p>
+          <h2>Backup protegido por senha</h2>
+          <p>Crie uma cópia extra dos dados da escola para guardar em outro local ou recuperar em outro computador. O arquivo só pode ser aberto com a senha que você escolher.</p>
         </div>
       </div>
 
       <div className="backup-grid">
         <article className="card backup-card backup-secure-card">
           <span className="backup-icon blue"><LockKeyhole /></span>
-          <h3>Criar .afbackup</h3>
+          <h3>Criar backup protegido</h3>
           <p>A senha não é salva pelo AulaFácil. Sem ela, o arquivo não poderá ser recuperado.</p>
           <label className="backup-password-field">
             <span>Senha do backup</span>
@@ -170,10 +170,10 @@ export function BackupPanel({ database, onRestoreCandidate, onReset, onNotify }:
 
       <div className="backup-warning card">
         <ShieldCheck size={20} />
-        <p><strong>Recomendação:</strong> mantenha pelo menos duas cópias em locais diferentes e teste a restauração periodicamente. O Cloud ajuda na continuidade, mas não substitui um backup independente.</p>
+        <p><strong>Recomendação:</strong> use a nuvem para manter os dispositivos alinhados e guarde também um backup protegido em outro local. Assim você tem duas formas diferentes de recuperar seus dados.</p>
       </div>
 
-      <div className="danger-zone card"><div><h3>Apagar todos os dados locais</h3><p>Use apenas para reiniciar esta instalação. Dados já existentes no Cloud não devem ser tratados como apagados até a sincronização confirmar a operação.</p></div><button className="danger-button" onClick={onReset}><Trash2 size={18} /> Limpar sistema</button></div>
+      <div className="danger-zone card"><div><h3>Apagar dados deste computador</h3><p>Remove somente a cópia salva neste Windows. Os dados do AulaFácil Cloud e seus arquivos de backup não são apagados por esta ação.</p></div><button className="danger-button" onClick={onReset}><Trash2 size={18} /> Apagar deste computador</button></div>
     </section>
   );
 }
