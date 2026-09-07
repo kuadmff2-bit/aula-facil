@@ -49,6 +49,8 @@ export type CloudDataSummary = {
   grades: number;
   notices: number;
   totalOperationalRecords: number;
+  complete: boolean;
+  countErrors: string[];
 };
 
 export type CloudAuthState = {
@@ -174,24 +176,35 @@ async function countRows(table: string, schoolId: string) {
 }
 
 export async function getCloudDataSummary(schoolId: string): Promise<CloudDataSummary> {
-  const [classes, students, invoices, payments, attendance, grades, notices] = await Promise.all([
-    countActive("classes", schoolId),
-    countActive("students", schoolId),
-    countActive("invoices", schoolId),
-    countRows("payments", schoolId),
-    countActive("attendance", schoolId),
-    countActive("grades", schoolId),
-    countActive("notices", schoolId),
-  ]);
+  const requests: Array<[keyof Pick<CloudDataSummary, "classes" | "students" | "invoices" | "payments" | "attendance" | "grades" | "notices">, Promise<number>]> = [
+    ["classes", countActive("classes", schoolId)],
+    ["students", countActive("students", schoolId)],
+    ["invoices", countActive("invoices", schoolId)],
+    ["payments", countRows("payments", schoolId)],
+    ["attendance", countActive("attendance", schoolId)],
+    ["grades", countActive("grades", schoolId)],
+    ["notices", countActive("notices", schoolId)],
+  ];
+  const settled = await Promise.allSettled(requests.map(([, promise]) => promise));
+  const values: Record<string, number> = {};
+  const countErrors: string[] = [];
+  settled.forEach((result, index) => {
+    const key = requests[index][0];
+    if (result.status === "fulfilled") values[key] = result.value;
+    else { values[key] = 0; countErrors.push(key); }
+  });
+  const classes = values.classes ?? 0;
+  const students = values.students ?? 0;
+  const invoices = values.invoices ?? 0;
+  const payments = values.payments ?? 0;
+  const attendance = values.attendance ?? 0;
+  const grades = values.grades ?? 0;
+  const notices = values.notices ?? 0;
   return {
-    classes,
-    students,
-    invoices,
-    payments,
-    attendance,
-    grades,
-    notices,
+    classes, students, invoices, payments, attendance, grades, notices,
     totalOperationalRecords: classes + students + invoices + payments + attendance + grades + notices,
+    complete: countErrors.length === 0,
+    countErrors,
   };
 }
 

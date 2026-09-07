@@ -283,6 +283,9 @@ export async function safePushToCloud(schoolId: string, database: SchoolDatabase
     getCloudRevision(schoolId),
   ]);
   const baseline = readBaseline(schoolId);
+  if (!summary.complete && !baseline) {
+    throw new Error("Não foi possível confirmar todos os registros existentes na nuvem. O primeiro envio foi bloqueado por segurança. Tente novamente quando a conexão estiver estável.");
+  }
   const signature = localSyncSignature(database, role);
   const previousAttempt = readPushAttempt(schoolId);
   const resumableAttempt = previousAttempt
@@ -359,6 +362,7 @@ export async function reconcileCloud(schoolId: string, database: SchoolDatabase)
   if (status === "synced") return { status, database } as const;
   if (status === "not_linked") {
     const summary = await getCloudDataSummary(schoolId);
+    if (!summary.complete) throw new Error("A conferência da nuvem ficou incompleta. Por segurança, o AulaFácil não enviou nem substituiu dados. Tente novamente.");
     if (summary.totalOperationalRecords === 0) return { status: "synced" as const, database: await safePushToCloud(schoolId, database) };
     throw new Error("A instituição já possui dados na nuvem. Faça uma recuperação inicial antes de sincronizar este computador.");
   }
