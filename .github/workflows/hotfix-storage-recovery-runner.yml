@@ -72,7 +72,7 @@ jobs:
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           rm -f apply-storage-recovery.py
-          git add src/storage.ts src/storage-recovery-screen.tsx src/main.tsx src-tauri/src/lib.rs src-tauri/icons
+          git add src/storage.ts src/storage-recovery-screen.tsx src/main.tsx src-tauri/src/lib.rs
           git rm .github/workflows/hotfix-storage-recovery.yml .github/workflows/hotfix-storage-recovery-runner.yml
           git commit -m "fix: recuperar armazenamento protegido sem perda de dados"
           git push origin HEAD:main
