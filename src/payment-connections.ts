@@ -156,7 +156,7 @@ export async function updatePaymentConnection(
 }
 
 export async function configurePaymentCredentials(connectionId: string, credentials: Record<string, string>) {
-  await invokeCredentialAction(connectionId, "configure", credentials);
+  return await invokeCredentialAction(connectionId, "configure", credentials);
 }
 
 export async function clearPaymentCredentials(connectionId: string) {

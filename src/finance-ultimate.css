@@ -9,3 +9,18 @@
 .finance-modal-notice.success{background:#ecfdf5;border-color:#86efac;color:#047857}.finance-modal-notice.warning{background:#fffbeb;border-color:#fcd34d;color:#92400e}.finance-modal-notice.danger{background:#fef2f2;border-color:#fca5a5;color:#b91c1c}
 [data-theme="dark"] .finance-modal-notice.success,.dark .finance-modal-notice.success{background:#052e24;border-color:#166534;color:#a7f3d0}[data-theme="dark"] .finance-modal-notice.warning,.dark .finance-modal-notice.warning{background:#451a03;border-color:#92400e;color:#fde68a}[data-theme="dark"] .finance-modal-notice.danger,.dark .finance-modal-notice.danger{background:#450a0a;border-color:#991b1b;color:#fecaca}
 
+/* PAYMENT-DATA-VALIDATION-0.4.15 */
+.charge-modal .billing-grid input[aria-invalid="true"] {
+  border-color: #ef4444;
+  box-shadow: 0 0 0 3px color-mix(in srgb, #ef4444 18%, transparent);
+}
+
+.charge-modal .billing-field-error {
+  display: block;
+  margin-top: 5px;
+  color: #ef4444;
+  font-size: 0.76rem;
+  font-weight: 700;
+  line-height: 1.3;
+}
+

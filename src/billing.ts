@@ -60,6 +60,64 @@ export const emptyBillingProfile = (): BillingProfile => ({
   streetNumber: "", neighborhood: "", city: "", state: "",
 });
 
+
+export type BillingProfileErrors = Partial<Record<keyof BillingProfile, string>>;
+
+function repeatedDigits(value: string) {
+  return /^(\d)\1+$/.test(value);
+}
+
+function validCpf(value: string) {
+  if (!/^\d{11}$/.test(value) || repeatedDigits(value)) return false;
+  const calculate = (base: string, factor: number) => {
+    let sum = 0;
+    for (const char of base) sum += Number(char) * factor--;
+    const remainder = (sum * 10) % 11;
+    return remainder === 10 ? 0 : remainder;
+  };
+  const first = calculate(value.slice(0, 9), 10);
+  if (first !== Number(value[9])) return false;
+  return calculate(value.slice(0, 10), 11) === Number(value[10]);
+}
+
+function validCnpj(value: string) {
+  if (!/^\d{14}$/.test(value) || repeatedDigits(value)) return false;
+  const calculate = (base: string, weights: number[]) => {
+    const sum = base.split("").reduce((total, char, index) => total + Number(char) * weights[index], 0);
+    const remainder = sum % 11;
+    return remainder < 2 ? 0 : 11 - remainder;
+  };
+  const first = calculate(value.slice(0, 12), [5, 4, 3, 2, 9, 8, 7, 6, 5, 4, 3, 2]);
+  if (first !== Number(value[12])) return false;
+  return calculate(value.slice(0, 13), [6, 5, 4, 3, 2, 9, 8, 7, 6, 5, 4, 3, 2]) === Number(value[13]);
+}
+
+export function getBillingProfileErrors(profile: BillingProfile): BillingProfileErrors {
+  const errors: BillingProfileErrors = {};
+  const document = profile.documentNumber.replace(/\D/g, "");
+  let phone = profile.phone.replace(/\D/g, "");
+  if ((phone.length === 12 || phone.length === 13) && phone.startsWith("55")) phone = phone.slice(2);
+  const postalCode = profile.postalCode.replace(/\D/g, "");
+  const state = profile.state.trim().toUpperCase();
+  const email = profile.email.trim();
+
+  if (document) {
+    if (document.length !== 11 && document.length !== 14) errors.documentNumber = "Informe CPF com 11 dígitos ou CNPJ com 14 dígitos.";
+    else if (document.length === 11 && !validCpf(document)) errors.documentNumber = "CPF inválido: confira os dígitos.";
+    else if (document.length === 14 && !validCnpj(document)) errors.documentNumber = "CNPJ inválido: confira os dígitos.";
+  }
+  if (postalCode && postalCode.length !== 8) errors.postalCode = "CEP inválido: informe exatamente 8 dígitos.";
+  if (phone && phone.length !== 10 && phone.length !== 11) errors.phone = "Telefone inválido: use DDD + número com 10 ou 11 dígitos.";
+  if (email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) errors.email = "E-mail inválido.";
+  if (state && !/^[A-Z]{2}$/.test(state)) errors.state = "UF inválida: use 2 letras, por exemplo AM.";
+  return errors;
+}
+
+export function firstBillingProfileError(profile: BillingProfile) {
+  const errors = getBillingProfileErrors(profile);
+  return errors.documentNumber || errors.postalCode || errors.phone || errors.email || errors.state || "";
+}
+
 export async function getBillingProfile(schoolId: string, studentId: string): Promise<BillingProfile> {
   const { data, error } = await cloud.from("student_billing_profiles").select("*")
     .eq("school_id", schoolId).eq("student_id", studentId).maybeSingle();

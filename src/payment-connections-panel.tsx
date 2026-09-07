@@ -163,11 +163,19 @@ export function PaymentConnectionsPanel() {
         if (field.required && !value) throw new Error(`Preencha ${field.label}.`);
         if (value) payload[field.key] = value;
       }
-      await configurePaymentCredentials(credentialConnection.id, payload);
+      const validation = await configurePaymentCredentials(credentialConnection.id, payload);
       setCredentialValues({});
       setCredentialConnectionId("");
       await refresh();
-      setMessage({ tone: "success", text: `Credenciais de ${credentialConnection.displayName} protegidas no servidor. O aplicativo não consegue lê-las de volta.` });
+      const providerName = String(validation?.providerName ?? credentialProvider.name);
+      const environmentLabel = validation?.environment === "sandbox" ? "Sandbox (teste)" : "Produção";
+      const webhookFallback = Boolean(validation?.warning);
+      setMessage({
+        tone: webhookFallback ? "warning" : "success",
+        text: webhookFallback
+          ? `✓ API do ${providerName} aceita e validada em ${environmentLabel}. As credenciais foram protegidas no servidor. O webhook não pôde ser ativado, então a confirmação automática usará a conciliação de segurança.`
+          : `✓ API do ${providerName} aceita e validada com sucesso em ${environmentLabel}. As credenciais foram protegidas no servidor e a conexão está pronta para uso.`,
+      });
     });
   };
 
@@ -224,7 +232,13 @@ export function PaymentConnectionsPanel() {
               <div className="payment-connection-meta">
                 <span>{capabilityLabel(connection)}</span>
                 <span>{connection.environment === "sandbox" ? "⚠ TESTE — não cobra de verdade" : "Produção — cobrança real"}</span>
-                <span>{connection.providerKey === "manual_pix" || connection.credentialsConfigured ? "Credenciais prontas" : "Credenciais pendentes"}</span>
+                <span>{connection.providerKey === "manual_pix"
+                  ? "✓ Pix manual pronto"
+                  : String(connection.publicConfig.credentialValidation ?? "") === "validated"
+                    ? "✓ API validada pelo provedor"
+                    : connection.credentialsConfigured
+                      ? "⚠ API salva — valide novamente"
+                      : "Credenciais pendentes"}</span>
               </div>
               <div className="payment-connection-actions">
                 {connection.supportsPix && (connection.defaultForPix ? <span className="payment-default-chip">✓ Padrão para Pix</span> : <button type="button" onClick={() => makeDefault(connection, "pix")}>Usar para Pix</button>)}
@@ -249,7 +263,7 @@ export function PaymentConnectionsPanel() {
         <div className="payment-credential-box">
           <div>
             <h3>Credenciais de {credentialConnection.displayName}</h3>
-            <p>Esses valores serão enviados diretamente ao backend seguro e armazenados de forma protegida no servidor. Eles não entram no backup, no banco local nem no repositório.</p>
+            <p>Antes de salvar, o AulaFácil testa a credencial diretamente no provedor. Só uma API aceita será marcada como pronta. Os valores ficam protegidos no servidor e não entram no backup, no banco local nem no repositório.</p>
           </div>
           <div className="payment-form-grid">
             {credentialProvider.credentialFields.map((field) => (
