@@ -1,0 +1,187 @@
+name: Hotfix AulaFácil 0.4.12 - feedback de cobrança
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - ".github/workflows/hotfix-charge-feedback-0.4.12.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  apply:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Baixar código
+        uses: actions/checkout@v4
+        with:
+          token: ${{ github.token }}
+
+      - name: Aplicar correções de feedback
+        shell: python
+        run: |
+          from pathlib import Path
+          import re
+
+          def replace_once(path, old, new, label):
+              p = Path(path)
+              text = p.read_text(encoding="utf-8")
+              if old not in text:
+                  raise SystemExit(f"Trecho não encontrado em {path}: {label}")
+              p.write_text(text.replace(old, new, 1), encoding="utf-8")
+
+          billing = Path("src/billing.ts")
+          text = billing.read_text(encoding="utf-8")
+          marker = '''export async function generateProviderCharge(input: {'''
+          helper = '''async function getEdgeFunctionErrorMessage(error: unknown) {
+            const fallback = error instanceof Error ? error.message : String(error ?? "Erro desconhecido ao chamar o servidor.");
+            const candidate = error as { context?: unknown };
+            const context = candidate?.context as any;
+            const response = context instanceof Response
+              ? context
+              : context?.response instanceof Response
+                ? context.response
+                : null;
+
+            if (response) {
+              try {
+                const payload = await response.clone().json();
+                const detail = payload?.error ?? payload?.message ?? payload?.detail;
+                if (detail) return String(detail);
+              } catch {
+                try {
+                  const raw = (await response.clone().text()).trim();
+                  if (raw) {
+                    try {
+                      const parsed = JSON.parse(raw);
+                      const detail = parsed?.error ?? parsed?.message ?? parsed?.detail;
+                      if (detail) return String(detail);
+                    } catch {
+                      if (raw.length <= 500) return raw;
+                    }
+                  }
+                } catch {
+                  // Mantém a mensagem de fallback abaixo.
+                }
+              }
+            }
+
+            if (/Edge Function returned a non-2xx status code/i.test(fallback)) {
+              return "O servidor recusou a cobrança. Confira se o provedor está ativo, se as credenciais estão configuradas e se os dados do pagador são válidos. Tente novamente; se o provedor informar o motivo, ele aparecerá aqui.";
+            }
+            return fallback;
+          }
+
+          export async function generateProviderCharge(input: {'''
+          if "async function getEdgeFunctionErrorMessage" not in text:
+              if marker not in text:
+                  raise SystemExit("Ponto de inserção do tratamento da Edge Function não encontrado")
+              text = text.replace(marker, helper, 1)
+          old = '''  if (error) throw new Error(`Não foi possível gerar a cobrança: ${error.message}`);'''
+          new = '''  if (error) throw new Error(await getEdgeFunctionErrorMessage(error));'''
+          if old not in text:
+              raise SystemExit("Tratamento antigo do erro de cobrança não encontrado")
+          text = text.replace(old, new, 1)
+          billing.write_text(text, encoding="utf-8")
+
+          finance = Path("src/finance-ultimate.tsx")
+          text = finance.read_text(encoding="utf-8")
+          old = '''  const openCharge = async (invoice: Invoice) => {
+    const student = students.get(invoice.studentId);'''
+          new = '''  const openCharge = async (invoice: Invoice) => {
+    setNotice(null);
+    const student = students.get(invoice.studentId);'''
+          if old not in text:
+              raise SystemExit("openCharge não encontrado")
+          text = text.replace(old, new, 1)
+
+          old = '''    const schoolId = localStorage.getItem(SELECTED_SCHOOL_KEY) ?? "";
+    if (!schoolId) return;
+    setBusy(true);
+    setNotice(null);'''
+          new = '''    const schoolId = localStorage.getItem(SELECTED_SCHOOL_KEY) ?? "";
+    if (!schoolId) {
+      setNotice({ tone: "danger", text: "Não há instituição Cloud selecionada. Feche esta janela, conecte o AulaFácil Cloud e selecione a instituição antes de gerar Pix ou boleto." });
+      return;
+    }
+    setBusy(true);
+    setNotice({ tone: "warning", text: `Gerando ${chargeMethod === "pix" ? "Pix" : "boleto"} no provedor. Aguarde a resposta do servidor...` });'''
+          if old not in text:
+              raise SystemExit("Início de generateCharge não encontrado")
+          text = text.replace(old, new, 1)
+
+          old = '''    {notice && <div className={`finance-notice ${notice.tone}`}><span>{notice.text}</span><button onClick={() => { setNotice(null); setReopenArmed(""); }}><X size={15}/></button></div>}'''
+          new = '''    {notice && !modal && <div className={`finance-notice ${notice.tone}`} role={notice.tone === "danger" ? "alert" : "status"} aria-live="assertive"><span>{notice.text}</span><button aria-label="Fechar aviso" onClick={() => { setNotice(null); setReopenArmed(""); }}><X size={15}/></button></div>}'''
+          if old not in text:
+              raise SystemExit("Aviso principal não encontrado")
+          text = text.replace(old, new, 1)
+
+          charge_start = '''    {modal?.kind === "charge" && <div className="modal-backdrop"><section className="modal finance-modal charge-modal"><header><div><h2>Gerar cobrança bancária</h2><p>{modal.student.name} · os dados abaixo são usados somente quando o provedor exigir.</p></div><button className="modal-close" onClick={() => setModal(null)}><X/></button></header><div className="billing-grid">'''
+          charge_replacement = '''    {modal?.kind === "charge" && <div className="modal-backdrop"><section className="modal finance-modal charge-modal"><header><div><h2>Gerar cobrança bancária</h2><p>{modal.student.name} · os dados abaixo são usados somente quando o provedor exigir.</p></div><button className="modal-close" onClick={() => { setModal(null); setNotice(null); }}><X/></button></header>{notice && <div className={`finance-modal-notice ${notice.tone}`} role={notice.tone === "danger" ? "alert" : "status"} aria-live="assertive">{notice.tone === "success" ? <CheckCircle2 size={20}/> : <AlertTriangle size={20}/>}<span>{notice.text}</span><button type="button" aria-label="Fechar aviso" onClick={() => setNotice(null)}><X size={16}/></button></div>}<div className="billing-grid">'''
+          if charge_start not in text:
+              raise SystemExit("Cabeçalho do modal de cobrança não encontrado")
+          text = text.replace(charge_start, charge_replacement, 1)
+
+          old = '''<div className="form-actions"><button className="secondary-button" onClick={() => setModal(null)}>Fechar</button><button className="primary-button" disabled={busy} onClick={() => void generateCharge()}>{busy ? "Gerando..." : `Gerar ${chargeMethod === "pix" ? "Pix" : "boleto"}`}</button></div>'''
+          new = '''<div className="form-actions"><button className="secondary-button" onClick={() => { setModal(null); setNotice(null); }}>Fechar</button><button className="primary-button" disabled={busy} aria-busy={busy} onClick={() => void generateCharge()}>{busy ? `Gerando ${chargeMethod === "pix" ? "Pix" : "boleto"}...` : `Gerar ${chargeMethod === "pix" ? "Pix" : "boleto"}`}</button></div>'''
+          if old not in text:
+              raise SystemExit("Ações do modal de cobrança não encontradas")
+          text = text.replace(old, new, 1)
+          finance.write_text(text, encoding="utf-8")
+
+          css = Path("src/finance-ultimate.css")
+          css_text = css.read_text(encoding="utf-8")
+          addition = '''
+
+/* CHARGE-FEEDBACK-0.4.12 */
+.finance-modal-notice{position:relative;z-index:2;display:flex;align-items:flex-start;gap:10px;margin:0 0 16px;padding:13px 14px;border:1px solid transparent;border-radius:12px;font-size:.9rem;font-weight:700;line-height:1.4;box-shadow:0 8px 24px rgba(0,0,0,.08)}
+.finance-modal-notice>svg{flex:0 0 auto;margin-top:1px}.finance-modal-notice>span{flex:1;min-width:0;overflow-wrap:anywhere}.finance-modal-notice>button{flex:0 0 auto;border:0;background:transparent;color:inherit;cursor:pointer;padding:2px;display:grid;place-items:center}
+.finance-modal-notice.success{background:#ecfdf5;border-color:#86efac;color:#047857}.finance-modal-notice.warning{background:#fffbeb;border-color:#fcd34d;color:#92400e}.finance-modal-notice.danger{background:#fef2f2;border-color:#fca5a5;color:#b91c1c}
+[data-theme="dark"] .finance-modal-notice.success,.dark .finance-modal-notice.success{background:#052e24;border-color:#166534;color:#a7f3d0}[data-theme="dark"] .finance-modal-notice.warning,.dark .finance-modal-notice.warning{background:#451a03;border-color:#92400e;color:#fde68a}[data-theme="dark"] .finance-modal-notice.danger,.dark .finance-modal-notice.danger{background:#450a0a;border-color:#991b1b;color:#fecaca}
+'''
+          if "CHARGE-FEEDBACK-0.4.12" not in css_text:
+              css.write_text(css_text.rstrip() + addition + "\n", encoding="utf-8")
+
+          # Atualizar versão desktop para publicar um instalador novo.
+          pkg = Path("package.json")
+          pkg_text = pkg.read_text(encoding="utf-8")
+          if '"version": "0.4.11"' not in pkg_text:
+              raise SystemExit("package.json não está em 0.4.11")
+          pkg.write_text(pkg_text.replace('"version": "0.4.11"', '"version": "0.4.12"', 1), encoding="utf-8")
+
+          tauri = Path("src-tauri/tauri.conf.json")
+          t = tauri.read_text(encoding="utf-8")
+          tauri.write_text(t.replace('"version": "0.4.11"', '"version": "0.4.12"', 1), encoding="utf-8")
+
+          cargo = Path("src-tauri/Cargo.toml")
+          c = cargo.read_text(encoding="utf-8")
+          cargo.write_text(c.replace('version = "0.4.11"', 'version = "0.4.12"', 1), encoding="utf-8")
+
+          lock = Path("src-tauri/Cargo.lock")
+          l = lock.read_text(encoding="utf-8")
+          l2, count = re.subn(r'(\[\[package\]\]\nname = "aula-facil"\nversion = ")0\.4\.11(")', r'\g<1>0.4.12\2', l, count=1)
+          if count != 1:
+              raise SystemExit("Versão do aula-facil no Cargo.lock não encontrada")
+          lock.write_text(l2, encoding="utf-8")
+
+      - name: Atualizar package-lock
+        run: npm install --package-lock-only --ignore-scripts
+
+      - name: Instalar dependências
+        run: npm ci
+
+      - name: Testar
+        run: npm test
+
+      - name: Validar frontend
+        run: npm run build
+
+      - name: Commitar hotfix
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add src/billing.ts src/finance-ultimate.tsx src/finance-ultimate.css package.json package-lock.json src-tauri/tauri.conf.json src-tauri/Cargo.toml src-tauri/Cargo.lock
+          git commit -m "release: AulaFácil 0.4.12 corrige feedback de cobrança"
+          git push
