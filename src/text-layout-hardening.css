@@ -259,6 +259,39 @@
   .roster-sheet table {
     max-width: none;
   }
+
+  /* Escala única para o topo dos módulos. Evita que uma tela antiga use
+     tipografia muito maior que as demais quando o Windows está com escala alta. */
+  :where(
+    .cloud-sync-heading,
+    .cloud-account-heading,
+    .payment-connections-heading,
+    .message-heading,
+    .professional-settings-heading,
+    .finance-ultimate-head,
+    .debt-heading
+  ) :where(h2,h3) {
+    font-size: clamp(1.05rem, 1.3vw, 1.2rem) !important;
+    line-height: 1.25 !important;
+    letter-spacing: -.02em;
+    white-space: normal !important;
+  }
+
+  :where(
+    .cloud-sync-heading,
+    .cloud-account-heading,
+    .payment-connections-heading,
+    .message-heading,
+    .professional-settings-heading,
+    .finance-ultimate-head,
+    .debt-heading
+  ) p {
+    max-width: 76ch;
+    font-size: clamp(.82rem, 1vw, .9rem) !important;
+    line-height: 1.45 !important;
+    white-space: normal !important;
+    overflow-wrap: anywhere;
+  }
 }
 
 @container aulafacil-content (max-width: 1100px) {
