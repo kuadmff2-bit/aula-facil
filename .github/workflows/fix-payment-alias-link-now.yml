@@ -26,10 +26,10 @@ jobs:
           deno-version: v2.x
       - name: Aplicar correção
         run: python scripts/fix-payment-alias-link-now.py
-      - name: Validar Edge Function
-        run: deno check supabase/functions/payment-charge-link/index.ts
       - name: Instalar dependências
         run: npm ci
+      - name: Validar Edge Function
+        run: deno check supabase/functions/payment-charge-link/index.ts
       - name: Testar aplicativo
         run: npm test
       - name: Validar build
