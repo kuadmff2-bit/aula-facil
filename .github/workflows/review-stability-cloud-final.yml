@@ -1,0 +1,107 @@
+name: Concluir revisão de estabilidade e nuvem
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - ".github/workflows/review-stability-cloud-final.yml"
+
+permissions:
+  contents: write
+
+concurrency:
+  group: review-stability-cloud-final
+  cancel-in-progress: true
+
+jobs:
+  finalize:
+    runs-on: windows-latest
+    steps:
+      - name: Baixar código
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Preparar Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Preparar Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Reaplicar revisão e corrigir compatibilidade legada
+        shell: python
+        run: |
+          from pathlib import Path
+          import re
+          import textwrap
+
+          workflow = Path('.github/workflows/review-stability-cloud.yml').read_text(encoding='utf-8-sig').splitlines()
+          step_index = next(i for i, line in enumerate(workflow) if line.strip() == '- name: Aplicar revisão de clareza e resiliência')
+          run_index = next(i for i in range(step_index + 1, len(workflow)) if workflow[i].strip() == 'run: |')
+          block = []
+          for line in workflow[run_index + 1:]:
+              if line.startswith('      - name:'):
+                  break
+              block.append(line)
+          script = textwrap.dedent('\n'.join(block))
+          if 'DataSafetyPanel' not in script or 'storage-recovery-screen.tsx' not in script:
+              raise SystemExit('A revisão esperada não foi encontrada no workflow de origem.')
+          exec(compile(script, 'apply-review.py', 'exec'), {'__name__': '__main__'})
+
+          # App.tsx é uma implementação legada ainda incluída pelo TypeScript.
+          # Mantemos compatibilidade para que o código antigo não bloqueie o build da versão atual.
+          legacy_path = Path('src/App.tsx')
+          legacy = legacy_path.read_text(encoding='utf-8-sig')
+          legacy, count = re.subn(
+              r'<CloudAccountPanel\s+database=\{database\}\s+onReplaceDatabase=\{setDatabase\}\s*/>',
+              '<CloudAccountPanel database={database}/>',
+              legacy,
+          )
+          if count == 0 and 'onReplaceDatabase={setDatabase}' in legacy and '<CloudAccountPanel' in legacy:
+              raise SystemExit('A chamada legada do CloudAccountPanel mudou de formato; revisão manual necessária.')
+          legacy_path.write_text(legacy, encoding='utf-8')
+
+      - name: Instalar dependências
+        run: npm ci --no-audit
+
+      - name: Executar testes
+        run: npm test
+
+      - name: Validar TypeScript e frontend
+        run: npm run build
+
+      - name: Validar estrutura de release
+        shell: bash
+        run: AULAFACIL_STRICT_RELEASE=1 node scripts/quality-check.mjs
+
+      - name: Gerar recursos Tauri
+        run: npm run desktop:icons
+
+      - name: Validar backend desktop no Windows
+        run: cargo check --locked --manifest-path src-tauri/Cargo.toml
+
+      - name: Auditar pontos críticos
+        shell: bash
+        run: |
+          grep -q 'Nuvem e salvamento' src/AppNext.tsx
+          grep -q 'aulafacil:storage-state' src/storage.ts
+          grep -q 'signInCloud' src/storage-recovery-screen.tsx
+          grep -q 'selectedSchoolId' src/storage-recovery-screen.tsx
+          grep -q 'getCloudSyncMetadata' src/cloud-safe-sync.ts
+          grep -q 'packageInfo.version' src/AppNext.tsx
+          ! grep -q 'safePullFromCloud' src/cloud-account.tsx
+          ! grep -q 'safePushToCloud' src/cloud-account.tsx
+          ! grep -q 'onReplaceDatabase={setDatabase}' src/App.tsx
+
+      - name: Publicar revisão validada
+        shell: bash
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git rm .github/workflows/review-stability-cloud.yml .github/workflows/review-stability-cloud-final.yml
+          git add -A
+          git commit -m "fix: simplificar nuvem e reforçar salvamento e recuperação"
+          git push origin HEAD:main
