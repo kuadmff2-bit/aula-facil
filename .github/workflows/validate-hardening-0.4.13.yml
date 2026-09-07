@@ -22,8 +22,11 @@ jobs:
           node-version: 22
           cache: npm
 
-      - name: Apply deterministic patch
+      - name: Apply sync hardening
         run: python scripts/harden_sync_0413.py
+
+      - name: Apply finance client hardening
+        run: python scripts/harden_finance_client_0413.py
 
       - name: Refresh package lock
         run: npm install --package-lock-only --ignore-scripts
@@ -60,6 +63,6 @@ jobs:
           fi
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add src/cloud-safe-sync.ts package.json package-lock.json src-tauri/tauri.conf.json src-tauri/Cargo.toml src-tauri/Cargo.lock
-          git commit -m "release: AulaFácil 0.4.13 hardens cloud synchronization"
+          git add src/cloud-safe-sync.ts src/finance-ultimate.tsx package.json package-lock.json src-tauri/tauri.conf.json src-tauri/Cargo.toml src-tauri/Cargo.lock
+          git commit -m "release: AulaFácil 0.4.13 hardens synchronization and billing"
           git push
