@@ -1,0 +1,125 @@
+name: Corrigir cobrança por alias de mensalidade
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - ".github/workflows/patch-charge-alias-resolution.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - uses: denoland/setup-deno@v2
+        with:
+          deno-version: v2.x
+      - name: Aplicar resolução de alias financeiro
+        shell: python
+        run: |
+          from pathlib import Path
+
+          charge_path = Path('supabase/functions/payment-charge/index.ts')
+          text = charge_path.read_text(encoding='utf-8')
+          old = '''  const { data: invoice, error: invoiceError } = await admin.from("invoices").select("*").eq("id", invoiceId).maybeSingle();
+          if (invoiceError) return reply(500, { error: `Não foi possível carregar a cobrança: ${invoiceError.message}` });
+          if (!invoice) return reply(404, { error: "Cobrança não encontrada." });
+          '''
+          new = '''  let invoiceResult = await admin.from("invoices").select("*").eq("id", invoiceId).maybeSingle();
+          if (invoiceResult.error) return reply(500, { error: `Não foi possível carregar a cobrança: ${invoiceResult.error.message}` });
+          let invoice: any = invoiceResult.data;
+
+          // Compatibilidade com mensalidades que já foram reconciliadas pela nuvem e
+          // cujo UUID local antigo virou alias do ID canônico.
+          if (!invoice) {
+            const { data: memberships, error: membershipError } = await admin
+              .from("school_members")
+              .select("school_id")
+              .eq("user_id", userData.user.id)
+              .eq("active", true);
+            if (membershipError) return reply(500, { error: "Não foi possível validar as instituições da sua conta." });
+            const schoolIds = (memberships ?? []).map((item: any) => String(item.school_id)).filter(Boolean);
+            if (schoolIds.length) {
+              const { data: aliases, error: aliasError } = await admin
+                .from("invoice_sync_aliases")
+                .select("school_id,canonical_invoice_id")
+                .eq("local_invoice_id", invoiceId)
+                .in("school_id", schoolIds)
+                .limit(2);
+              if (aliasError) return reply(500, { error: "Não foi possível resolver o identificador antigo da cobrança." });
+              if ((aliases ?? []).length > 1) return reply(409, { error: "O identificador antigo desta cobrança ficou ambíguo entre instituições. Sincronize novamente antes de emitir." });
+              const canonicalId = String(aliases?.[0]?.canonical_invoice_id ?? "");
+              if (canonicalId) {
+                invoiceResult = await admin.from("invoices").select("*").eq("id", canonicalId).maybeSingle();
+                if (invoiceResult.error) return reply(500, { error: `Não foi possível carregar a cobrança reconciliada: ${invoiceResult.error.message}` });
+                invoice = invoiceResult.data;
+              }
+            }
+          }
+          if (!invoice) return reply(404, { error: "Cobrança não encontrada nem entre os identificadores reconciliados. Sincronize o AulaFácil e tente novamente." });
+          '''
+          if old not in text:
+              raise SystemExit('Bloco de leitura da cobrança não encontrado em payment-charge')
+          text = text.replace(old, new, 1)
+          old_reuse = 'return reply(200, { ok: true, reused: true, provider: invoice.provider,'
+          if old_reuse not in text:
+              raise SystemExit('Retorno de reutilização não encontrado')
+          text = text.replace(old_reuse, 'return reply(200, { ok: true, canonicalInvoiceId: invoice.id, reused: true, provider: invoice.provider,', 1)
+          old_final = 'return reply(200, { ok: true, reused: Boolean(normalized.metadata.recoveredFromProvider || claim.action === "reuse"), provider: normalized.provider,'
+          if old_final not in text:
+              raise SystemExit('Retorno final não encontrado')
+          text = text.replace(old_final, 'return reply(200, { ok: true, canonicalInvoiceId: invoice.id, reused: Boolean(normalized.metadata.recoveredFromProvider || claim.action === "reuse"), provider: normalized.provider,', 1)
+          charge_path.write_text(text, encoding='utf-8')
+
+          link_path = Path('supabase/functions/payment-charge-link/index.ts')
+          text = link_path.read_text(encoding='utf-8')
+          old = '''  // Não usa student:students(...), pois invoices possui duas FKs para students e a relação pode ser ambígua no PostgREST.
+          const { data: invoice, error: invoiceError } = await db
+            .from("invoices")
+            .select("id,school_id,student_id,status,reference,due_date,amount,provider_metadata")
+            .eq("id", invoiceId)
+            .maybeSingle();
+          '''
+          new = '''  // payment-charge devolve o ID canônico quando o desktop enviou um alias antigo.
+          const resolvedInvoiceId = String(chargeData?.canonicalInvoiceId ?? invoiceId);
+          // Não usa student:students(...), pois invoices possui duas FKs para students e a relação pode ser ambígua no PostgREST.
+          const { data: invoice, error: invoiceError } = await db
+            .from("invoices")
+            .select("id,school_id,student_id,status,reference,due_date,amount,provider_metadata")
+            .eq("id", resolvedInvoiceId)
+            .maybeSingle();
+          '''
+          if old not in text:
+              raise SystemExit('Bloco de leitura da cobrança não encontrado em payment-charge-link')
+          text = text.replace(old, new, 1)
+          link_path.write_text(text, encoding='utf-8')
+
+      - name: Typecheck Edge Functions alteradas
+        run: |
+          deno check supabase/functions/payment-charge/index.ts
+          deno check supabase/functions/payment-charge-link/index.ts
+      - name: Testes do aplicativo
+        run: |
+          npm ci
+          npm test
+          npm run build
+      - name: Commitar correção validada
+        shell: bash
+        run: |
+          git config user.name "kuadm"
+          git config user.email "kuadmff2@gmail.com"
+          git add supabase/functions/payment-charge/index.ts supabase/functions/payment-charge-link/index.ts
+          git diff --cached --quiet && exit 0
+          git commit -m "fix: resolver alias antigo ao gerar Pix e boleto"
+          git push origin HEAD:main
