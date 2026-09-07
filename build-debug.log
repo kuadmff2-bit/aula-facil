@@ -1,0 +1,5 @@
+
+> aula-facil-desktop@0.4.13 build
+> tsc --noEmit && vite build
+
+src/cloud-safe-sync.ts(69,6): error TS2551: Property 'catch' does not exist on type 'PostgrestFilterBuilder<any, any, any, any, "release_school_sync_lease", null, "RPC", false>'. Did you mean 'match'?
