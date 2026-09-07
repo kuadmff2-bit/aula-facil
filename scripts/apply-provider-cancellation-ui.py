@@ -34,7 +34,7 @@ new_cancel = '''  const cancelInvoice = (invoice: Invoice) => void (async () => 
     }
 
     const schoolId = localStorage.getItem(SELECTED_SCHOOL_KEY) ?? "";
-    const hasExternalCharge = Boolean(invoice.providerChargeId || invoice.pixCopyPaste || invoice.boletoUrl || invoice.paymentUrl);
+    const hasExternalCharge = Boolean(invoice.providerChargeId || invoice.pixCopyPaste || invoice.boletoUrl);
     setBusy(true);
     setNotice(null);
     try {
@@ -105,7 +105,7 @@ replacements.append((
 ))
 replacements.append((
     '<div className="form-actions"><button className="secondary-button" onClick={() => { setModal(null); setNotice(null); }}>Fechar</button><button className="primary-button" disabled={busy} aria-busy={busy} onClick={() => void generateCharge()}>{busy ? `Gerando ${chargeMethod === "pix" ? "Pix" : "boleto"}...` : `Gerar ${chargeMethod === "pix" ? "Pix" : "boleto"}`}</button></div>',
-    '<div className="form-actions">{(modal.invoice.providerChargeId || modal.invoice.pixCopyPaste || modal.invoice.boletoUrl || modal.invoice.paymentUrl || generatedCharge?.providerChargeId) && <button className="danger-button" disabled={busy} onClick={() => removeProviderChargeForReissue()}>{reissueArmed === modal.invoice.id ? "Confirmar remoção" : "Remover cobrança atual para reemitir"}</button>}<button className="secondary-button" onClick={() => { setModal(null); setNotice(null); setReissueArmed(""); }}>Fechar</button><button className="primary-button" disabled={busy} aria-busy={busy} onClick={() => void generateCharge()}>{busy ? `Gerando ${chargeMethod === "pix" ? "Pix" : "boleto"}...` : `Gerar ${chargeMethod === "pix" ? "Pix" : "boleto"}`}</button></div>'
+    '<div className="form-actions">{(modal.invoice.providerChargeId || modal.invoice.pixCopyPaste || modal.invoice.boletoUrl || generatedCharge?.providerChargeId) && <button className="danger-button" disabled={busy} onClick={() => removeProviderChargeForReissue()}>{reissueArmed === modal.invoice.id ? "Confirmar remoção" : "Remover cobrança atual para reemitir"}</button>}<button className="secondary-button" onClick={() => { setModal(null); setNotice(null); setReissueArmed(""); }}>Fechar</button><button className="primary-button" disabled={busy} aria-busy={busy} onClick={() => void generateCharge()}>{busy ? `Gerando ${chargeMethod === "pix" ? "Pix" : "boleto"}...` : `Gerar ${chargeMethod === "pix" ? "Pix" : "boleto"}`}</button></div>'
 ))
 
 for index, (old, new) in enumerate(replacements, 1):
