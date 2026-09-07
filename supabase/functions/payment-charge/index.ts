@@ -324,7 +324,13 @@ Deno.serve(async (req: Request) => {
     return reply(200, { ok: true, reused: Boolean(normalized.metadata.recoveredFromProvider || claim.action === "reuse"), provider: normalized.provider, providerChargeId: normalized.providerChargeId, pixCopyPaste: normalized.pixCopyPaste, pixQrCodeBase64: normalized.pixQrCodeBase64, boletoUrl: normalized.boletoUrl, paymentUrl: normalized.paymentUrl, amount: Number(normalized.metadata.amount ?? calculatedAmount), metadata: normalized.metadata });
   } catch (error) {
     const message = String(error instanceof Error ? error.message : error).slice(0, 700);
-    if (leaseToken) await admin.rpc("service_fail_payment_charge_attempt", { target_invoice: invoice.id, target_connection: connection.id, target_method: method, target_lease_token: leaseToken, target_error: message }).catch(() => undefined);
+    if (leaseToken) {
+      try {
+        await admin.rpc("service_fail_payment_charge_attempt", { target_invoice: invoice.id, target_connection: connection.id, target_method: method, target_lease_token: leaseToken, target_error: message });
+      } catch {
+        // Falha ao registrar a tentativa nunca deve esconder o erro original do provedor.
+      }
+    }
     await admin.from("audit_logs").insert({ school_id: invoice.school_id, actor_user_id: userData.user.id, action: "payment_charge_failed", entity_type: "invoice", entity_id: invoice.id, metadata: { provider: connection.provider_key, method, error: message } });
     return reply(422, { error: message || "O provedor não conseguiu gerar a cobrança." });
   }
