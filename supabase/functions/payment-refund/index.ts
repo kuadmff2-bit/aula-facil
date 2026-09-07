@@ -232,7 +232,13 @@ Deno.serve(async (req: Request) => {
     });
   } catch (error) {
     const message = String(error instanceof Error ? error.message : error).slice(0, 700);
-    if (leaseToken) await admin.rpc("service_fail_payment_refund_attempt", { target_payment: payment.id, target_lease_token: leaseToken, target_error: message }).catch(() => undefined);
+    if (leaseToken) {
+      try {
+        await admin.rpc("service_fail_payment_refund_attempt", { target_payment: payment.id, target_lease_token: leaseToken, target_error: message });
+      } catch {
+        // Falha ao registrar a tentativa nunca deve esconder o erro original do provedor.
+      }
+    }
     await admin.from("audit_logs").insert({ school_id: payment.school_id, actor_user_id: userData.user.id, action: "payment_refund_failed", entity_type: "payment", entity_id: payment.id, metadata: { provider: payment.provider, requested_amount: amountToRefund, requested_total: targetTotal, error: message } });
     return reply(422, { error: message || "O provedor não conseguiu iniciar o estorno." });
   }
