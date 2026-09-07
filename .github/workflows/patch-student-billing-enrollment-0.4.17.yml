@@ -1,0 +1,46 @@
+name: Dados de cobrança na matrícula 0.4.17
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - ".github/workflows/patch-student-billing-enrollment-0.4.17.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - uses: denoland/setup-deno@v2
+        with:
+          deno-version: v2.x
+      - name: Aplicar mudança
+        run: python scripts/patch-student-billing-enrollment-0.4.17.py
+      - name: Typecheck backend financeiro
+        run: deno check supabase/functions/payment-charge/index.ts
+      - name: Instalar dependências
+        run: npm ci
+      - name: Testes
+        run: npm test
+      - name: Build TypeScript e Vite
+        run: npm run build
+      - name: Commitar somente após validação
+        shell: bash
+        run: |
+          git config user.name "kuadm"
+          git config user.email "kuadmff2@gmail.com"
+          git add src/model.ts src/billing.ts src/cloud.ts src/cloud-safe-sync.ts src/AppNext.tsx src/finance-ultimate.tsx supabase/functions/payment-charge/index.ts
+          git diff --cached --quiet && exit 0
+          git commit -m "feat: usar dados da matrícula para Pix e boleto"
+          git push origin HEAD:main
