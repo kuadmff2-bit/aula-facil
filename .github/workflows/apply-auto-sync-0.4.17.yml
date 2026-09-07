@@ -1,0 +1,57 @@
+name: Aplicar sincronização automática 0.4.17
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - ".github/workflows/apply-auto-sync-0.4.17.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  actions: read
+
+jobs:
+  apply:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Baixar código
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Preparar Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Aplicar correções
+        run: python scripts/apply-auto-sync-0.4.17.py
+      - name: Preparar Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - name: Instalar dependências
+        run: npm ci
+      - name: Executar testes
+        run: npm test
+      - name: Validar frontend
+        run: npm run build
+      - name: Conferir que não restou pedido manual de sincronização no financeiro
+        shell: bash
+        run: |
+          if grep -R "Sincronize este computador antes" src/finance-ultimate.tsx src/debt-negotiation-panel.tsx; then
+            echo "Ainda existe bloqueio manual de sincronização nas telas financeiras."
+            exit 1
+          fi
+      - name: Publicar alterações no main
+        shell: bash
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A
+          if git diff --cached --quiet; then
+            echo "Nada para publicar."
+            exit 0
+          fi
+          git commit -m "feat: sincronização automática e financeiro sem bloqueios manuais"
+          git push origin HEAD:main
