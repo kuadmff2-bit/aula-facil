@@ -1,0 +1,189 @@
+name: Hardening de sincronização AulaFácil 0.4.13
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - ".github/workflows/harden-sync-0.4.13.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  apply:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Baixar código
+        uses: actions/checkout@v4
+
+      - name: Aplicar trava de sincronização e leitura final
+        shell: bash
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          import re
+
+          p = Path('src/cloud-safe-sync.ts')
+          text = p.read_text(encoding='utf-8')
+
+          old = '''const pendingDeletionKey = (schoolId: string) => `aulafacil.cloud.pending-deletions.${schoolId}`;
+'''
+          new = '''const pendingDeletionKey = (schoolId: string) => `aulafacil.cloud.pending-deletions.${schoolId}`;
+const SYNC_CLIENT_KEY = "aulafacil.cloud.sync-client-id";
+
+type SchoolSyncLease = { token: string; clientId: string };
+
+function getSyncClientId() {
+  const existing = localStorage.getItem(SYNC_CLIENT_KEY)?.trim();
+  if (existing && existing.length >= 8) return existing;
+  const created = `desktop-${crypto.randomUUID()}`;
+  localStorage.setItem(SYNC_CLIENT_KEY, created);
+  return created;
+}
+
+async function claimSchoolSyncLease(schoolId: string): Promise<SchoolSyncLease> {
+  const clientId = getSyncClientId();
+  const { data, error } = await cloud.rpc("claim_school_sync_lease", {
+    target_school: schoolId,
+    target_client_id: clientId,
+    lease_seconds: 600,
+  });
+  if (error) throw new Error(`Não foi possível reservar a sincronização: ${error.message}`);
+  const result = data && typeof data === "object" ? data as Record<string, unknown> : {};
+  if (!result.acquired || typeof result.leaseToken !== "string") {
+    const until = typeof result.busyUntil === "string" ? new Date(result.busyUntil).toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit", second: "2-digit" }) : "alguns instantes";
+    throw new Error(`Outro dispositivo está sincronizando esta instituição. Aguarde até ${until} e tente novamente. Nenhum dado foi sobrescrito.`);
+  }
+  return { token: result.leaseToken, clientId };
+}
+
+async function releaseSchoolSyncLease(schoolId: string, lease: SchoolSyncLease) {
+  await cloud.rpc("release_school_sync_lease", {
+    target_school: schoolId,
+    target_client_id: lease.clientId,
+    target_lease_token: lease.token,
+  }).catch(() => undefined);
+}
+
+async function withSchoolSyncLease<T>(schoolId: string, operation: () => Promise<T>): Promise<T> {
+  const lease = await claimSchoolSyncLease(schoolId);
+  try {
+    return await operation();
+  } finally {
+    await releaseSchoolSyncLease(schoolId, lease);
+  }
+}
+'''
+          if old not in text:
+              raise SystemExit('Ponto de inserção da trava de sincronização não encontrado')
+          text = text.replace(old, new, 1)
+
+          start = text.index('export async function safePushToCloud(schoolId: string, database: SchoolDatabase) {')
+          end = text.index('\nexport async function replaceCloudWithLocal', start)
+          old_push = text[start:end]
+          body = old_push.split('{', 1)[1].rsplit('}', 1)[0]
+          body = body.replace('''      const revision = await getCloudRevision(schoolId);
+      writeBaseline(schoolId, revision, pushed, role);
+      clearPushAttempt(schoolId);
+      return pushed;''', '''      // Nunca presume que a cópia local ainda é a verdade após o envio.
+      // Um webhook financeiro pode ter alterado a nuvem durante a sincronização.
+      const finalDatabase = await safePullFromCloud(schoolId, pushed.settings.appearance);
+      clearPushAttempt(schoolId);
+      return finalDatabase;''')
+          if 'const finalDatabase = await safePullFromCloud' not in body:
+              raise SystemExit('Trecho final do push não foi substituído')
+          indented = '\n'.join(('  ' + line if line else line) for line in body.splitlines())
+          new_push = 'export async function safePushToCloud(schoolId: string, database: SchoolDatabase) {\n  return withSchoolSyncLease(schoolId, async () => {' + indented + '\n  });\n}'
+          text = text[:start] + new_push + text[end:]
+
+          old_replace = '''export async function replaceCloudWithLocal(schoolId: string, database: SchoolDatabase) {
+  const role = await getCloudSyncRole(schoolId);
+  if (!isAdmin(role)) throw new Error("Somente proprietário ou administrador pode aplicar alterações deste computador durante um conflito.");
+  await pushSnapshot(schoolId, database, role);
+  await flushPendingCloudDeletions(schoolId);
+  clearPushAttempt(schoolId);
+  // Depois de aplicar as alterações locais, baixa novamente a cópia final.
+  // Registros existentes apenas na nuvem são preservados; exclusões confirmadas são respeitadas.
+  return safePullFromCloud(schoolId, database.settings.appearance);
+}'''
+          new_replace = '''export async function replaceCloudWithLocal(schoolId: string, database: SchoolDatabase) {
+  return withSchoolSyncLease(schoolId, async () => {
+    const role = await getCloudSyncRole(schoolId);
+    if (!isAdmin(role)) throw new Error("Somente proprietário ou administrador pode aplicar alterações deste computador durante um conflito.");
+    await pushSnapshot(schoolId, database, role);
+    await flushPendingCloudDeletions(schoolId);
+    clearPushAttempt(schoolId);
+    // Depois de aplicar as alterações locais, baixa novamente a cópia final.
+    // Registros existentes apenas na nuvem são preservados; exclusões confirmadas são respeitadas.
+    return safePullFromCloud(schoolId, database.settings.appearance);
+  });
+}'''
+          if old_replace not in text:
+              raise SystemExit('replaceCloudWithLocal não encontrado')
+          text = text.replace(old_replace, new_replace, 1)
+
+          old_pull = '''export async function safePullFromCloud(schoolId: string, localAppearance: SchoolDatabase["settings"]["appearance"] = "system") {
+  const role = await getCloudSyncRole(schoolId);
+  const base = await downloadCloudDatabase(schoolId, localAppearance);
+  const database = ensureUuidDatabase(await hydrateProfessionalCloudFields(schoolId, base));
+  const repaired = canWriteFinance(role) ? repairMissingEnrollmentInvoices(database) : 0;
+  if (repaired) await pushSnapshot(schoolId, database, role);
+  writeBaseline(schoolId, await getCloudRevision(schoolId), database, role);
+  writePendingCloudDeletions(schoolId, []);
+  return database;
+}'''
+          new_pull = '''export async function safePullFromCloud(schoolId: string, localAppearance: SchoolDatabase["settings"]["appearance"] = "system") {
+  return withSchoolSyncLease(schoolId, async () => {
+    const role = await getCloudSyncRole(schoolId);
+    const base = await downloadCloudDatabase(schoolId, localAppearance);
+    const database = ensureUuidDatabase(await hydrateProfessionalCloudFields(schoolId, base));
+    const repaired = canWriteFinance(role) ? repairMissingEnrollmentInvoices(database) : 0;
+    if (repaired) await pushSnapshot(schoolId, database, role);
+    // A revisão é lida somente depois de todo o snapshot final ter sido carregado/reparado.
+    writeBaseline(schoolId, await getCloudRevision(schoolId), database, role);
+    writePendingCloudDeletions(schoolId, []);
+    return database;
+  });
+}'''
+          if old_pull not in text:
+              raise SystemExit('safePullFromCloud não encontrado')
+          text = text.replace(old_pull, new_pull, 1)
+
+          p.write_text(text, encoding='utf-8')
+
+          replacements = [
+            ('package.json', '"version": "0.4.12"', '"version": "0.4.13"'),
+            ('src-tauri/tauri.conf.json', '"version": "0.4.12"', '"version": "0.4.13"'),
+            ('src-tauri/Cargo.toml', 'version = "0.4.12"', 'version = "0.4.13"'),
+          ]
+          for path, oldv, newv in replacements:
+              fp = Path(path); t = fp.read_text(encoding='utf-8')
+              if oldv not in t: raise SystemExit(f'Versão esperada não encontrada em {path}')
+              fp.write_text(t.replace(oldv, newv, 1), encoding='utf-8')
+
+          lock = Path('src-tauri/Cargo.lock'); t = lock.read_text(encoding='utf-8')
+          t2, count = re.subn(r'(\[\[package\]\]\nname = "aula-facil"\nversion = ")0\.4\.12(")', r'\g<1>0.4.13\2', t, count=1)
+          if count != 1: raise SystemExit('Versão do aula-facil não encontrada no Cargo.lock')
+          lock.write_text(t2, encoding='utf-8')
+          PY
+
+      - name: Atualizar package-lock
+        run: npm install --package-lock-only --ignore-scripts
+
+      - name: Instalar dependências
+        run: npm ci
+
+      - name: Testar
+        run: npm test
+
+      - name: Validar frontend
+        run: npm run build
+
+      - name: Commitar hardening
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add src/cloud-safe-sync.ts package.json package-lock.json src-tauri/tauri.conf.json src-tauri/Cargo.toml src-tauri/Cargo.lock
+          git commit -m "release: AulaFácil 0.4.13 endurece sincronização concorrente"
+          git push
