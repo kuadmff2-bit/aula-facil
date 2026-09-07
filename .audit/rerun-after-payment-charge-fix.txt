@@ -1,0 +1,1 @@
+Auditoria repetida após corrigir o tratamento de falha da Edge Function payment-charge.
