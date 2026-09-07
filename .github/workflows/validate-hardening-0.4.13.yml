@@ -10,6 +10,7 @@ permissions:
 
 jobs:
   validate-and-apply:
+    if: github.actor != 'github-actions[bot]'
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
@@ -21,29 +22,8 @@ jobs:
           node-version: 22
           cache: npm
 
-      - name: Apply deterministic patch and capture result
-        shell: bash
-        run: |
-          set +e
-          python scripts/harden_sync_0413.py > patch-debug.log 2>&1
-          status=$?
-          cat patch-debug.log
-          echo "$status" > patch-status.txt
-          exit 0
-
-      - name: Persist diagnostics
-        shell: bash
-        run: |
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add -f patch-debug.log patch-status.txt
-          git commit -m "debug: record hardening patch status"
-          git push
-
-      - name: Stop when patch failed
-        shell: bash
-        run: |
-          test "$(cat patch-status.txt)" = "0"
+      - name: Apply deterministic patch
+        run: python scripts/harden_sync_0413.py
 
       - name: Refresh package lock
         run: npm install --package-lock-only --ignore-scripts
@@ -60,7 +40,6 @@ jobs:
       - name: Commit generated hardening
         shell: bash
         run: |
-          git rm -f patch-debug.log patch-status.txt || true
           if git diff --quiet; then
             echo "No generated changes to commit."
             exit 0
