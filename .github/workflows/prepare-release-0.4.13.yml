@@ -1,0 +1,51 @@
+name: Prepare AulaFacil 0.4.13 manifests
+
+on:
+  push:
+    branches: [hardening-backend-0.4.13]
+    paths:
+      - .github/workflows/prepare-release-0.4.13.yml
+
+permissions:
+  contents: write
+
+jobs:
+  prepare:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: hardening-backend-0.4.13
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Align npm version
+        run: npm version 0.4.13 --no-git-tag-version
+      - name: Align Tauri and Cargo versions
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          p = Path('src-tauri/tauri.conf.json')
+          s = p.read_text(encoding='utf-8').replace('"version": "0.4.12"', '"version": "0.4.13"', 1)
+          p.write_text(s, encoding='utf-8')
+          p = Path('src-tauri/Cargo.toml')
+          s = p.read_text(encoding='utf-8').replace('version = "0.4.12"', 'version = "0.4.13"', 1)
+          p.write_text(s, encoding='utf-8')
+          PY
+      - name: Refresh Cargo lock
+        working-directory: src-tauri
+        run: cargo metadata --format-version 1 --no-deps >/dev/null
+      - run: npm ci
+      - run: npm test
+      - run: npm run build
+      - name: Commit version alignment
+        run: |
+          git config user.name "kuadm"
+          git config user.email "kuadmff2@gmail.com"
+          git add package.json package-lock.json src-tauri/tauri.conf.json src-tauri/Cargo.toml src-tauri/Cargo.lock
+          git diff --cached --quiet && exit 0
+          git commit -m "release: align AulaFácil 0.4.13 manifests"
+          git push origin HEAD:hardening-backend-0.4.13
