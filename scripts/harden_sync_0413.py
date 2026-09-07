@@ -102,9 +102,9 @@ start = text.index(start_marker)
 end = text.index(end_marker, start)
 push_block = text[start:end]
 if 'return withSchoolSyncLease(schoolId, async () =>' not in push_block:
-    body = push_block[len(start_marker):]
+    body = push_block[len(start_marker):].rstrip()
     if not body.endswith('}'):
-        raise SystemExit("unexpected safePushToCloud shape")
+        raise SystemExit(f"unexpected safePushToCloud shape: tail={body[-80:]!r}")
     body = body[:-1]
     old_tail = '''      const revision = await getCloudRevision(schoolId);
       writeBaseline(schoolId, revision, pushed, role);
