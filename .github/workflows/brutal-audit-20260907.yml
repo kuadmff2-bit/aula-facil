@@ -74,6 +74,11 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
       - uses: denoland/setup-deno@v2
         with:
           deno-version: v2.x
@@ -85,7 +90,7 @@ jobs:
           while IFS= read -r file; do
             count=$((count+1))
             echo "===== DENO CHECK: $file ====="
-            deno check "$file"
+            deno check --node-modules-dir=auto "$file"
           done < <(find supabase/functions -name index.ts -type f | sort)
           test "$count" -ge 10
           echo "Edge Functions verificadas: $count"
