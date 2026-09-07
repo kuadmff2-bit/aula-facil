@@ -13,6 +13,10 @@ function bridge() {
   return typeof window !== "undefined" ? (window as TauriWindow).__TAURI_INTERNALS__ : undefined;
 }
 
+export function isProtectedAuthStorageAvailable() {
+  return Boolean(bridge()?.invoke);
+}
+
 async function invoke<T>(command: string, args?: Record<string, unknown>) {
   const tauri = bridge();
   if (!tauri?.invoke) throw new Error("Armazenamento protegido indisponível.");
@@ -51,6 +55,29 @@ async function mutateProtectedMap(change: (current: Record<string, string>) => v
   } else {
     await invoke<void>("secure_auth_save", { payload: JSON.stringify(current) });
   }
+}
+
+export async function getProtectedAuthItem(key: string) {
+  if (!isProtectedAuthStorageAvailable()) return null;
+  await writeQueue.catch(() => undefined);
+  const protectedMap = await readProtectedMap();
+  return protectedMap?.[key] ?? null;
+}
+
+export async function setProtectedAuthItem(key: string, value: string) {
+  if (!isProtectedAuthStorageAvailable()) throw new Error("Armazenamento protegido do Windows indisponível.");
+  writeQueue = writeQueue
+    .catch(() => undefined)
+    .then(() => mutateProtectedMap((current) => { current[key] = value; }));
+  await writeQueue;
+}
+
+export async function removeProtectedAuthItem(key: string) {
+  if (!isProtectedAuthStorageAvailable()) return;
+  writeQueue = writeQueue
+    .catch(() => undefined)
+    .then(() => mutateProtectedMap((current) => { delete current[key]; }));
+  await writeQueue;
 }
 
 export const secureAuthStorage = {
