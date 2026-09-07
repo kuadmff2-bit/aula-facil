@@ -210,6 +210,64 @@ fn load_latest_exit_backup(app: &tauri::AppHandle) -> Result<Option<String>, Str
 }
 
 #[tauri::command]
+fn secure_storage_load_candidates(app: tauri::AppHandle) -> Result<Vec<String>, String> {
+    let mut candidates = Vec::new();
+    let mut errors = Vec::new();
+
+    for (path, label) in [
+        (database_path(&app)?, "o banco protegido"),
+        (database_backup_path(&app)?, "a cópia de recuperação"),
+    ] {
+        match load_protected_file(&path, MAX_DATABASE_BYTES, label) {
+            Ok(Some(content)) => candidates.push(content),
+            Ok(None) => {}
+            Err(error) => errors.push(error),
+        }
+    }
+
+    for path in exit_backup::exit_backup_paths(&app)? {
+        if candidates.len() >= 12 {
+            break;
+        }
+        match load_protected_file(&path, MAX_DATABASE_BYTES, "um backup automático de saída") {
+            Ok(Some(content)) => candidates.push(content),
+            Ok(None) => {}
+            Err(error) => errors.push(error),
+        }
+    }
+
+    if candidates.is_empty() && !errors.is_empty() {
+        return Err(errors.join(" "));
+    }
+    Ok(candidates)
+}
+
+#[tauri::command]
+fn secure_storage_quarantine_current(app: tauri::AppHandle) -> Result<(), String> {
+    let timestamp = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map_err(|error| format!("O relógio do sistema não permitiu preservar os dados: {error}"))?
+        .as_millis();
+    let directory = data_directory(&app)?.join("recovery-quarantine").join(timestamp.to_string());
+    fs::create_dir_all(&directory)
+        .map_err(|error| format!("Não foi possível preparar a quarentena de recuperação: {error}"))?;
+
+    for (source, name) in [
+        (database_path(&app)?, DATABASE_FILE),
+        (database_backup_path(&app)?, DATABASE_BACKUP_FILE),
+        (database_temp_path(&app)?, DATABASE_TEMP_FILE),
+    ] {
+        if !source.exists() {
+            continue;
+        }
+        fs::copy(&source, directory.join(name)).map_err(|error| {
+            format!("Não foi possível preservar {name} antes da recuperação: {error}")
+        })?;
+    }
+    Ok(())
+}
+
+#[tauri::command]
 fn secure_storage_load(app: tauri::AppHandle) -> Result<Option<String>, String> {
     let primary = database_path(&app)?;
     let backup = database_backup_path(&app)?;
@@ -366,6 +424,8 @@ pub fn run() {
     tauri::Builder::default()
         .invoke_handler(tauri::generate_handler![
             secure_storage_load,
+            secure_storage_load_candidates,
+            secure_storage_quarantine_current,
             secure_storage_save,
             secure_storage_clear,
             secure_auth_load,

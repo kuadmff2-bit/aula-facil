@@ -56,6 +56,19 @@ async function invoke<T>(command: string, args?: Record<string, unknown>): Promi
   return bridge.invoke<T>(command, args);
 }
 
+async function readProtectedCandidates() {
+  try {
+    return await invoke<string[]>("secure_storage_load_candidates");
+  } catch (candidateError) {
+    try {
+      const single = await invoke<string | null>("secure_storage_load");
+      return single ? [single] : [];
+    } catch {
+      throw candidateError;
+    }
+  }
+}
+
 export async function initializeSecureStorage() {
   if (initialized) return;
 
@@ -63,13 +76,32 @@ export async function initializeSecureStorage() {
   desktopRuntime = Boolean(internals()?.invoke);
 
   if (desktopRuntime) {
-    const protectedContent = await invoke<string | null>("secure_storage_load");
+    const candidates = await readProtectedCandidates();
+    let firstValidationError: unknown = null;
 
-    if (protectedContent) {
-      cachedDatabase = parseDatabaseText(protectedContent);
-      localStorage.removeItem(LEGACY_STORAGE_KEY);
-      await invoke<void>("secure_storage_save", { payload: JSON.stringify(cachedDatabase) });
-    } else if (legacy) {
+    for (let index = 0; index < candidates.length; index += 1) {
+      try {
+        const recovered = parseDatabaseText(candidates[index]);
+        if (index > 0) {
+await invoke<void>("secure_storage_quarantine_current");
+        }
+        cachedDatabase = recovered;
+        localStorage.removeItem(LEGACY_STORAGE_KEY);
+        await invoke<void>("secure_storage_save", { payload: JSON.stringify(cachedDatabase) });
+        initialized = true;
+        return;
+      } catch (error) {
+        firstValidationError ??= error;
+      }
+    }
+
+    if (candidates.length > 0) {
+      throw firstValidationError instanceof Error
+        ? new Error(`${firstValidationError.message} As cópias locais protegidas também foram verificadas, mas nenhuma pôde ser aberta com segurança.`)
+        : new Error("Nenhuma cópia local protegida pôde ser aberta com segurança.");
+    }
+
+    if (legacy) {
       await invoke<void>("secure_storage_save", { payload: JSON.stringify(legacy) });
       cachedDatabase = structuredClone(legacy);
       localStorage.removeItem(LEGACY_STORAGE_KEY);
@@ -81,6 +113,25 @@ export async function initializeSecureStorage() {
   }
 
   initialized = true;
+}
+
+export async function replaceProtectedDatabase(database: SchoolDatabase) {
+  const normalized = normalizeDatabase(database);
+  if (!normalized) throw new Error("Os dados escolhidos para recuperação não possuem uma estrutura válida.");
+  const recovered = ensureUuidDatabase(normalized);
+  desktopRuntime = Boolean(internals()?.invoke);
+
+  if (desktopRuntime) {
+    await invoke<void>("secure_storage_quarantine_current");
+    await invoke<void>("secure_storage_save", { payload: JSON.stringify(recovered) });
+    localStorage.removeItem(LEGACY_STORAGE_KEY);
+  } else {
+    localStorage.setItem(LEGACY_STORAGE_KEY, JSON.stringify(recovered));
+  }
+
+  cachedDatabase = structuredClone(recovered);
+  initialized = true;
+  storageFailureShown = false;
 }
 
 export function loadDatabase(): SchoolDatabase {
