@@ -86,7 +86,7 @@ Deno.serve(async(req:Request)=>{
     const authToken=randomHex(32);credentials.asaas_webhook_auth_token=authToken;
     const headers={"Content-Type":"application/json","User-Agent":"AulaFacil/0.4.15",access_token:credentials.api_key};
     const hookUrl=`${url}/functions/v1/payment-webhook?provider=asaas&connection=${encodeURIComponent(connection.id)}&hook=${encodeURIComponent(webhookToken)}`;
-    const payload={name:webhookName,url:hookUrl,email:userData.user.email||"",enabled:true,interrupted:false,apiVersion:3,authToken,sendType:"SEQUENTIALLY",events:["PAYMENT_RECEIVED","PAYMENT_CONFIRMED"]};
+    const payload={name:webhookName,url:hookUrl,email:userData.user.email||"",enabled:true,interrupted:false,apiVersion:3,authToken,sendType:"SEQUENTIALLY",events:["PAYMENT_RECEIVED","PAYMENT_CONFIRMED","PAYMENT_REFUNDED","PAYMENT_PARTIALLY_REFUNDED","PAYMENT_REFUND_IN_PROGRESS","PAYMENT_REFUND_DENIED"]};
     try{
       const list=await jsonFetch(`${asaasBase}/webhooks?limit=100`,{headers});
       const rows=Array.isArray(list?.data)?list.data:[];
@@ -96,7 +96,7 @@ Deno.serve(async(req:Request)=>{
       webhookMode="webhook_automatico";
     }catch(error){webhookMode="conciliacao_automatica";webhookSetupError=String(error instanceof Error?error.message:error).slice(0,500);credentials.webhook_setup_error=webhookSetupError}
    }else if(provider==="mercado_pago")webhookMode="webhook_por_cobranca";
-   else if(provider==="pagarme")webhookMode="webhook_pronto_com_conciliacao";
+   else if(provider==="pagarme")webhookMode="dashboard_necessario_com_conciliacao";
 
    const secretPayload=JSON.stringify({provider,credentials,updatedAt:new Date().toISOString()});
    const {error}=await admin.rpc("service_set_payment_connection_secret",{target_connection_id:connectionId,secret_payload:secretPayload});if(error)throw error;

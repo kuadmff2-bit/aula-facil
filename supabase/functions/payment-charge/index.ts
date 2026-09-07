@@ -289,7 +289,11 @@ Deno.serve(async (req: Request) => {
         const names = splitName(payerName);
         const payer: any = { email: profile.email, first_name: names.first, last_name: names.last, identification: { type: profile.document_number.length > 11 ? "CNPJ" : "CPF", number: profile.document_number } };
         if (method === "boleto") payer.address = { zip_code: profile.postal_code, street_name: profile.street_name, street_number: profile.street_number, neighborhood: profile.neighborhood, city: profile.city, federal_unit: profile.state };
-        const payment = await jsonFetch("https://api.mercadopago.com/v1/payments", { method: "POST", headers: { Authorization: `Bearer ${accessToken}`, "Content-Type": "application/json", "X-Idempotency-Key": `${invoice.id}-${connection.id}-${method}` }, body: JSON.stringify({ transaction_amount: calculatedAmount, description: `${invoice.reference} - ${student.name}`.slice(0, 255), payment_method_id: method === "pix" ? "pix" : "bolbradesco", payer, external_reference: invoice.id }) });
+        const webhookToken = clean(credentials.webhook_token, 300);
+        if (!webhookToken) throw new Error("A conexão do Mercado Pago não possui token seguro de webhook. Salve novamente as credenciais da conexão antes de gerar cobranças.");
+        const notificationUrl = `${url}/functions/v1/payment-webhook?provider=mercado_pago&connection=${encodeURIComponent(connection.id)}&hook=${encodeURIComponent(webhookToken)}`;
+        const payment = await jsonFetch("https://api.mercadopago.com/v1/payments", { method: "POST", headers: { Authorization: `Bearer ${accessToken}`, "Content-Type": "application/json", "X-Idempotency-Key": `${invoice.id}-${connection.id}-${method}` }, body: JSON.stringify({ transaction_amount: calculatedAmount, description: `${invoice.reference} - ${student.name}`.slice(0, 255), payment_method_id: method === "pix" ? "pix" : "bolbradesco", payer, external_reference: invoice.id, notification_url: notificationUrl }) });
+        normalized.metadata.notificationUrlConfigured = true;
         normalized.providerChargeId = String(payment.id ?? "");
         if (!normalized.providerChargeId) throw new Error("Mercado Pago não retornou o identificador da cobrança.");
         normalized.metadata.status = payment.status ?? null;
