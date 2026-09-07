@@ -1,0 +1,47 @@
+name: Corrigir cobrança reconciliada agora
+
+on:
+  push:
+    paths:
+      - '.github/workflows/fix-payment-alias-link-now.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  fix:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - uses: denoland/setup-deno@v2
+        with:
+          deno-version: v2.x
+      - name: Aplicar correção
+        run: python scripts/fix-payment-alias-link-now.py
+      - name: Validar Edge Function
+        run: deno check supabase/functions/payment-charge-link/index.ts
+      - name: Instalar dependências
+        run: npm ci
+      - name: Testar aplicativo
+        run: npm test
+      - name: Validar build
+        run: npm run build
+      - name: Commitar correção validada
+        run: |
+          if git diff --quiet; then
+            echo 'Nenhuma alteração necessária.'
+            exit 0
+          fi
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add supabase/functions/payment-charge-link/index.ts
+          git commit -m 'fix: resolver mensalidade reconciliada antes de gerar Pix ou boleto'
+          git push origin main
