@@ -78,6 +78,45 @@ export async function saveBillingProfile(schoolId: string, studentId: string, pr
   if (error) throw new Error(`Não foi possível salvar os dados de faturamento: ${error.message}`);
 }
 
+async function getEdgeFunctionErrorMessage(error: unknown) {
+  const fallback = error instanceof Error ? error.message : String(error ?? "Erro desconhecido ao chamar o servidor.");
+  const candidate = error as { context?: unknown };
+  const context = candidate?.context as any;
+  const response = context instanceof Response
+    ? context
+    : context?.response instanceof Response
+      ? context.response
+      : null;
+
+  if (response) {
+    try {
+      const payload = await response.clone().json();
+      const detail = payload?.error ?? payload?.message ?? payload?.detail;
+      if (detail) return String(detail);
+    } catch {
+      try {
+        const raw = (await response.clone().text()).trim();
+        if (raw) {
+          try {
+            const parsed = JSON.parse(raw);
+            const detail = parsed?.error ?? parsed?.message ?? parsed?.detail;
+            if (detail) return String(detail);
+          } catch {
+            if (raw.length <= 500) return raw;
+          }
+        }
+      } catch {
+        // Mantém a mensagem de fallback abaixo.
+      }
+    }
+  }
+
+  if (/Edge Function returned a non-2xx status code/i.test(fallback)) {
+    return "O servidor recusou a cobrança. Confira se o provedor está ativo, se as credenciais estão configuradas e se os dados do pagador são válidos. Tente novamente; se o provedor informar o motivo, ele aparecerá aqui.";
+  }
+  return fallback;
+}
+
 export async function generateProviderCharge(input: {
   invoiceId: string;
   method: "pix" | "boleto";
@@ -102,7 +141,7 @@ export async function generateProviderCharge(input: {
       } : undefined,
     },
   });
-  if (error) throw new Error(`Não foi possível gerar a cobrança: ${error.message}`);
+  if (error) throw new Error(await getEdgeFunctionErrorMessage(error));
   if (data?.error) throw new Error(String(data.error));
   return {
     provider: String(data?.provider ?? ""),

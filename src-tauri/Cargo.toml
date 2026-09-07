@@ -1,6 +1,6 @@
 [package]
 name = "aula-facil"
-version = "0.4.11"
+version = "0.4.12"
 description = "Aplicativo desktop do AulaFácil"
 authors = ["AulaFácil"]
 edition = "2021"
