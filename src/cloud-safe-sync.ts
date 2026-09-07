@@ -1,5 +1,6 @@
 import { cloud, downloadCloudDatabase, getCloudDataSummary } from "./cloud";
 import { hydrateProfessionalCloudFields } from "./cloud-professional-fields";
+import { normalizeFinanceSnapshotForSync } from "./cloud-sync-normalization";
 import { buildFixedCoursePlan, ensureContinuousInvoicesDue } from "./enrollment-plan";
 import { ensureUuidDatabase, type SchoolDatabase } from "./model";
 
@@ -223,8 +224,11 @@ async function softDeleteMissing(_table: string, _schoolId: string, _keepIds: st
 }
 
 async function pushSnapshot(schoolId: string, source: SchoolDatabase, role: CloudSyncRole) {
-  const database = ensureUuidDatabase(source);
-  if (canWriteFinance(role)) repairMissingEnrollmentInvoices(database);
+  let database = ensureUuidDatabase(source);
+  if (canWriteFinance(role)) {
+    repairMissingEnrollmentInvoices(database);
+    database = normalizeFinanceSnapshotForSync(database).database;
+  }
   const institution = database.settings.institution;
   const finance = database.settings.finance;
 
