@@ -1,0 +1,78 @@
+name: Finalizar hotfix de recuperação do armazenamento
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - ".github/workflows/hotfix-storage-recovery-runner.yml"
+
+permissions:
+  contents: write
+
+concurrency:
+  group: finalizar-hotfix-storage-recovery
+  cancel-in-progress: true
+
+jobs:
+  finalize:
+    runs-on: windows-latest
+    steps:
+      - name: Baixar código
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Preparar Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Preparar Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Reaplicar a correção já testada
+        shell: python
+        run: |
+          from pathlib import Path
+          import textwrap
+
+          source = Path('.github/workflows/hotfix-storage-recovery.yml').read_text(encoding='utf-8-sig').splitlines()
+          step_index = next(i for i, line in enumerate(source) if line.strip() == '- name: Aplicar recuperação segura')
+          run_index = next(i for i in range(step_index + 1, len(source)) if source[i].strip() == 'run: |')
+          block = []
+          for line in source[run_index + 1:]:
+              if line.startswith('      - name:'):
+                  break
+              block.append(line)
+          script = textwrap.dedent('\n'.join(block))
+          if 'secure_storage_load_candidates' not in script or 'StorageRecoveryScreen' not in script:
+              raise SystemExit('O bloco de recuperação esperado não foi encontrado.')
+          Path('apply-storage-recovery.py').write_text(script + '\n', encoding='utf-8')
+          exec(compile(script, 'apply-storage-recovery.py', 'exec'), {'__name__': '__main__'})
+
+      - name: Instalar dependências
+        run: npm ci --no-audit
+
+      - name: Executar testes
+        run: npm test
+
+      - name: Validar frontend
+        run: npm run build
+
+      - name: Gerar recursos Tauri
+        run: npm run desktop:icons
+
+      - name: Validar Tauri no Windows
+        run: cargo check --locked --manifest-path src-tauri/Cargo.toml
+
+      - name: Publicar hotfix e remover workflows temporários
+        shell: bash
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          rm -f apply-storage-recovery.py
+          git add src/storage.ts src/storage-recovery-screen.tsx src/main.tsx src-tauri/src/lib.rs src-tauri/icons
+          git rm .github/workflows/hotfix-storage-recovery.yml .github/workflows/hotfix-storage-recovery-runner.yml
+          git commit -m "fix: recuperar armazenamento protegido sem perda de dados"
+          git push origin HEAD:main
