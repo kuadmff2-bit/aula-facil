@@ -1,0 +1,40 @@
+name: Aplicar hardening de webhooks financeiros
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - ".github/workflows/patch-provider-webhook-hardening.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+      - name: Aplicar patch
+        run: python scripts/patch-provider-webhook-hardening-0.4.15.py
+      - uses: denoland/setup-deno@v2
+        with:
+          deno-version: v2.x
+      - name: Typecheck dos arquivos alterados
+        run: |
+          deno check --node-modules-dir=auto supabase/functions/payment-charge/index.ts
+          deno check --node-modules-dir=auto supabase/functions/payment-credentials/index.ts
+      - name: Commitar hardening
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add supabase/functions/payment-charge/index.ts supabase/functions/payment-credentials/index.ts
+          git diff --cached --quiet && exit 0
+          git commit -m "fix: endurecer webhooks dos provedores financeiros"
+          git push origin HEAD:main
