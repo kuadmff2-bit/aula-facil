@@ -17,6 +17,7 @@ import {
 import type { SchoolDatabase } from "./model";
 import { LegalAcceptancePanel } from "./legal-acceptance-panel";
 import { copyCurrentLegalAcceptanceToSchool } from "./legal-acceptance";
+import { canRememberLogin, clearRememberedLogin, loadRememberedLogin, saveRememberedLogin } from "./remembered-login";
 import "./cloud-account.css";
 
 const SELECTED_SCHOOL_KEY = "aulafacil.cloud.selected-school";
@@ -50,6 +51,8 @@ export function CloudAccountPanel({ database }: Props) {
   const [mode, setMode] = useState<"signin" | "signup">("signin");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
+  const [rememberPassword, setRememberPassword] = useState(false);
+  const [rememberAvailable, setRememberAvailable] = useState(false);
   const [schoolName, setSchoolName] = useState("");
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState<Message>(null);
@@ -74,6 +77,25 @@ export function CloudAccountPanel({ database }: Props) {
     });
     setSchoolsLoaded(true);
   };
+
+  useEffect(() => {
+    let active = true;
+    const available = canRememberLogin();
+    setRememberAvailable(available);
+    if (available) {
+      void loadRememberedLogin()
+        .then((saved) => {
+          if (!active || !saved) return;
+          setEmail(saved.email);
+          setPassword(saved.password);
+          setRememberPassword(true);
+        })
+        .catch(() => {
+          if (active) setRememberPassword(false);
+        });
+    }
+    return () => { active = false; };
+  }, []);
 
   useEffect(() => {
     let active = true;
@@ -128,13 +150,22 @@ export function CloudAccountPanel({ database }: Props) {
     finally { setBusy(false); }
   };
 
+  const forgetRememberedPassword = () => void run(async () => {
+    await clearRememberedLogin();
+    setRememberPassword(false);
+    setPassword("");
+    setMessage({ tone: "success", text: "Senha salva removida deste computador." });
+  });
+
   const submitAuth = (event: FormEvent) => {
     event.preventDefault();
     void run(async () => {
       if (mode === "signin") {
         await signInCloud(email, password);
+        if (rememberPassword) await saveRememberedLogin(email, password);
+        else await clearRememberedLogin();
         setPendingConfirmationEmail("");
-        setMessage({ tone: "success", text: "Conta conectada neste computador." });
+        setMessage({ tone: "success", text: rememberPassword ? "Conta conectada. A senha ficou protegida neste usuário do Windows." : "Conta conectada neste computador." });
       } else {
         if (password.length < 12) throw new Error("Para novas contas, use uma senha com pelo menos 12 caracteres.");
         const normalizedEmail = email.trim().toLowerCase();
@@ -167,6 +198,7 @@ export function CloudAccountPanel({ database }: Props) {
         <form className="cloud-auth-form" onSubmit={submitAuth}>
           <label><span>E-mail</span><input type="email" autoComplete="email" required maxLength={200} value={email} onChange={(e) => setEmail(e.target.value)} /></label>
           <label><span>Senha</span><input type="password" autoComplete={mode === "signin" ? "current-password" : "new-password"} minLength={mode === "signup" ? 12 : 8} maxLength={256} required value={password} onChange={(e) => setPassword(e.target.value)} /></label>
+          {mode === "signin" && rememberAvailable && <div className="cloud-remember-row"><label className="cloud-remember-check"><input type="checkbox" checked={rememberPassword} onChange={(event) => setRememberPassword(event.target.checked)} /><span><strong>Lembrar senha neste computador</strong><small>Protegida pelo Windows e vinculada ao seu usuário deste PC.</small></span></label>{rememberPassword && <button type="button" className="cloud-forget-password" disabled={busy} onClick={forgetRememberedPassword}>Esquecer senha salva</button>}</div>}
           {mode === "signup" && <small>Use pelo menos 12 caracteres e não reutilize a senha de outro serviço.</small>}
           {message && <div className={`cloud-message ${message.tone}`} role="status">{message.text}</div>}
           <button className="primary-button" disabled={busy}>{busy ? "Aguarde..." : mode === "signin" ? "Entrar" : "Criar conta"}</button>
