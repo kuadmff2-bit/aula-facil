@@ -1,0 +1,42 @@
+name: Aplicar correção auditada payment-refund
+
+on:
+  push:
+    branches: [audit/brutal-backend-20260907]
+    paths:
+      - ".github/workflows/audit-apply-payment-refund-typecheck-fix.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  apply:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: audit/brutal-backend-20260907
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: python scripts/audit-fix-payment-refund-typecheck.py
+      - uses: denoland/setup-deno@v2
+        with:
+          deno-version: v2.x
+      - name: Typecheck payment-refund corrigido
+        run: deno check --node-modules-dir=auto supabase/functions/payment-refund/index.ts
+      - name: Suíte normal
+        run: npm test
+      - name: Commitar somente se validado
+        shell: bash
+        run: |
+          git config user.name "kuadm"
+          git config user.email "kuadmff2@gmail.com"
+          git add supabase/functions/payment-refund/index.ts
+          git diff --cached --quiet && exit 0
+          git commit -m "fix: corrigir tratamento de falha do estorno"
+          git push origin HEAD:audit/brutal-backend-20260907
