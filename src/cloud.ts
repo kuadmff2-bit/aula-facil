@@ -581,6 +581,9 @@ export async function downloadCloudDatabase(schoolId: string, localAppearance: A
       notes: nullableText(row.notes),
       reversedAt: row.reversed_at ? nullableText(row.reversed_at) : null,
       reversalReason: nullableText(row.reversal_reason),
+      refundedAmount: numeric(row.refunded_amount),
+      refundStatus: nullableText(row.refund_status) || "none",
+      refundUpdatedAt: row.refund_updated_at ? nullableText(row.refund_updated_at) : null,
       createdAt: nullableText(row.created_at),
     })),
     attendance: (attendance as any[]).map((row) => ({
