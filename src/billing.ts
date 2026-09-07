@@ -1,6 +1,7 @@
 import { cloud } from "./cloud";
 
 export type BillingProfile = {
+  payerName: string;
   email: string;
   documentNumber: string;
   phone: string;
@@ -38,8 +39,14 @@ export type GeneratedCharge = {
   metadata: Record<string, unknown>;
 };
 
+export type CancelledProviderCharge = {
+  providerChargeCancelled: boolean;
+  invoiceCancelled: boolean;
+  result: Record<string, unknown>;
+};
+
 export const emptyBillingProfile = (): BillingProfile => ({
-  email: "", documentNumber: "", phone: "", postalCode: "", streetName: "",
+  payerName: "", email: "", documentNumber: "", phone: "", postalCode: "", streetName: "",
   streetNumber: "", neighborhood: "", city: "", state: "",
 });
 
@@ -49,6 +56,7 @@ export async function getBillingProfile(schoolId: string, studentId: string): Pr
   if (error) throw new Error(`Não foi possível carregar os dados de faturamento: ${error.message}`);
   if (!data) return emptyBillingProfile();
   return {
+    payerName: String(data.payer_name ?? ""),
     email: String(data.email ?? ""),
     documentNumber: String(data.document_number ?? ""),
     phone: String(data.phone ?? ""),
@@ -65,6 +73,7 @@ export async function saveBillingProfile(schoolId: string, studentId: string, pr
   const { error } = await cloud.from("student_billing_profiles").upsert({
     school_id: schoolId,
     student_id: studentId,
+    payer_name: profile.payerName.trim() || null,
     email: profile.email.trim() || null,
     document_number: profile.documentNumber.replace(/\D/g, "") || null,
     phone: profile.phone.replace(/\D/g, "") || null,
@@ -112,7 +121,7 @@ async function getEdgeFunctionErrorMessage(error: unknown) {
   }
 
   if (/Edge Function returned a non-2xx status code/i.test(fallback)) {
-    return "O servidor recusou a cobrança. Confira se o provedor está ativo, se as credenciais estão configuradas e se os dados do pagador são válidos. Tente novamente; se o provedor informar o motivo, ele aparecerá aqui.";
+    return "O servidor recusou a operação financeira. A cobrança não foi alterada localmente. Confira a conexão do provedor e tente novamente; quando o provedor informar o motivo, ele aparecerá aqui.";
   }
   return fallback;
 }
@@ -129,6 +138,7 @@ export async function generateProviderCharge(input: {
       method: input.method,
       connectionId: input.connectionId || undefined,
       billingProfile: input.billingProfile ? {
+        payer_name: input.billingProfile.payerName,
         email: input.billingProfile.email,
         document_number: input.billingProfile.documentNumber,
         phone: input.billingProfile.phone,
@@ -165,5 +175,26 @@ export async function generateProviderCharge(input: {
       error: String(data.delivery.error ?? ""),
     } : null,
     metadata: data?.metadata && typeof data.metadata === "object" ? data.metadata : {},
+  };
+}
+
+export async function cancelProviderCharge(input: {
+  invoiceId: string;
+  cancelInvoice: boolean;
+  reason?: string;
+}): Promise<CancelledProviderCharge> {
+  const { data, error } = await cloud.functions.invoke("payment-charge-cancel", {
+    body: {
+      invoiceId: input.invoiceId,
+      cancelInvoice: input.cancelInvoice,
+      reason: input.reason?.trim() || undefined,
+    },
+  });
+  if (error) throw new Error(await getEdgeFunctionErrorMessage(error));
+  if (data?.error) throw new Error(String(data.error));
+  return {
+    providerChargeCancelled: Boolean(data?.providerChargeCancelled),
+    invoiceCancelled: Boolean(data?.invoiceCancelled),
+    result: data?.result && typeof data.result === "object" ? data.result : {},
   };
 }
