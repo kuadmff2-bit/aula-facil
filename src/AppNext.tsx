@@ -1,3 +1,4 @@
+import packageInfo from "../package.json";
 import { type FormEvent, type ReactNode, useEffect, useMemo, useState } from "react";
 import {
   AlertTriangle,
@@ -55,6 +56,7 @@ import { CloudAccountPanel } from "./cloud-account";
 import { PaymentConnectionsPanel } from "./payment-connections-panel";
 import { FinanceUltimate } from "./finance-ultimate";
 import { CloudSyncPanel } from "./cloud-sync-panel";
+import { DataSafetyPanel } from "./data-safety-panel";
 import { MessageAutomationsPanel } from "./message-automations-panel";
 import { invoiceAmountDue } from "./finance-utils";
 import { CertificateManager } from "./certificate-manager";
@@ -95,7 +97,7 @@ const navItems = [
   { id: "finance" as View, label: "Mensalidades", icon: WalletCards },
   { id: "notices" as View, label: "Avisos", icon: Megaphone },
   { id: "automations" as View, label: "Automações", icon: Zap },
-  { id: "cloud" as View, label: "Conta e sincronização", icon: Cloud },
+  { id: "cloud" as View, label: "Nuvem e salvamento", icon: Cloud },
   { id: "backup" as View, label: "Backup e segurança", icon: DatabaseBackup },
   { id: "settings" as View, label: "Ajustes da escola", icon: Settings2 },
 ];
@@ -109,7 +111,7 @@ const viewCopy: Record<View, { title: string; description: string }> = {
   notices: { title: "Avisos", description: "Envie comunicados para alunos e responsáveis." },
   automations: { title: "Automações", description: "Deixe o AulaFácil enviar lembretes e confirmações sozinho." },
   backup: { title: "Backup e segurança", description: "Proteja seus dados e restaure uma cópia quando precisar." },
-  cloud: { title: "Conta e sincronização", description: "Entre na conta e mantenha os dados deste computador alinhados com a nuvem." },
+  cloud: { title: "Nuvem e salvamento", description: "Veja o que está salvo neste computador, o estado da nuvem e quando sincronizar." },
   settings: { title: "Ajustes da escola", description: "Mude dados, aparência, cobranças, documentos e integrações." },
 };
 
@@ -534,7 +536,7 @@ export default function AppNext() {
     try {
       if (schoolId) {
         const syncStatus = await getCloudSyncStatus(schoolId, database);
-        if (syncStatus !== "synced") throw new Error("Abra “Conta e nuvem” e sincronize este computador antes de receber várias mensalidades.");
+        if (syncStatus !== "synced") throw new Error("Abra “Nuvem e salvamento” e sincronize este computador antes de receber várias mensalidades.");
         for (const invoice of invoices) await confirmManualInvoicePayment({ schoolId, invoiceId: invoice.id, method: batchMethod, discount: 0, notes: invoices.length > 1 ? "Pagamento em lote pelo cadastro do aluno" : undefined });
         setDatabase(await safePullFromCloud(schoolId, database.settings.appearance));
       } else {
@@ -668,7 +670,7 @@ export default function AppNext() {
       {view !== "dashboard" ? <button className="brand" onClick={() => changeView("dashboard")} aria-label="Ir para o início"><SchoolBrand institution={database.settings.institution}/></button> : <div className="dashboard-sidebar-placeholder" aria-hidden="true"/>}
       <div className="nav-label">MENU</div>
       <nav className="main-nav">{navItems.map((item) => <button key={item.id} className={view === item.id ? "active" : ""} onClick={() => changeView(item.id)}><item.icon size={20}/><span>{item.label}</span>{item.id === "finance" && overdueInvoices.length > 0 && <b>{overdueInvoices.length}</b>}</button>)}</nav>
-      <div className="sidebar-foot"><div className="local-status"><HardDrive size={18}/><span><strong>Cópia local protegida</strong><small>Criptografada no Windows</small></span><CheckCircle2 size={17}/></div><div className="version">AulaFácil Desktop <span>v0.4.4</span></div></div>
+      <div className="sidebar-foot"><div className="local-status"><HardDrive size={18}/><span><strong>Cópia local protegida</strong><small>Criptografada no Windows</small></span><CheckCircle2 size={17}/></div><div className="version">AulaFácil Desktop <span>v{packageInfo.version}</span></div></div>
     </aside>
     <button className="mobile-menu-scrim" aria-label="Fechar menu" onClick={() => setMobileMenuOpen(false)}/>
 
@@ -701,7 +703,7 @@ export default function AppNext() {
         {view === "attendance" && <ClassRosterBoard database={database} date={attendanceDate} onDateChange={setAttendanceDate} onSaveAttendance={saveClassAttendance}/>} 
         {view === "finance" && <FinanceUltimate database={database} onChange={setDatabase} onReceipt={(student,invoice,payment) => setPrintable({ type:"Recibo", student, invoice, payment })}/>} 
         {view === "notices" && <NoticesCenter database={database} onChange={setDatabase} notify={notify}/>} 
-        {view === "cloud" && <section className="stack cloud-hub-page"><CloudAccountPanel database={database} onReplaceDatabase={setDatabase}/><CloudSyncPanel database={database} onReplaceDatabase={setDatabase}/></section>}
+        {view === "cloud" && <section className="stack cloud-hub-page"><DataSafetyPanel database={database} onOpenBackup={() => changeView("backup")}/><CloudAccountPanel database={database}/><CloudSyncPanel database={database} onReplaceDatabase={setDatabase}/></section>}
         {view === "automations" && <section className="stack automation-hub-page">
           <div className="card didactic-guide"><div><span className="didactic-eyebrow">AUTOMAÇÕES</span><h2>Escolha o que o AulaFácil deve fazer sozinho</h2><p>Conecte o WhatsApp uma vez, escreva a mensagem e escolha quando ela deve ser enviada.</p></div><div className="didactic-steps"><span><b>1</b><strong>Conectar WhatsApp</strong><small>Leia o QR Code do Robô AulaFácil.</small></span><span><b>2</b><strong>Escolher a mensagem</strong><small>Ex.: lembrar mensalidade antes de vencer.</small></span><span><b>3</b><strong>Escolher quando enviar</strong><small>Defina o dia e o horário. O servidor cuida do resto.</small></span></div></div>
           <MessageAutomationsPanel/>

@@ -708,7 +708,7 @@ export default function App() {
                 onReceiptChange={(receipt) => updateDatabase((draft) => { draft.settings.receipt = receipt; })}
                 onCertificateChange={(certificate) => updateDatabase((draft) => { draft.settings.certificate = certificate; })}
               />
-              <CloudAccountPanel database={database} onReplaceDatabase={setDatabase} />
+              <CloudAccountPanel database={database}/>
               <CloudSyncPanel database={database} onReplaceDatabase={setDatabase} />
               <PaymentConnectionsPanel />
               <MessageAutomationsPanel />

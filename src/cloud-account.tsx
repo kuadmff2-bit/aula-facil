@@ -5,15 +5,15 @@ import {
   getCloudDataSummary,
   listCloudSchools,
   onCloudAuthChange,
+  resendCloudSignupConfirmation,
   signInCloud,
   signOutCloud,
   signUpCloud,
-  resendCloudSignupConfirmation,
   type CloudAuthState,
   type CloudDataSummary,
   type CloudSchool,
+  type SchoolRole,
 } from "./cloud";
-import { safePullFromCloud, safePushToCloud } from "./cloud-safe-sync";
 import type { SchoolDatabase } from "./model";
 import { LegalAcceptancePanel } from "./legal-acceptance-panel";
 import { copyCurrentLegalAcceptanceToSchool } from "./legal-acceptance";
@@ -22,28 +22,27 @@ import "./cloud-account.css";
 const SELECTED_SCHOOL_KEY = "aulafacil.cloud.selected-school";
 const CLOUD_SCHOOL_CHANGE_EVENT = "aulafacil:cloud-school-change";
 
-type Props = {
-  database: SchoolDatabase;
-  onReplaceDatabase: (database: SchoolDatabase) => void;
-};
-
+type Props = { database: SchoolDatabase };
 type Message = { tone: "success" | "warning" | "danger"; text: string } | null;
 
+const roleLabel: Record<SchoolRole, string> = {
+  owner: "Proprietário",
+  admin: "Administrador",
+  finance: "Financeiro",
+  teacher: "Professor",
+  staff: "Equipe",
+};
+
 function localRecordCount(database: SchoolDatabase) {
-  return database.classes.length
-    + database.students.length
-    + database.invoices.length
-    + database.payments.length
-    + database.attendance.length
-    + database.grades.length
-    + database.notices.length;
+  return database.classes.length + database.students.length + database.invoices.length
+    + database.payments.length + database.attendance.length + database.grades.length + database.notices.length;
 }
 
 function announceSchoolChange() {
   window.dispatchEvent(new Event(CLOUD_SCHOOL_CHANGE_EVENT));
 }
 
-export function CloudAccountPanel({ database, onReplaceDatabase }: Props) {
+export function CloudAccountPanel({ database }: Props) {
   const [auth, setAuth] = useState<CloudAuthState>({ session: null, user: null });
   const [schools, setSchools] = useState<CloudSchool[]>([]);
   const [selectedSchoolId, setSelectedSchoolId] = useState(() => localStorage.getItem(SELECTED_SCHOOL_KEY) ?? "");
@@ -54,7 +53,6 @@ export function CloudAccountPanel({ database, onReplaceDatabase }: Props) {
   const [schoolName, setSchoolName] = useState("");
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState<Message>(null);
-  const [downloadArmed, setDownloadArmed] = useState(false);
   const [schoolsLoaded, setSchoolsLoaded] = useState(false);
   const [legalReady, setLegalReady] = useState(false);
   const [pendingConfirmationEmail, setPendingConfirmationEmail] = useState("");
@@ -63,7 +61,6 @@ export function CloudAccountPanel({ database, onReplaceDatabase }: Props) {
     () => schools.find((school) => school.id === selectedSchoolId) ?? null,
     [schools, selectedSchoolId],
   );
-  const canSeedCloud = selectedSchool?.role === "owner" || selectedSchool?.role === "admin";
 
   const refreshSchools = async () => {
     const next = await listCloudSchools();
@@ -85,6 +82,7 @@ export function CloudAccountPanel({ database, onReplaceDatabase }: Props) {
         if (!active) return;
         setAuth(state);
         if (state.user) return refreshSchools();
+        setSchoolsLoaded(true);
       })
       .catch((error) => active && setMessage({ tone: "danger", text: error instanceof Error ? error.message : "Não foi possível verificar a conta." }));
 
@@ -95,7 +93,7 @@ export function CloudAccountPanel({ database, onReplaceDatabase }: Props) {
         setSchools([]);
         setSummary(null);
         setSelectedSchoolId("");
-        setSchoolsLoaded(false);
+        setSchoolsLoaded(true);
         setLegalReady(false);
         localStorage.removeItem(SELECTED_SCHOOL_KEY);
         announceSchoolChange();
@@ -105,14 +103,10 @@ export function CloudAccountPanel({ database, onReplaceDatabase }: Props) {
       void refreshSchools().catch((error) => setMessage({ tone: "danger", text: error instanceof Error ? error.message : "Não foi possível atualizar as instituições." }));
     });
 
-    return () => {
-      active = false;
-      unsubscribe();
-    };
+    return () => { active = false; unsubscribe(); };
   }, []);
 
   useEffect(() => {
-    setDownloadArmed(false);
     setLegalReady(false);
     if (!selectedSchoolId || !auth.user) {
       setSummary(null);
@@ -129,13 +123,9 @@ export function CloudAccountPanel({ database, onReplaceDatabase }: Props) {
   const run = async (operation: () => Promise<void>) => {
     setBusy(true);
     setMessage(null);
-    try {
-      await operation();
-    } catch (error) {
-      setMessage({ tone: "danger", text: error instanceof Error ? error.message : "A operação não pôde ser concluída." });
-    } finally {
-      setBusy(false);
-    }
+    try { await operation(); }
+    catch (error) { setMessage({ tone: "danger", text: error instanceof Error ? error.message : "A operação não pôde ser concluída." }); }
+    finally { setBusy(false); }
   };
 
   const submitAuth = (event: FormEvent) => {
@@ -144,7 +134,7 @@ export function CloudAccountPanel({ database, onReplaceDatabase }: Props) {
       if (mode === "signin") {
         await signInCloud(email, password);
         setPendingConfirmationEmail("");
-        setMessage({ tone: "success", text: "Conta conectada com segurança neste dispositivo." });
+        setMessage({ tone: "success", text: "Conta conectada neste computador." });
       } else {
         if (password.length < 12) throw new Error("Para novas contas, use uma senha com pelo menos 12 caracteres.");
         const normalizedEmail = email.trim().toLowerCase();
@@ -157,15 +147,13 @@ export function CloudAccountPanel({ database, onReplaceDatabase }: Props) {
             const existing = await signInCloud(normalizedEmail, password);
             if (existing.session) {
               setPendingConfirmationEmail("");
-              setMessage({ tone: "success", text: "Este e-mail já possuía uma conta confirmada. O AulaFácil conectou a conta em vez de esperar outro e-mail." });
+              setMessage({ tone: "success", text: "Esse e-mail já tinha uma conta confirmada. O AulaFácil entrou normalmente." });
               setPassword("");
               return;
             }
-          } catch {
-            // Conta nova ainda não confirmada ou conta existente com outra senha.
-          }
+          } catch { /* conta nova aguardando confirmação ou senha diferente */ }
           setPendingConfirmationEmail(normalizedEmail);
-          setMessage({ tone: "warning", text: "A conta ainda não abriu uma sessão. Se este e-mail for novo, confira a confirmação em Spam, Lixo eletrônico e Promoções. Se você já confirmou esse e-mail antes, use ‘Já confirmei / entrar’ abaixo em vez de esperar outro link." });
+          setMessage({ tone: "warning", text: "Confira o e-mail de confirmação. Se essa conta já foi confirmada antes, use “Já confirmei / entrar”." });
         }
       }
       setPassword("");
@@ -175,123 +163,43 @@ export function CloudAccountPanel({ database, onReplaceDatabase }: Props) {
   if (!auth.user) {
     return (
       <section className="card cloud-account-card">
-        <div className="cloud-account-heading">
-          <div>
-            <span className="cloud-eyebrow">AULAFÁCIL CLOUD</span>
-            <h2>{mode === "signin" ? "Entrar na conta" : "Criar conta"}</h2>
-            <p>Use a conta para recuperar os dados da instituição em outro dispositivo autorizado. A sessão do aplicativo Windows é protegida pelo armazenamento seguro do sistema.</p>
-          </div>
-        </div>
-
+        <div className="cloud-account-heading"><div><span className="cloud-eyebrow">CONTA</span><h2>{mode === "signin" ? "Entrar no AulaFácil Cloud" : "Criar conta"}</h2><p>A conta identifica quem está usando a nuvem. Seus cadastros continuam sendo salvos neste computador mesmo sem entrar.</p></div></div>
         <form className="cloud-auth-form" onSubmit={submitAuth}>
           <label><span>E-mail</span><input type="email" autoComplete="email" required maxLength={200} value={email} onChange={(e) => setEmail(e.target.value)} /></label>
           <label><span>Senha</span><input type="password" autoComplete={mode === "signin" ? "current-password" : "new-password"} minLength={mode === "signup" ? 12 : 8} maxLength={256} required value={password} onChange={(e) => setPassword(e.target.value)} /></label>
-          {mode === "signup" && <small>Use pelo menos 12 caracteres e evite reutilizar a senha de outro serviço.</small>}
+          {mode === "signup" && <small>Use pelo menos 12 caracteres e não reutilize a senha de outro serviço.</small>}
           {message && <div className={`cloud-message ${message.tone}`} role="status">{message.text}</div>}
           <button className="primary-button" disabled={busy}>{busy ? "Aguarde..." : mode === "signin" ? "Entrar" : "Criar conta"}</button>
         </form>
-        {pendingConfirmationEmail && <div className="cloud-resend-box"><strong>Não recebeu o e-mail?</strong><span>Se a conta for realmente nova, você pode solicitar outro link. Se já confirmou esse endereço alguma vez, não precisa receber outro e-mail: entre com sua senha.</span><div className="cloud-resend-actions"><button className="secondary-button" type="button" disabled={busy} onClick={() => void run(async () => { await resendCloudSignupConfirmation(pendingConfirmationEmail); setMessage({ tone: "success", text: `Solicitamos um novo e-mail para ${pendingConfirmationEmail}. Se a conta já estiver confirmada, use o botão de entrar ao lado.` }); })}>Reenviar confirmação</button><button className="secondary-button" type="button" disabled={busy} onClick={() => { setMode("signin"); setEmail(pendingConfirmationEmail); setPendingConfirmationEmail(""); setPassword(""); setMessage({ tone: "warning", text: "Digite a senha da conta já confirmada e clique em Entrar." }); }}>Já confirmei / entrar</button></div></div>}
-        <button className="cloud-mode-button" type="button" onClick={() => { setMode(mode === "signin" ? "signup" : "signin"); setMessage(null); setPendingConfirmationEmail(""); setPassword(""); }}>
-          {mode === "signin" ? "Ainda não tenho conta" : "Já tenho uma conta"}
-        </button>
+        {pendingConfirmationEmail && <div className="cloud-resend-box"><strong>Não recebeu o e-mail?</strong><span>Você pode reenviar a confirmação ou voltar direto para o login se a conta já estiver confirmada.</span><div className="cloud-resend-actions"><button className="secondary-button" type="button" disabled={busy} onClick={() => void run(async () => { await resendCloudSignupConfirmation(pendingConfirmationEmail); setMessage({ tone: "success", text: `Solicitamos um novo e-mail para ${pendingConfirmationEmail}.` }); })}>Reenviar confirmação</button><button className="secondary-button" type="button" disabled={busy} onClick={() => { setMode("signin"); setEmail(pendingConfirmationEmail); setPendingConfirmationEmail(""); setPassword(""); }}>Já confirmei / entrar</button></div></div>}
+        <button className="cloud-mode-button" type="button" onClick={() => { setMode(mode === "signin" ? "signup" : "signin"); setMessage(null); setPendingConfirmationEmail(""); setPassword(""); }}>{mode === "signin" ? "Ainda não tenho conta" : "Já tenho uma conta"}</button>
       </section>
     );
   }
 
-  if (!schoolsLoaded) {
-    return <section className="card cloud-account-card"><div className="cloud-account-heading"><div><span className="cloud-eyebrow">AULAFÁCIL CLOUD</span><h2>Carregando conta</h2><p>Conferindo instituições e permissões...</p></div></div></section>;
-  }
-
-  if (!legalReady) {
-    return <LegalAcceptancePanel schoolId={selectedSchoolId || null} onReady={() => setLegalReady(true)} />;
-  }
+  if (!schoolsLoaded) return <section className="card cloud-account-card"><div className="cloud-account-heading"><div><span className="cloud-eyebrow">CONTA</span><h2>Carregando sua conta</h2><p>Conferindo instituições e permissões...</p></div></div></section>;
+  if (!legalReady) return <LegalAcceptancePanel schoolId={selectedSchoolId || null} onReady={() => setLegalReady(true)} />;
 
   return (
     <section className="card cloud-account-card">
       <div className="cloud-account-heading">
-        <div>
-          <span className="cloud-eyebrow">AULAFÁCIL CLOUD</span>
-          <h2>Conta e sincronização</h2>
-          <p>{auth.user.email} · a sessão fica protegida neste dispositivo.</p>
-        </div>
-        <button className="secondary-button" disabled={busy} onClick={() => void run(async () => { await signOutCloud(); setMessage(null); })}>Sair neste dispositivo</button>
+        <div><span className="cloud-eyebrow">CONTA E INSTITUIÇÃO</span><h2>Quem está conectado</h2><p>{auth.user.email}</p></div>
+        <button className="secondary-button" disabled={busy} onClick={() => void run(async () => { await signOutCloud(); setMessage(null); })}>Sair neste computador</button>
       </div>
+
+      <div className="cloud-account-guide"><strong>Aqui você só escolhe a conta e a instituição.</strong><span>Para enviar ou receber dados, use o bloco “Sincronização com a nuvem” logo abaixo. Assim existe um único lugar para sincronizar.</span></div>
 
       {schools.length === 0 ? (
         <div className="cloud-empty-school">
-          <h3>Crie a instituição online</h3>
-          <p>A criação gera automaticamente o espaço isolado da escola, as regras financeiras e os modelos iniciais.</p>
-          <div className="cloud-create-row">
-            <input maxLength={160} value={schoolName} onChange={(e) => setSchoolName(e.target.value)} placeholder={database.settings.institution.name || "Nome da instituição"} />
-            <button type="button" className="primary-button" disabled={busy} onClick={() => void run(async () => {
-              const id = await createCloudSchool(schoolName || database.settings.institution.name);
-              await refreshSchools();
-              setSelectedSchoolId(id);
-              setSchoolName("");
-              try {
-                await copyCurrentLegalAcceptanceToSchool(id);
-                setMessage({ tone: "success", text: "Instituição criada. Agora você já pode sincronizar e configurar recebimentos." });
-              } catch {
-                setMessage({ tone: "warning", text: "Instituição criada. Revise a aceitação dos termos antes da primeira sincronização." });
-              }
-            })}>{busy ? "Criando..." : "Criar instituição"}</button>
-          </div>
+          <h3>Criar instituição na nuvem</h3><p>Isso cria o espaço isolado da sua escola. Depois você decide no bloco de sincronização qual cópia deve ser usada.</p>
+          <div className="cloud-create-row"><input maxLength={160} value={schoolName} onChange={(e) => setSchoolName(e.target.value)} placeholder={database.settings.institution.name || "Nome da instituição"} /><button type="button" className="primary-button" disabled={busy} onClick={() => void run(async () => { const id = await createCloudSchool(schoolName || database.settings.institution.name); await refreshSchools(); setSelectedSchoolId(id); setSchoolName(""); try { await copyCurrentLegalAcceptanceToSchool(id); setMessage({ tone: "success", text: "Instituição criada. Agora use o bloco de sincronização abaixo." }); } catch { setMessage({ tone: "warning", text: "Instituição criada. Revise os termos antes da primeira sincronização." }); } })}>{busy ? "Criando..." : "Criar instituição"}</button></div>
           {message && <div className={`cloud-message ${message.tone} cloud-empty-school-message`} role="status">{message.text}</div>}
         </div>
       ) : (
         <>
-          <div className="cloud-school-selector">
-            <label>
-              <span>Instituição ativa</span>
-              <select value={selectedSchoolId} onChange={(e) => setSelectedSchoolId(e.target.value)}>
-                {schools.map((school) => <option key={school.id} value={school.id}>{school.name} · {school.role}</option>)}
-              </select>
-            </label>
-            {selectedSchool && <div className="cloud-role-chip">Acesso: {selectedSchool.role}</div>}
-          </div>
-
-          <div className="cloud-summary-grid">
-            <div><strong>{localRecordCount(database)}</strong><span>registros operacionais neste computador</span></div>
-            <div><strong>{summary?.totalOperationalRecords ?? "—"}</strong><span>registros operacionais visíveis na nuvem</span></div>
-            <div><strong>{navigator.onLine ? "Online" : "Offline"}</strong><span>estado atual da conexão</span></div>
-          </div>
-
+          <div className="cloud-school-selector"><label><span>Instituição usada neste computador</span><select value={selectedSchoolId} onChange={(e) => setSelectedSchoolId(e.target.value)}>{schools.map((school) => <option key={school.id} value={school.id}>{school.name} · {roleLabel[school.role]}</option>)}</select></label>{selectedSchool && <div className="cloud-role-chip">Acesso: {roleLabel[selectedSchool.role]}</div>}</div>
+          <div className="cloud-summary-grid"><div><strong>{localRecordCount(database)}</strong><span>registros neste computador</span></div><div><strong>{summary?.totalOperationalRecords ?? "—"}</strong><span>registros visíveis na nuvem</span></div><div><strong>{navigator.onLine ? "Online" : "Offline"}</strong><span>{navigator.onLine ? "nuvem disponível" : "o trabalho local continua funcionando"}</span></div></div>
           {message && <div className={`cloud-message ${message.tone}`} role="status">{message.text}</div>}
-
-          <div className="cloud-sync-actions">
-            <div>
-              <h3>Primeiro envio deste computador</h3>
-              <p>{canSeedCloud ? "Por segurança, o primeiro envio só é aceito quando a instituição online ainda não possui registros operacionais." : "Somente proprietário ou administrador pode inicializar uma instituição vazia com os dados deste computador."}</p>
-              <button className="primary-button" disabled={busy || !selectedSchoolId || !canSeedCloud || (summary?.totalOperationalRecords ?? 1) > 0} onClick={() => void run(async () => {
-                const normalized = await safePushToCloud(selectedSchoolId, database);
-                onReplaceDatabase(normalized);
-                setSummary(await getCloudDataSummary(selectedSchoolId));
-                setMessage({ tone: "success", text: "Dados iniciais enviados e este computador foi vinculado à revisão atual da nuvem." });
-              })}>Enviar dados locais para a nuvem</button>
-            </div>
-
-            <div>
-              <h3>Recuperar dados da nuvem</h3>
-              <p>A recuperação substitui a cópia local pelos dados que sua função tem permissão para acessar. Se quiser preservar a cópia atual, crie antes um .afbackup na área Backup.</p>
-              {!downloadArmed ? (
-                <button className="secondary-button" disabled={busy || !selectedSchoolId || !summary} onClick={() => setDownloadArmed(true)}>Preparar recuperação</button>
-              ) : (
-                <div className="cloud-danger-zone">
-                  <strong>Confirme a substituição local</strong>
-                  <span>O AulaFácil não gera mais backup JSON sem criptografia. Use o .afbackup protegido por senha quando quiser preservar uma cópia portátil.</span>
-                  <div>
-                    <button className="secondary-button" onClick={() => setDownloadArmed(false)}>Cancelar</button>
-                    <button className="danger-button" disabled={busy} onClick={() => void run(async () => {
-                      const restored = await safePullFromCloud(selectedSchoolId, database.settings.appearance);
-                      onReplaceDatabase(restored);
-                      setDownloadArmed(false);
-                      setMessage({ tone: "success", text: "Dados autorizados da nuvem recuperados e linha-base de sincronização atualizada." });
-                    })}>Baixar e substituir</button>
-                  </div>
-                </div>
-              )}
-            </div>
-          </div>
         </>
       )}
     </section>

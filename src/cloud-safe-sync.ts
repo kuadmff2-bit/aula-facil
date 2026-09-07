@@ -48,6 +48,18 @@ function readBaseline(schoolId: string): SyncBaseline | null {
   } catch { return null; }
 }
 
+export type CloudSyncMetadata = {
+  syncedAt: string;
+  revision: number;
+  role: CloudSyncRole | null;
+};
+
+export function getCloudSyncMetadata(schoolId: string): CloudSyncMetadata | null {
+  const baseline = readBaseline(schoolId);
+  if (!baseline) return null;
+  return { syncedAt: baseline.syncedAt, revision: baseline.revision, role: baseline.role ?? null };
+}
+
 export function localSyncSignature(database: SchoolDatabase, role: CloudSyncRole) {
   if (role === "owner" || role === "admin") return JSON.stringify({
   version: database.version,

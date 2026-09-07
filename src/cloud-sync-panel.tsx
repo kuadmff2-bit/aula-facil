@@ -22,11 +22,11 @@ type Props = {
 type Message = { tone: "success" | "warning" | "danger"; text: string } | null;
 
 const copy: Record<CloudSyncStatus, { title: string; text: string }> = {
-  not_linked: { title: "Sincronização ainda não preparada", text: "Este computador ainda precisa fazer a primeira sincronização desta escola." },
-  synced: { title: "Tudo sincronizado", text: "Os dados deste computador e da nuvem estão atualizados." },
-  local_changed: { title: "Há alterações neste computador", text: "Existem mudanças prontas para serem salvas na nuvem com segurança." },
-  cloud_changed: { title: "Há novidades na nuvem", text: "Outro dispositivo ou uma automação atualizou dados da escola." },
-  conflict: { title: "Precisamos escolher qual cópia manter", text: "Este computador e a nuvem foram alterados. O AulaFácil não apaga nenhum dos lados automaticamente." },
+  not_linked: { title: "Primeira sincronização necessária", text: "Este computador ainda precisa escolher uma base segura para esta instituição." },
+  synced: { title: "Computador e nuvem estão iguais", text: "Na última verificação, as duas cópias estavam atualizadas." },
+  local_changed: { title: "Há mudanças para enviar", text: "Elas já estão salvas neste computador. Sincronize para atualizar também a nuvem." },
+  cloud_changed: { title: "Há novidades para baixar", text: "A nuvem mudou em outro dispositivo ou automação. Sincronize para receber as alterações." },
+  conflict: { title: "Mudanças nos dois lados", text: "Nada foi apagado. Escolha com cuidado qual cópia deve prevalecer." },
 };
 
 const statusLabel: Record<CloudSyncStatus, string> = {
@@ -187,12 +187,14 @@ export function CloudSyncPanel({ database, onReplaceDatabase }: Props) {
     <section className="card cloud-sync-card">
       <div className="cloud-sync-heading">
         <div>
-          <span className="cloud-sync-eyebrow">SINCRONIZAÇÃO SEGURA</span>
+          <span className="cloud-sync-eyebrow">SINCRONIZAÇÃO COM A NUVEM</span>
           <h2>{state.title}</h2>
           <p>{state.text}</p>
         </div>
         <div className={`cloud-sync-badge ${schoolId ? status : "not_linked"}`}>{!navigator.onLine ? "sem internet" : schoolId ? statusLabel[status] : "escola não selecionada"}</div>
       </div>
+
+      <div className="cloud-sync-plain-note"><strong>No uso normal, é simples:</strong> clique apenas em “Sincronizar agora”. As opções de escolher uma cópia só aparecem quando existe algo que precisa da sua decisão.</div>
 
       {!schoolId && <div className="cloud-sync-warning">Escolha ou crie a escola no bloco acima. Depois clique em “Sincronizar agora”.</div>}
 
@@ -213,17 +215,17 @@ export function CloudSyncPanel({ database, onReplaceDatabase }: Props) {
           {busy ? "Sincronizando..." : "Sincronizar agora"}
         </button>
         {needsRecovery && !recoveryArmed && (
-          <button className="secondary-button" disabled={busy} onClick={() => setRecoveryArmed(true)}>Usar dados da nuvem</button>
+          <button className="secondary-button" disabled={busy} onClick={() => setRecoveryArmed(true)}>Usar cópia da nuvem</button>
         )}
         {status === "conflict" && !localWinsArmed && (
-          <button className="secondary-button" disabled={busy} onClick={() => setLocalWinsArmed(true)}>Usar dados deste computador</button>
+          <button className="secondary-button" disabled={busy} onClick={() => setLocalWinsArmed(true)}>Manter cópia deste computador</button>
         )}
         <button className="secondary-button" disabled={busy || !schoolId} onClick={() => void refresh()}>Verificar novamente</button>
       </div>
 
       {needsRecovery && recoveryArmed && (
         <div className="cloud-sync-recovery">
-          <strong>Vamos guardar uma cópia antes de substituir os dados deste computador</strong>
+          <strong>Antes de usar a nuvem, vamos proteger a cópia deste computador</strong>
           <span>Crie uma senha com pelo menos 12 caracteres. O AulaFácil salva um backup protegido e só depois carrega os dados da nuvem.</span>
           <div className="cloud-sync-passwords">
             <input type="password" autoComplete="new-password" minLength={12} maxLength={256} placeholder="Senha do backup" value={recoveryPassword} onChange={(event) => setRecoveryPassword(event.target.value)} />

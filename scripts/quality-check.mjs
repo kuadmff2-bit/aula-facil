@@ -27,8 +27,20 @@ const storeWorkflow = read(".github/workflows/build-store-msix.yml");
 const mainEntry = read("src/main.tsx");
 const layoutSafety = exists("src/layout-safety.css") ? read("src/layout-safety.css") : "";
 const textLayoutSafety = exists("src/text-layout-hardening.css") ? read("src/text-layout-hardening.css") : "";
+const cloudAccountSource = read("src/cloud-account.tsx");
+const cloudSyncSource = read("src/cloud-sync-panel.tsx");
+const storageSource = read("src/storage.ts");
+const recoverySource = read("src/storage-recovery-screen.tsx");
+const appNextSource = read("src/AppNext.tsx");
 
 const cargoVersion = cargo.match(/^version\s*=\s*"([^"]+)"/m)?.[1];
+
+if (cloudAccountSource.includes("safePullFromCloud") || cloudAccountSource.includes("safePushToCloud")) failures.push("Conta e instituição voltou a duplicar ações de sincronização perigosas.");
+if (!cloudSyncSource.includes("No uso normal, é simples")) failures.push("O painel Cloud perdeu a orientação simples de sincronização.");
+if (!storageSource.includes("aulafacil:storage-state") || !storageSource.includes("getLocalStorageState")) failures.push("A interface não consegue mais mostrar o estado real do salvamento local.");
+if (!recoverySource.includes("signInCloud") || !recoverySource.includes("selectedSchoolId")) failures.push("A tela de recuperação voltou a ter beco sem saída para login ou múltiplas instituições.");
+if (!exists("src/data-safety-panel.tsx") || !exists("src/data-safety-panel.css")) failures.push("O resumo didático de computador, nuvem e backup está ausente.");
+if (!appNextSource.includes('import packageInfo from "../package.json"') || appNextSource.includes("v0.4.4")) failures.push("A versão exibida no aplicativo pode ficar desatualizada novamente.");
 
 if (!pkg.version) failures.push("package.json não possui versão.");
 if (tauri.version !== pkg.version) failures.push(`Versões diferentes: package.json=${pkg.version}, tauri.conf.json=${tauri.version}.`);

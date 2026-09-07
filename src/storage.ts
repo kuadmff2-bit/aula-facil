@@ -16,6 +16,31 @@ let initialized = false;
 let desktopRuntime = false;
 let writeQueue: Promise<void> = Promise.resolve();
 let storageFailureShown = false;
+let writeGeneration = 0;
+
+export type LocalStorageState = {
+  status: "ready" | "saving" | "saved" | "error";
+  mode: "protected" | "browser";
+  savedAt?: string;
+  message?: string;
+};
+
+let lastStorageState: LocalStorageState = { status: "ready", mode: "browser" };
+
+function storageMode(): LocalStorageState["mode"] {
+  return desktopRuntime ? "protected" : "browser";
+}
+
+function emitStorageState(detail: Omit<LocalStorageState, "mode"> & { mode?: LocalStorageState["mode"] }) {
+  lastStorageState = { ...detail, mode: detail.mode ?? storageMode() };
+  if (typeof window !== "undefined") {
+    window.dispatchEvent(new CustomEvent("aulafacil:storage-state", { detail: lastStorageState }));
+  }
+}
+
+export function getLocalStorageState(): LocalStorageState {
+  return { ...lastStorageState, mode: storageMode() };
+}
 
 function internals() {
   return (window as TauriWindow).__TAURI_INTERNALS__;
@@ -74,6 +99,7 @@ export async function initializeSecureStorage() {
 
   const legacy = readLegacyDatabase();
   desktopRuntime = Boolean(internals()?.invoke);
+  emitStorageState({ status: "ready", mode: storageMode() });
 
   if (desktopRuntime) {
     const candidates = await readProtectedCandidates();
@@ -132,6 +158,7 @@ export async function replaceProtectedDatabase(database: SchoolDatabase) {
   cachedDatabase = structuredClone(recovered);
   initialized = true;
   storageFailureShown = false;
+  emitStorageState({ status: "saved", savedAt: new Date().toISOString() });
 }
 
 export function loadDatabase(): SchoolDatabase {
@@ -143,18 +170,29 @@ export function loadDatabase(): SchoolDatabase {
 
 function reportStorageFailure(error: unknown) {
   console.error("Falha no armazenamento protegido do AulaFácil", error);
-  if (storageFailureShown) return;
-  storageFailureShown = true;
   const message = "O AulaFácil não conseguiu gravar os dados no armazenamento protegido. "
     + "Não feche o aplicativo até fazer um backup e verificar o problema.";
+  emitStorageState({ status: "error", message });
+  if (storageFailureShown) return;
+  storageFailureShown = true;
   window.dispatchEvent(new CustomEvent("aulafacil:storage-failure", { detail: { message } }));
 }
 
 export function saveDatabase(database: SchoolDatabase) {
   cachedDatabase = structuredClone(database);
+  const generation = ++writeGeneration;
+  emitStorageState({ status: "saving" });
 
   if (!desktopRuntime) {
-    localStorage.setItem(LEGACY_STORAGE_KEY, JSON.stringify(database));
+    try {
+      localStorage.setItem(LEGACY_STORAGE_KEY, JSON.stringify(database));
+      if (generation === writeGeneration) {
+        storageFailureShown = false;
+        emitStorageState({ status: "saved", savedAt: new Date().toISOString() });
+      }
+    } catch (error) {
+      reportStorageFailure(error);
+    }
     return;
   }
 
@@ -165,6 +203,9 @@ export function saveDatabase(database: SchoolDatabase) {
       await invoke<void>("secure_storage_save", { payload });
       localStorage.removeItem(LEGACY_STORAGE_KEY);
       storageFailureShown = false;
+      if (generation === writeGeneration) {
+        emitStorageState({ status: "saved", savedAt: new Date().toISOString() });
+      }
     })
     .catch((error) => {
       reportStorageFailure(error);
