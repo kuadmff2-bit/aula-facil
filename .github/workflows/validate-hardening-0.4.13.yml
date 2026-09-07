@@ -1,0 +1,50 @@
+name: Validate backend hardening 0.4.13
+
+on:
+  push:
+    branches:
+      - hardening-backend-0.4.13
+
+permissions:
+  contents: write
+
+jobs:
+  validate-and-apply:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Apply deterministic patch
+        run: python scripts/harden_sync_0413.py
+
+      - name: Refresh package lock
+        run: npm install --package-lock-only --ignore-scripts
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Run tests
+        run: npm test
+
+      - name: Typecheck and build
+        run: npm run build
+
+      - name: Commit generated hardening
+        shell: bash
+        run: |
+          if git diff --quiet; then
+            echo "No generated changes to commit."
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add src/cloud-safe-sync.ts package.json package-lock.json src-tauri/tauri.conf.json src-tauri/Cargo.toml src-tauri/Cargo.lock
+          git commit -m "release: AulaFácil 0.4.13 hardens cloud synchronization"
+          git push
