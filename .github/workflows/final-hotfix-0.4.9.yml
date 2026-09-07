@@ -1,0 +1,201 @@
+name: Correção final AulaFácil 0.4.9
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - ".github/workflows/final-hotfix-0.4.9.yml"
+
+permissions:
+  contents: write
+
+jobs:
+  finalize:
+    runs-on: windows-latest
+    steps:
+      - name: Baixar código
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Preparar Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Preparar Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Corrigir resumo parcial da nuvem
+        shell: python
+        run: |
+          from pathlib import Path
+          import re, json
+
+          def read(path): return Path(path).read_text(encoding="utf-8-sig")
+          def write(path, text): Path(path).write_text(text, encoding="utf-8")
+          def replace_once(text, old, new, label):
+              if old not in text: raise SystemExit(f"Trecho não encontrado: {label}")
+              return text.replace(old, new, 1)
+
+          # cloud.ts: resumo tolerante, mas informa se ficou incompleto
+          path = "src/cloud.ts"
+          text = read(path)
+          text = replace_once(text,
+          '''export type CloudDataSummary = {
+            classes: number;
+            students: number;
+            invoices: number;
+            payments: number;
+            attendance: number;
+            grades: number;
+            notices: number;
+            totalOperationalRecords: number;
+          };''',
+          '''export type CloudDataSummary = {
+            classes: number;
+            students: number;
+            invoices: number;
+            payments: number;
+            attendance: number;
+            grades: number;
+            notices: number;
+            totalOperationalRecords: number;
+            complete: boolean;
+            countErrors: string[];
+          };''', "tipo do resumo")
+
+          old = '''export async function getCloudDataSummary(schoolId: string): Promise<CloudDataSummary> {
+            const [classes, students, invoices, payments, attendance, grades, notices] = await Promise.all([
+              countActive("classes", schoolId),
+              countActive("students", schoolId),
+              countActive("invoices", schoolId),
+              countRows("payments", schoolId),
+              countActive("attendance", schoolId),
+              countActive("grades", schoolId),
+              countActive("notices", schoolId),
+            ]);
+            return {
+              classes,
+              students,
+              invoices,
+              payments,
+              attendance,
+              grades,
+              notices,
+              totalOperationalRecords: classes + students + invoices + payments + attendance + grades + notices,
+            };
+          }'''
+          new = '''export async function getCloudDataSummary(schoolId: string): Promise<CloudDataSummary> {
+            const requests: Array<[keyof Pick<CloudDataSummary, "classes" | "students" | "invoices" | "payments" | "attendance" | "grades" | "notices">, Promise<number>]> = [
+              ["classes", countActive("classes", schoolId)],
+              ["students", countActive("students", schoolId)],
+              ["invoices", countActive("invoices", schoolId)],
+              ["payments", countRows("payments", schoolId)],
+              ["attendance", countActive("attendance", schoolId)],
+              ["grades", countActive("grades", schoolId)],
+              ["notices", countActive("notices", schoolId)],
+            ];
+            const settled = await Promise.allSettled(requests.map(([, promise]) => promise));
+            const values: Record<string, number> = {};
+            const countErrors: string[] = [];
+            settled.forEach((result, index) => {
+              const key = requests[index][0];
+              if (result.status === "fulfilled") values[key] = result.value;
+              else { values[key] = 0; countErrors.push(key); }
+            });
+            const classes = values.classes ?? 0;
+            const students = values.students ?? 0;
+            const invoices = values.invoices ?? 0;
+            const payments = values.payments ?? 0;
+            const attendance = values.attendance ?? 0;
+            const grades = values.grades ?? 0;
+            const notices = values.notices ?? 0;
+            return {
+              classes, students, invoices, payments, attendance, grades, notices,
+              totalOperationalRecords: classes + students + invoices + payments + attendance + grades + notices,
+              complete: countErrors.length === 0,
+              countErrors,
+            };
+          }'''
+          text = replace_once(text, old, new, "resumo tolerante")
+          write(path, text)
+
+          # cloud-account.tsx: sem faixa vermelha por contador secundário
+          path = "src/cloud-account.tsx"
+          text = read(path)
+          text = replace_once(text,
+          '<div className="cloud-summary-grid"><div><strong>{localRecordCount(database)}</strong><span>registros neste computador</span></div><div><strong>{summary?.totalOperationalRecords ?? "—"}</strong><span>registros visíveis na nuvem</span></div><div><strong>{navigator.onLine ? "Online" : "Offline"}</strong><span>{navigator.onLine ? "nuvem disponível" : "o trabalho local continua funcionando"}</span></div></div>',
+          '<div className="cloud-summary-grid"><div><strong>{localRecordCount(database)}</strong><span>registros neste computador</span></div><div><strong>{summary?.complete === false ? "—" : summary?.totalOperationalRecords ?? "—"}</strong><span>{summary?.complete === false ? "resumo da nuvem parcialmente indisponível" : "registros visíveis na nuvem"}</span></div><div><strong>{navigator.onLine ? "Online" : "Offline"}</strong><span>{navigator.onLine ? "nuvem disponível" : "o trabalho local continua funcionando"}</span></div></div>{summary?.complete === false && <div className="cloud-message warning" role="status">Alguns contadores da nuvem não responderam agora. Seus dados não foram apagados. O AulaFácil continua protegendo a sincronização e tentará conferir novamente.</div>}',
+          "resumo visual parcial")
+          write(path, text)
+
+          # cloud-safe-sync.ts: resumo incompleto nunca autoriza primeiro envio
+          path = "src/cloud-safe-sync.ts"
+          text = read(path)
+          text = replace_once(text,
+          '''  const baseline = readBaseline(schoolId);
+            const signature = localSyncSignature(database, role);''',
+          '''  const baseline = readBaseline(schoolId);
+            if (!summary.complete && !baseline) {
+              throw new Error("Não foi possível confirmar todos os registros existentes na nuvem. O primeiro envio foi bloqueado por segurança. Tente novamente quando a conexão estiver estável.");
+            }
+            const signature = localSyncSignature(database, role);''',
+          "bloqueio do primeiro envio com resumo parcial")
+          text = replace_once(text,
+          '''  if (status === "not_linked") {
+              const summary = await getCloudDataSummary(schoolId);
+              if (summary.totalOperationalRecords === 0) return { status: "synced" as const, database: await safePushToCloud(schoolId, database) };
+              throw new Error("A instituição já possui dados na nuvem. Faça uma recuperação inicial antes de sincronizar este computador.");
+            }''',
+          '''  if (status === "not_linked") {
+              const summary = await getCloudDataSummary(schoolId);
+              if (!summary.complete) throw new Error("A conferência da nuvem ficou incompleta. Por segurança, o AulaFácil não enviou nem substituiu dados. Tente novamente.");
+              if (summary.totalOperationalRecords === 0) return { status: "synced" as const, database: await safePushToCloud(schoolId, database) };
+              throw new Error("A instituição já possui dados na nuvem. Faça uma recuperação inicial antes de sincronizar este computador.");
+            }''',
+          "reconciliação segura com resumo parcial")
+          write(path, text)
+
+      - name: Atualizar versão para 0.4.9
+        shell: pwsh
+        run: |
+          npm version 0.4.9 --no-git-tag-version
+          $tauriPath = "src-tauri/tauri.conf.json"
+          $tauri = Get-Content $tauriPath -Raw | ConvertFrom-Json
+          $tauri.version = "0.4.9"
+          $tauri | ConvertTo-Json -Depth 30 | Set-Content $tauriPath -Encoding utf8
+          $cargoPath = "src-tauri/Cargo.toml"
+          $cargo = Get-Content $cargoPath -Raw
+          $cargo = $cargo.Replace('version = "0.4.8"', 'version = "0.4.9"')
+          Set-Content $cargoPath $cargo -Encoding utf8
+
+      - name: Instalar dependências
+        run: npm ci --no-audit
+
+      - name: Testes
+        run: npm test
+
+      - name: Frontend
+        run: npm run build
+
+      - name: Gerar recursos Tauri
+        run: npm run desktop:icons
+
+      - name: Atualizar e validar backend desktop
+        run: cargo check --manifest-path src-tauri/Cargo.toml
+
+      - name: Validar release final
+        env:
+          AULAFACIL_STRICT_RELEASE: "1"
+        run: node scripts/quality-check.mjs
+
+      - name: Publicar correção somente se tudo passou
+        shell: bash
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add src/cloud.ts src/cloud-account.tsx src/cloud-safe-sync.ts package.json package-lock.json src-tauri/tauri.conf.json src-tauri/Cargo.toml src-tauri/Cargo.lock
+          git commit -m "fix: tornar resumo da nuvem resiliente e seguro"
+          git push origin HEAD:main
