@@ -3,6 +3,3 @@
 > tsc --noEmit && vite build
 
 src/cloud-safe-sync.ts(69,6): error TS2551: Property 'catch' does not exist on type 'PostgrestFilterBuilder<any, any, any, any, "release_school_sync_lease", null, "RPC", false>'. Did you mean 'match'?
-src/remembered-login.ts(37,21): error TS18048: 'parsed.email' is possibly 'undefined'.
-src/remembered-login.ts(37,56): error TS2322: Type 'string | undefined' is not assignable to type 'string'.
-  Type 'undefined' is not assignable to type 'string'.
