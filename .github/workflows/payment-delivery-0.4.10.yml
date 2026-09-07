@@ -1,0 +1,182 @@
+name: Preparar AulaFácil 0.4.10 - envio de cobrança
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - ".github/workflows/payment-delivery-0.4.10.yml"
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    runs-on: windows-latest
+    steps:
+      - name: Baixar código
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Preparar Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Preparar Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Aplicar UX de cobrança e envio
+        shell: python
+        run: |
+          from pathlib import Path
+
+          def read(path): return Path(path).read_text(encoding="utf-8-sig")
+          def write(path, text): Path(path).write_text(text, encoding="utf-8")
+          def repl(text, old, new, label):
+              if old not in text:
+                  raise SystemExit(f"Trecho não encontrado: {label}")
+              return text.replace(old, new, 1)
+
+          # billing.ts: transportar ambiente e status real do envio
+          path = "src/billing.ts"
+          text = read(path)
+          text = repl(text,
+          '''export type GeneratedCharge = {
+            provider: string;
+            providerChargeId: string;
+            pixCopyPaste: string;
+            pixQrCodeBase64: string;
+            boletoUrl: string;
+            paymentUrl: string;
+            publicPaymentUrl: string;
+            amount: number;
+            reused: boolean;
+            metadata: Record<string, unknown>;
+          };''',
+          '''export type ChargeDelivery = {
+            attempted: boolean;
+            status: string;
+            recipient: string;
+            message: string;
+            attempts: number;
+            sentAt: string | null;
+            providerMessageId: string;
+            error: string;
+          };
+
+          export type GeneratedCharge = {
+            provider: string;
+            providerChargeId: string;
+            pixCopyPaste: string;
+            pixQrCodeBase64: string;
+            boletoUrl: string;
+            paymentUrl: string;
+            publicPaymentUrl: string;
+            amount: number;
+            reused: boolean;
+            environment: "sandbox" | "production";
+            delivery: ChargeDelivery | null;
+            metadata: Record<string, unknown>;
+          };''', "tipo da cobrança")
+          text = repl(text,
+          '''    amount: Number(data?.amount ?? 0),
+              reused: Boolean(data?.reused),
+              metadata: data?.metadata && typeof data.metadata === "object" ? data.metadata : {},''',
+          '''    amount: Number(data?.amount ?? 0),
+              reused: Boolean(data?.reused),
+              environment: data?.environment === "sandbox" ? "sandbox" : "production",
+              delivery: data?.delivery && typeof data.delivery === "object" ? {
+                attempted: Boolean(data.delivery.attempted),
+                status: String(data.delivery.status ?? ""),
+                recipient: String(data.delivery.recipient ?? ""),
+                message: String(data.delivery.message ?? ""),
+                attempts: Number(data.delivery.attempts ?? 0),
+                sentAt: data.delivery.sentAt ? String(data.delivery.sentAt) : null,
+                providerMessageId: String(data.delivery.providerMessageId ?? ""),
+                error: String(data.delivery.error ?? ""),
+              } : null,
+              metadata: data?.metadata && typeof data.metadata === "object" ? data.metadata : {},''', "mapa da cobrança")
+          write(path, text)
+
+          # finance-ultimate.tsx: feedback inequívoco ao gerar
+          path = "src/finance-ultimate.tsx"
+          text = read(path)
+          text = repl(text,
+          '''      setGeneratedCharge(charge);
+                onChange(await safePullFromCloud(schoolId, database.settings.appearance));
+                setNotice({ tone: "success", text: charge.reused ? "Cobrança já existente recuperada e sincronizada com segurança." : "Cobrança bancária gerada e sincronizada com sucesso." });''',
+          '''      setGeneratedCharge(charge);
+                onChange(await safePullFromCloud(schoolId, database.settings.appearance));
+                if (charge.environment === "sandbox") {
+                  setNotice({ tone: "warning", text: charge.delivery?.status === "sent"
+                    ? "Cobrança de TESTE criada e enviada pelo WhatsApp. Ela não movimenta dinheiro real."
+                    : `Cobrança de TESTE criada. ${charge.delivery?.message || "Ela não movimenta dinheiro real."}` });
+                } else if (charge.delivery?.status === "sent") {
+                  setNotice({ tone: "success", text: "Cobrança criada e enviada ao WhatsApp do aluno." });
+                } else if (charge.delivery) {
+                  setNotice({ tone: "warning", text: charge.delivery.message || "Cobrança criada, mas o envio ao aluno ainda não foi confirmado." });
+                } else {
+                  setNotice({ tone: "success", text: charge.reused ? "Cobrança já existente recuperada e sincronizada com segurança." : "Cobrança bancária gerada e sincronizada com sucesso." });
+                }''', "feedback após gerar")
+
+          marker = '''<div className="generated-charge"><strong>{generatedCharge.reused ? "Cobrança recuperada" : "Cobrança criada"} · {generatedCharge.provider}</strong>'''
+          replacement = '''<div className="generated-charge"><strong>{generatedCharge.reused ? "Cobrança recuperada" : "Cobrança criada"} · {generatedCharge.provider}</strong>{generatedCharge.environment === "sandbox" && <div className="payment-message warning" role="alert"><strong>🧪 AMBIENTE DE TESTE</strong><span>Esta cobrança não é real e não movimenta dinheiro. Troque o Asaas para Produção antes de cobrar alunos de verdade.</span></div>}{generatedCharge.delivery && <div className={`payment-message ${generatedCharge.delivery.status === "sent" ? "success" : "warning"}`} role="status"><strong>Envio ao aluno</strong><span>{generatedCharge.delivery.message}</span></div>}'''
+          text = repl(text, marker, replacement, "status visual da cobrança")
+          write(path, text)
+
+          # payment-connections-panel.tsx: sandbox impossível de confundir com produção
+          path = "src/payment-connections-panel.tsx"
+          text = read(path)
+          text = repl(text,
+          '''  const hasDefaultOnline = connections.some((connection) => connection.enabled && connection.credentialsConfigured && (connection.defaultForPix || connection.defaultForBoleto));''',
+          '''  const hasDefaultOnline = connections.some((connection) => connection.enabled && connection.credentialsConfigured && (connection.defaultForPix || connection.defaultForBoleto));
+            const hasSandboxOnline = connections.some((connection) => connection.enabled && connection.providerKey !== "manual_pix" && connection.environment === "sandbox");''', "detecção sandbox")
+          text = repl(text,
+          '''      {schoolId && <div className="payment-message success">Instituição Cloud selecionada. As mensalidades continuam sendo controladas no AulaFácil; Pix e boleto online são gerados somente quando você escolher uma conexão pronta.</div>}''',
+          '''      {schoolId && <div className="payment-message success">Instituição Cloud selecionada. As mensalidades continuam sendo controladas no AulaFácil; Pix e boleto online são gerados somente quando você escolher uma conexão pronta.</div>}
+                {hasSandboxOnline && <div className="payment-message warning" role="alert"><strong>⚠ AMBIENTE DE TESTE ATIVO</strong><span>Uma conexão bancária está em SANDBOX. Cobranças geradas nela são apenas testes e não movimentam dinheiro. Para cobrar de verdade, configure o provedor em Produção com a chave de produção.</span></div>}''', "aviso sandbox")
+          text = repl(text,
+          '''<span>{connection.environment === "sandbox" ? "Teste" : "Produção"}</span>''',
+          '''<span>{connection.environment === "sandbox" ? "⚠ TESTE — não cobra de verdade" : "Produção — cobrança real"}</span>''', "rótulo ambiente")
+          write(path, text)
+
+      - name: Atualizar versão para 0.4.10
+        shell: pwsh
+        run: |
+          npm version 0.4.10 --no-git-tag-version
+          $tauriPath = "src-tauri/tauri.conf.json"
+          $tauri = Get-Content $tauriPath -Raw | ConvertFrom-Json
+          $tauri.version = "0.4.10"
+          $tauri | ConvertTo-Json -Depth 30 | Set-Content $tauriPath -Encoding utf8
+          $cargoPath = "src-tauri/Cargo.toml"
+          $cargo = Get-Content $cargoPath -Raw
+          $cargo = $cargo.Replace('version = "0.4.9"', 'version = "0.4.10"')
+          Set-Content $cargoPath $cargo -Encoding utf8
+
+      - name: Instalar dependências
+        run: npm ci --no-audit
+
+      - name: Testes
+        run: npm test
+
+      - name: Frontend
+        run: npm run build
+
+      - name: Tauri
+        run: cargo check --manifest-path src-tauri/Cargo.toml
+
+      - name: Validar release
+        env:
+          AULAFACIL_STRICT_RELEASE: "1"
+        run: node scripts/quality-check.mjs
+
+      - name: Publicar correção na main
+        shell: bash
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add src/billing.ts src/finance-ultimate.tsx src/payment-connections-panel.tsx package.json package-lock.json src-tauri/tauri.conf.json src-tauri/Cargo.toml src-tauri/Cargo.lock
+          git commit -m "fix: enviar cobrança ao aluno e destacar sandbox"
+          git push origin HEAD:main
