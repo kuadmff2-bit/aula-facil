@@ -37,6 +37,35 @@
   box-shadow: 0 0 0 3px color-mix(in srgb, var(--primary) 14%, transparent);
 }
 
+.backup-password-field-error > span {
+  color: #dc2626;
+}
+
+.backup-password-field-error input,
+.backup-password-field-error input:focus {
+  border-color: #dc2626;
+  box-shadow: 0 0 0 3px color-mix(in srgb, #dc2626 14%, transparent);
+}
+
+.backup-inline-error {
+  display: flex;
+  align-items: flex-start;
+  gap: 9px;
+  border: 1px solid color-mix(in srgb, #dc2626 45%, var(--border));
+  border-radius: 12px;
+  padding: 10px 12px;
+  background: color-mix(in srgb, #dc2626 9%, var(--surface, #fff));
+  color: #dc2626;
+  font-size: 0.84rem;
+  font-weight: 700;
+  line-height: 1.4;
+}
+
+.backup-inline-error svg {
+  flex: 0 0 auto;
+  margin-top: 1px;
+}
+
 .backup-key-input {
   position: relative;
 }
