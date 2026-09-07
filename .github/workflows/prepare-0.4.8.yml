@@ -1,0 +1,91 @@
+name: Preparar AulaFácil 0.4.8
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - ".github/workflows/prepare-0.4.8.yml"
+
+permissions:
+  contents: write
+
+concurrency:
+  group: preparar-aulafacil-0.4.8
+  cancel-in-progress: true
+
+jobs:
+  prepare:
+    runs-on: windows-latest
+    steps:
+      - name: Baixar código
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Preparar Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Preparar Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Atualizar versão npm e lockfile
+        run: npm version 0.4.8 --no-git-tag-version
+
+      - name: Atualizar Tauri, Cargo.toml e Cargo.lock
+        shell: python
+        run: |
+          from pathlib import Path
+          import json
+          import re
+
+          tauri_path = Path("src-tauri/tauri.conf.json")
+          tauri = json.loads(tauri_path.read_text(encoding="utf-8-sig"))
+          tauri["version"] = "0.4.8"
+          tauri_path.write_text(json.dumps(tauri, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+
+          cargo_path = Path("src-tauri/Cargo.toml")
+          cargo = cargo_path.read_text(encoding="utf-8-sig")
+          cargo, count = re.subn(r'(?m)^version = "0\.4\.7"$', 'version = "0.4.8"', cargo, count=1)
+          if count != 1:
+              raise SystemExit(f"Cargo.toml: esperava trocar uma versão, troquei {count}.")
+          cargo_path.write_text(cargo, encoding="utf-8")
+
+          lock_path = Path("src-tauri/Cargo.lock")
+          lock = lock_path.read_text(encoding="utf-8-sig")
+          lock, count = re.subn(r'(name = "aula-facil"\nversion = ")0\.4\.7("\n)', r'\g<1>0.4.8\2', lock, count=1)
+          if count != 1:
+              raise SystemExit(f"Cargo.lock: esperava trocar uma versão, troquei {count}.")
+          lock_path.write_text(lock, encoding="utf-8")
+
+      - name: Instalar dependências
+        run: npm ci --no-audit
+
+      - name: Validar estrutura em modo de release
+        env:
+          AULAFACIL_STRICT_RELEASE: "1"
+        run: node scripts/quality-check.mjs
+
+      - name: Executar testes
+        run: npm test
+
+      - name: Validar TypeScript e frontend
+        run: npm run build
+
+      - name: Gerar recursos Tauri
+        run: npm run desktop:icons
+
+      - name: Validar Tauri no Windows
+        run: cargo check --locked --manifest-path src-tauri/Cargo.toml
+
+      - name: Publicar versão preparada e remover workflow temporário
+        shell: bash
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add package.json package-lock.json src-tauri/tauri.conf.json src-tauri/Cargo.toml src-tauri/Cargo.lock
+          git rm .github/workflows/prepare-0.4.8.yml
+          git commit -m "chore: preparar AulaFácil 0.4.8"
+          git push origin HEAD:main
