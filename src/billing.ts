@@ -12,6 +12,17 @@ export type BillingProfile = {
   state: string;
 };
 
+export type ChargeDelivery = {
+  attempted: boolean;
+  status: string;
+  recipient: string;
+  message: string;
+  attempts: number;
+  sentAt: string | null;
+  providerMessageId: string;
+  error: string;
+};
+
 export type GeneratedCharge = {
   provider: string;
   providerChargeId: string;
@@ -22,6 +33,8 @@ export type GeneratedCharge = {
   publicPaymentUrl: string;
   amount: number;
   reused: boolean;
+  environment: "sandbox" | "production";
+  delivery: ChargeDelivery | null;
   metadata: Record<string, unknown>;
 };
 
@@ -101,6 +114,17 @@ export async function generateProviderCharge(input: {
     publicPaymentUrl: String(data?.publicPaymentUrl ?? ""),
     amount: Number(data?.amount ?? 0),
     reused: Boolean(data?.reused),
+    environment: data?.environment === "sandbox" ? "sandbox" : "production",
+    delivery: data?.delivery && typeof data.delivery === "object" ? {
+      attempted: Boolean(data.delivery.attempted),
+      status: String(data.delivery.status ?? ""),
+      recipient: String(data.delivery.recipient ?? ""),
+      message: String(data.delivery.message ?? ""),
+      attempts: Number(data.delivery.attempts ?? 0),
+      sentAt: data.delivery.sentAt ? String(data.delivery.sentAt) : null,
+      providerMessageId: String(data.delivery.providerMessageId ?? ""),
+      error: String(data.delivery.error ?? ""),
+    } : null,
     metadata: data?.metadata && typeof data.metadata === "object" ? data.metadata : {},
   };
 }

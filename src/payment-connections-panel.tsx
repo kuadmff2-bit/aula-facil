@@ -173,6 +173,7 @@ export function PaymentConnectionsPanel() {
 
   const readyConnections = connections.filter((connection) => connection.enabled && (connection.providerKey === "manual_pix" || connection.credentialsConfigured));
   const hasDefaultOnline = connections.some((connection) => connection.enabled && connection.credentialsConfigured && (connection.defaultForPix || connection.defaultForBoleto));
+  const hasSandboxOnline = connections.some((connection) => connection.enabled && connection.providerKey !== "manual_pix" && connection.environment === "sandbox");
   const paymentNextStep = !cloudEmail
     ? "Entre no AulaFácil Cloud."
     : !schoolId
@@ -207,6 +208,7 @@ export function PaymentConnectionsPanel() {
         <div className="payment-message warning">{cloudEmail ? <>A conta <strong>{cloudEmail}</strong> já está conectada. Falta criar ou selecionar a instituição no AulaFácil Cloud acima.</> : <>Entre no AulaFácil Cloud e selecione a instituição para habilitar integrações bancárias.</>}</div>
       )}
       {schoolId && <div className="payment-message success">Instituição Cloud selecionada. As mensalidades continuam sendo controladas no AulaFácil; Pix e boleto online são gerados somente quando você escolher uma conexão pronta.</div>}
+      {hasSandboxOnline && <div className="payment-message warning" role="alert"><strong>⚠ AMBIENTE DE TESTE ATIVO</strong><span>Uma conexão bancária está em SANDBOX. Cobranças geradas nela são apenas testes e não movimentam dinheiro. Para cobrar de verdade, configure o provedor em Produção com a chave de produção.</span></div>}
 
       {connections.length > 0 && (
         <div className="payment-connection-list">
@@ -221,7 +223,7 @@ export function PaymentConnectionsPanel() {
               </div>
               <div className="payment-connection-meta">
                 <span>{capabilityLabel(connection)}</span>
-                <span>{connection.environment === "sandbox" ? "Teste" : "Produção"}</span>
+                <span>{connection.environment === "sandbox" ? "⚠ TESTE — não cobra de verdade" : "Produção — cobrança real"}</span>
                 <span>{connection.providerKey === "manual_pix" || connection.credentialsConfigured ? "Credenciais prontas" : "Credenciais pendentes"}</span>
               </div>
               <div className="payment-connection-actions">
