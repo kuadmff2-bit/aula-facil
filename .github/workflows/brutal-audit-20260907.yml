@@ -1,0 +1,156 @@
+name: Auditoria brutal AulaFácil 2026-09-07
+
+on:
+  push:
+    branches:
+      - audit/brutal-backend-20260907
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  unit-stress:
+    name: Testes repetidos e fuzzing
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - name: Rodar suíte completa 20 vezes
+        shell: bash
+        run: |
+          set -euo pipefail
+          for i in $(seq 1 20); do
+            echo "===== CICLO DE TESTES $i/20 ====="
+            npm test -- --reporter=dot
+          done
+      - name: Compilar frontend 3 vezes do zero lógico
+        shell: bash
+        run: |
+          set -euo pipefail
+          for i in 1 2 3; do
+            echo "===== BUILD $i/3 ====="
+            rm -rf dist
+            npm run build
+          done
+
+  dependency-audit:
+    name: Dependências e segredos
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - name: npm audit - high/critical
+        run: npm audit --audit-level=high
+      - name: Procurar credenciais reais versionadas
+        shell: bash
+        run: |
+          set -euo pipefail
+          if git grep -nE '\$aact_(prod|hmlg|sandbox)_[A-Za-z0-9_-]{12,}|APP_USR-[A-Za-z0-9_-]{20,}|-----BEGIN (RSA |EC |OPENSSH )?PRIVATE KEY-----' -- ':!package-lock.json'; then
+            echo 'ERRO: possível segredo real encontrado no repositório.'
+            exit 1
+          fi
+          echo 'Nenhum padrão de segredo financeiro/privado encontrado.'
+      - name: Garantir que senha não usa localStorage
+        shell: bash
+        run: |
+          set -euo pipefail
+          if git grep -niE 'localStorage.{0,80}(password|senha)|(password|senha).{0,80}localStorage' -- src; then
+            echo 'ERRO: senha possivelmente persistida em localStorage.'
+            exit 1
+          fi
+          echo 'Nenhum armazenamento de senha em localStorage encontrado.'
+
+  edge-typecheck:
+    name: Typecheck de todas as Edge Functions
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: denoland/setup-deno@v2
+        with:
+          deno-version: v2.x
+      - name: Deno check em todas as funções
+        shell: bash
+        run: |
+          set -euo pipefail
+          count=0
+          while IFS= read -r file; do
+            count=$((count+1))
+            echo "===== DENO CHECK: $file ====="
+            deno check "$file"
+          done < <(find supabase/functions -name index.ts -type f | sort)
+          test "$count" -ge 10
+          echo "Edge Functions verificadas: $count"
+
+  external-contracts:
+    name: Contratos externos e rejeição segura
+    runs-on: ubuntu-latest
+    steps:
+      - name: Verificar provedores e serviços externos
+        shell: bash
+        run: |
+          set -euo pipefail
+          check_reject() {
+            name="$1"; shift
+            code=$(curl --connect-timeout 10 --max-time 20 -sS -o /tmp/body -w '%{http_code}' "$@" || true)
+            echo "$name -> HTTP $code"
+            if [ "$code" = "000" ]; then echo "$name indisponível/rede falhou"; cat /tmp/body 2>/dev/null || true; exit 1; fi
+            if [ "$code" -ge 500 ]; then echo "$name retornou 5xx"; cat /tmp/body; exit 1; fi
+            if [ "$code" -ge 200 ] && [ "$code" -lt 300 ]; then echo "$name aceitou credencial/requisição inválida inesperadamente"; cat /tmp/body; exit 1; fi
+          }
+          check_alive() {
+            name="$1"; shift
+            code=$(curl --connect-timeout 10 --max-time 20 -sS -o /tmp/body -w '%{http_code}' "$@" || true)
+            echo "$name -> HTTP $code"
+            if [ "$code" = "000" ] || [ "$code" -ge 500 ]; then cat /tmp/body 2>/dev/null || true; exit 1; fi
+          }
+
+          check_reject 'Asaas Sandbox credencial inválida' -H 'access_token: BRUTAL_TEST_INVALID_KEY' 'https://api-sandbox.asaas.com/v3/customers?limit=1&offset=0'
+          check_reject 'Mercado Pago credencial inválida' -H 'Authorization: Bearer BRUTAL_TEST_INVALID_TOKEN' 'https://api.mercadopago.com/users/me'
+          BASIC=$(printf 'BRUTAL_TEST_INVALID_KEY:' | base64 -w0)
+          check_reject 'Pagar.me credencial inválida' -H "Authorization: Basic $BASIC" 'https://api.pagar.me/core/v5/orders?page=1&size=1'
+
+          BASE='https://fkafrirbitwlsbjpqtcf.supabase.co/functions/v1'
+          for fn in payment-charge payment-charge-link payment-charge-cancel payment-refund payment-credentials message-credentials robot-session message-broadcast; do
+            check_reject "Supabase $fn sem JWT" -X POST -H 'Content-Type: application/json' -d '{}' "$BASE/$fn"
+          done
+          for fn in payment-reconciler message-worker robot-worker; do
+            check_reject "Supabase $fn sem segredo interno" -X POST -H 'Content-Type: application/json' -d '{}' "$BASE/$fn"
+          done
+          check_alive 'payment-webhook sem parâmetros' -X POST -H 'Content-Type: application/json' -d '{}' "$BASE/payment-webhook"
+          check_alive 'payment-page sem token' "$BASE/payment-page"
+          check_alive 'AulaFácil Robot Railway' 'https://aulafacil-robot-production.up.railway.app/'
+
+  native-windows:
+    name: Rust/Tauri Windows ${{ matrix.target }}
+    runs-on: windows-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        target: [x86_64-pc-windows-msvc, aarch64-pc-windows-msvc]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri -> target
+      - run: npm ci
+      - run: npm run desktop:icons
+      - name: Cargo metadata locked
+        run: cargo metadata --manifest-path src-tauri/Cargo.toml --locked --format-version 1 > $null
+      - name: Cargo check target
+        run: cargo check --manifest-path src-tauri/Cargo.toml --locked --target ${{ matrix.target }}
