@@ -1,0 +1,168 @@
+name: Concluir estabilidade AulaFácil 0.4.8
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - ".github/workflows/finalize-stability-0.4.8.yml"
+
+permissions:
+  contents: write
+
+jobs:
+  finalize:
+    runs-on: windows-latest
+    steps:
+      - name: Baixar código
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Preparar Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Preparar Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Aplicar correções finais de integridade
+        shell: python
+        run: |
+          from pathlib import Path
+
+          def replace_once(path, old, new, label):
+              file = Path(path)
+              text = file.read_text(encoding="utf-8-sig")
+              if old not in text:
+                  raise SystemExit(f"Trecho não encontrado: {label}")
+              file.write_text(text.replace(old, new, 1), encoding="utf-8")
+
+          # 1. Primeiro envio para uma nuvem vazia usa o mesmo mecanismo granular e seguro.
+          replace_once(
+              "src/cloud-safe-sync.ts",
+              'import { cloud, downloadCloudDatabase, getCloudDataSummary, seedEmptyCloudFromLocal } from "./cloud";',
+              'import { cloud, downloadCloudDatabase, getCloudDataSummary } from "./cloud";',
+              "remover rotina antiga do import",
+          )
+          replace_once(
+              "src/cloud-safe-sync.ts",
+              '''      if (firstSync && summary.totalOperationalRecords === 0) {
+                await seedEmptyCloudFromLocal(schoolId, normalized);
+              }
+              const pushed = await pushSnapshot(schoolId, normalized, role);''',
+              '''      // O primeiro envio usa exatamente o mesmo snapshot granular das sincronizações normais.
+              // Nenhuma limpeza genérica da nuvem é executada antes do envio.
+              const pushed = await pushSnapshot(schoolId, normalized, role);''',
+              "primeira sincronização segura",
+          )
+
+          # 2. Ao apagar a cópia local, invalida a linha-base para impedir envio acidental de banco vazio.
+          replace_once(
+              "src/AppNext.tsx",
+              'import { getCloudSyncStatus, safePullFromCloud } from "./cloud-safe-sync";',
+              'import { getCloudSyncStatus, invalidateSelectedSchoolSyncBaseline, safePullFromCloud } from "./cloud-safe-sync";',
+              "import da invalidação de sincronização",
+          )
+          replace_once(
+              "src/AppNext.tsx",
+              '''  const deleteClass = (classItem: ClassItem) => {
+                if (database.students.some((student) => student.classId === classItem.id)) { notify("Mova ou remova os alunos desta turma antes de excluí-la.", "warning"); return; }
+                confirmAction({ title: "Excluir turma?", message: `${classItem.name}${classItem.groupName ? ` · ${classItem.groupName}` : ""} será removida.`, confirmLabel: "Excluir turma", tone: "danger" }, () => updateDatabase((draft) => { draft.classes = draft.classes.filter((item) => item.id !== classItem.id); }));
+              };''',
+              '''  const deleteClass = (classItem: ClassItem) => {
+                if (database.students.some((student) => student.classId === classItem.id)) {
+                  notify("Esta turma ainda possui alunos. Mova os alunos para outra turma antes de excluí-la.", "warning");
+                  return;
+                }
+                const hasAcademicHistory = database.attendance.some((item) => item.classId === classItem.id)
+                  || database.grades.some((item) => item.classId === classItem.id);
+                if (hasAcademicHistory) {
+                  notify("Esta turma possui histórico de chamadas ou notas e será mantida para não perder registros acadêmicos.", "warning");
+                  return;
+                }
+                confirmAction({
+                  title: "Excluir esta turma?",
+                  message: `${classItem.name}${classItem.groupName ? ` · ${classItem.groupName}` : ""} será removida apenas porque não possui alunos nem histórico acadêmico.`,
+                  confirmLabel: "Excluir turma",
+                  tone: "danger",
+                }, () => updateDatabase((draft) => { draft.classes = draft.classes.filter((item) => item.id !== classItem.id); }));
+              };''',
+              "proteção do histórico da turma",
+          )
+          replace_once(
+              "src/AppNext.tsx",
+              '''{view === "backup" && <BackupPanel database={database} onRestoreCandidate={(restored) => confirmAction({ title:"Restaurar este backup?", message:"Os dados locais atuais serão substituídos pelo arquivo validado.", confirmLabel:"Restaurar backup", tone:"warning" }, () => { setDatabase(restored); setSelectedStudentId(""); notify("Backup restaurado."); })} onReset={() => confirmAction({ title:"Limpar todos os dados locais?", message:"Alunos, turmas, cobranças e registros desta instalação serão removidos.", confirmLabel:"Limpar sistema", tone:"danger" }, () => { setDatabase(emptyDatabase()); setSelectedStudentId(""); notify("Sistema limpo.","warning"); })} onNotify={notify}/>}''',
+              '''{view === "backup" && <BackupPanel database={database} onRestoreCandidate={(restored) => confirmAction({ title:"Restaurar este backup?", message:"Os dados deste computador serão substituídos pelo arquivo validado. A nuvem não será alterada até uma sincronização posterior.", confirmLabel:"Restaurar backup", tone:"warning" }, () => { invalidateSelectedSchoolSyncBaseline(); setDatabase(restored); setSelectedStudentId(""); notify("Backup restaurado neste computador. Confira Nuvem e salvamento antes de sincronizar.", "warning"); })} onReset={() => confirmAction({ title:"Apagar dados deste computador?", message:"Isso apaga apenas a cópia local deste Windows. Os dados do AulaFácil Cloud e seus arquivos de backup não serão apagados.", detail:"Depois disso, este computador precisará recuperar ou iniciar novamente a sincronização antes de enviar dados para a nuvem.", confirmLabel:"Apagar só deste computador", tone:"danger" }, () => { invalidateSelectedSchoolSyncBaseline(); setDatabase(emptyDatabase()); setSelectedStudentId(""); notify("Dados deste computador apagados. A nuvem não foi alterada.","warning"); })} onNotify={notify}/>}''',
+              "limpeza apenas local e restauração segura",
+          )
+
+          # 3. Linguagem de backup mais simples e inequívoca.
+          replace_once(
+              "src/backup-panel.tsx",
+              '''          <h2>Backup portátil criptografado</h2>
+                    <p>O arquivo .afbackup usa AES-256-GCM e uma chave derivada da senha escolhida. Ele pode ser levado para outro computador sem depender da proteção DPAPI do Windows deste dispositivo.</p>''',
+              '''          <h2>Backup protegido por senha</h2>
+                    <p>Crie uma cópia extra dos dados da escola para guardar em outro local ou recuperar em outro computador. O arquivo só pode ser aberto com a senha que você escolher.</p>''',
+              "explicação simples do backup",
+          )
+          replace_once(
+              "src/backup-panel.tsx",
+              '<h3>Criar .afbackup</h3>',
+              '<h3>Criar backup protegido</h3>',
+              "título de criação de backup",
+          )
+          replace_once(
+              "src/backup-panel.tsx",
+              '<p><strong>Recomendação:</strong> mantenha pelo menos duas cópias em locais diferentes e teste a restauração periodicamente. O Cloud ajuda na continuidade, mas não substitui um backup independente.</p>',
+              '<p><strong>Recomendação:</strong> use a nuvem para manter os dispositivos alinhados e guarde também um backup protegido em outro local. Assim você tem duas formas diferentes de recuperar seus dados.</p>',
+              "recomendação de backup",
+          )
+          replace_once(
+              "src/backup-panel.tsx",
+              '''<div className="danger-zone card"><div><h3>Apagar todos os dados locais</h3><p>Use apenas para reiniciar esta instalação. Dados já existentes no Cloud não devem ser tratados como apagados até a sincronização confirmar a operação.</p></div><button className="danger-button" onClick={onReset}><Trash2 size={18} /> Limpar sistema</button></div>''',
+              '''<div className="danger-zone card"><div><h3>Apagar dados deste computador</h3><p>Remove somente a cópia salva neste Windows. Os dados do AulaFácil Cloud e seus arquivos de backup não são apagados por esta ação.</p></div><button className="danger-button" onClick={onReset}><Trash2 size={18} /> Apagar deste computador</button></div>''',
+              "zona de perigo inequívoca",
+          )
+
+      - name: Instalar dependências
+        run: npm ci --no-audit
+
+      - name: Executar testes
+        run: npm test
+
+      - name: Validar TypeScript e frontend
+        run: npm run build
+
+      - name: Validar estrutura de release
+        shell: bash
+        run: AULAFACIL_STRICT_RELEASE=1 node scripts/quality-check.mjs
+
+      - name: Gerar recursos Tauri
+        run: npm run desktop:icons
+
+      - name: Validar backend desktop no Windows
+        run: cargo check --locked --manifest-path src-tauri/Cargo.toml
+
+      - name: Auditar correções finais
+        shell: bash
+        run: |
+          ! grep -q 'seedEmptyCloudFromLocal' src/cloud-safe-sync.ts
+          grep -q 'invalidateSelectedSchoolSyncBaseline' src/AppNext.tsx
+          grep -q 'Apagar só deste computador' src/AppNext.tsx
+          grep -q 'histórico de chamadas ou notas' src/AppNext.tsx
+          grep -q 'Apagar dados deste computador' src/backup-panel.tsx
+
+      - name: Publicar somente depois de tudo passar
+        shell: bash
+        run: |
+          if git diff --quiet; then
+            echo "Nenhuma alteração pendente."
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add src/cloud-safe-sync.ts src/AppNext.tsx src/backup-panel.tsx
+          git commit -m "fix: concluir segurança de sincronização e dados locais"
+          git push origin HEAD:main
