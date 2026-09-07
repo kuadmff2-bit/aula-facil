@@ -1,0 +1,47 @@
+name: Edge Functions typecheck
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "supabase/functions/**"
+      - ".github/workflows/edge-functions-typecheck.yml"
+  pull_request:
+    paths:
+      - "supabase/functions/**"
+      - ".github/workflows/edge-functions-typecheck.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  deno-check:
+    name: Verificar todas as Edge Functions
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: denoland/setup-deno@v2
+        with:
+          deno-version: v2.x
+      - name: Typecheck completo
+        shell: bash
+        run: |
+          set -uo pipefail
+          count=0
+          failures=0
+          while IFS= read -r file; do
+            count=$((count+1))
+            echo "===== DENO CHECK: $file ====="
+            if ! deno check --node-modules-dir=auto "$file"; then
+              echo "::error file=$file::Typecheck falhou em $file"
+              failures=$((failures+1))
+            fi
+          done < <(find supabase/functions -name index.ts -type f | sort)
+          echo "Edge Functions verificadas: $count; falhas: $failures"
+          if [ "$count" -lt 13 ]; then
+            echo "::error::O repositório deve versionar pelo menos as 13 Edge Functions atuais."
+            exit 1
+          fi
+          test "$failures" -eq 0
