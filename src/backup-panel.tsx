@@ -1,5 +1,5 @@
 import { useRef, useState } from "react";
-import { DatabaseBackup, Download, KeyRound, LockKeyhole, ShieldCheck, Trash2, Upload } from "lucide-react";
+import { CircleAlert, DatabaseBackup, Download, KeyRound, LockKeyhole, ShieldCheck, Trash2, Upload } from "lucide-react";
 import type { SchoolDatabase } from "./model";
 import {
   createEncryptedBackup,
@@ -47,6 +47,8 @@ export function BackupPanel({ database, onRestoreCandidate, onReset, onNotify }:
   const [selectedEncrypted, setSelectedEncrypted] = useState(false);
   const [importPassword, setImportPassword] = useState("");
   const [busy, setBusy] = useState<"export" | "import" | null>(null);
+
+  const passwordsDiffer = exportConfirmation.length > 0 && exportPassword !== exportConfirmation;
 
   const clearImport = () => {
     setSelectedName("");
@@ -132,10 +134,26 @@ export function BackupPanel({ database, onRestoreCandidate, onReset, onNotify }:
             <span>Senha do backup</span>
             <input type="password" autoComplete="new-password" minLength={12} maxLength={256} value={exportPassword} onChange={(event) => setExportPassword(event.target.value)} placeholder="Mínimo de 12 caracteres" />
           </label>
-          <label className="backup-password-field">
+          <label className={`backup-password-field${passwordsDiffer ? " backup-password-field-error" : ""}`}>
             <span>Confirmar senha</span>
-            <input type="password" autoComplete="new-password" minLength={12} maxLength={256} value={exportConfirmation} onChange={(event) => setExportConfirmation(event.target.value)} placeholder="Digite a mesma senha" />
+            <input
+              type="password"
+              autoComplete="new-password"
+              minLength={12}
+              maxLength={256}
+              value={exportConfirmation}
+              onChange={(event) => setExportConfirmation(event.target.value)}
+              placeholder="Digite a mesma senha"
+              aria-invalid={passwordsDiffer}
+              aria-describedby={passwordsDiffer ? "backup-password-mismatch" : undefined}
+            />
           </label>
+          {passwordsDiffer && (
+            <div id="backup-password-mismatch" className="backup-inline-error" role="alert" aria-live="polite">
+              <CircleAlert size={18} />
+              <span>As senhas não coincidem. Digite exatamente a mesma senha nos dois campos.</span>
+            </div>
+          )}
           <button className="primary-button" disabled={busy !== null || exportPassword.length < 12 || exportPassword !== exportConfirmation} onClick={() => void exportEncrypted()}>
             <Download size={18} /> {busy === "export" ? "Criptografando..." : "Salvar backup protegido"}
           </button>
