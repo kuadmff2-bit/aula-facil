@@ -1,0 +1,96 @@
+name: Preparar AulaFácil 0.4.15
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - ".github/workflows/prepare-payment-validation-release-0.4.15.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  prepare:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 0
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Atualizar versões para 0.4.15
+        shell: bash
+        run: |
+          npm version 0.4.15 --no-git-tag-version
+          python - <<'PY'
+          import json, re
+          from pathlib import Path
+
+          tauri_path = Path('src-tauri/tauri.conf.json')
+          tauri = json.loads(tauri_path.read_text(encoding='utf-8'))
+          tauri['version'] = '0.4.15'
+          tauri_path.write_text(json.dumps(tauri, ensure_ascii=False, indent=2) + '\n', encoding='utf-8')
+
+          cargo_path = Path('src-tauri/Cargo.toml')
+          cargo = cargo_path.read_text(encoding='utf-8')
+          cargo, count = re.subn(r'(?m)^version = "[^"]+"$', 'version = "0.4.15"', cargo, count=1)
+          if count != 1:
+              raise SystemExit('Não foi possível atualizar a versão do Cargo.toml')
+          cargo_path.write_text(cargo, encoding='utf-8')
+
+          lock_path = Path('src-tauri/Cargo.lock')
+          lock = lock_path.read_text(encoding='utf-8')
+          pattern = r'(\[\[package\]\]\nname = "aula-facil"\nversion = ")[^"]+("\n)'
+          lock, count = re.subn(pattern, r'\g<1>0.4.15\g<2>', lock, count=1)
+          if count != 1:
+              raise SystemExit('Não foi possível atualizar aula-facil no Cargo.lock')
+          lock_path.write_text(lock, encoding='utf-8')
+          PY
+
+      - name: Instalar dependências
+        run: npm ci
+
+      - name: Executar testes
+        run: npm test
+
+      - name: Validar TypeScript e frontend
+        run: npm run build
+
+      - name: Validar Cargo lock
+        working-directory: src-tauri
+        run: cargo metadata --format-version 1 --locked --no-deps >/dev/null
+
+      - name: Conferir todas as versões
+        shell: bash
+        run: |
+          test "$(node -p "require('./package.json').version")" = "0.4.15"
+          test "$(node -p "require('./package-lock.json').version")" = "0.4.15"
+          test "$(node -p "require('./package-lock.json').packages[''].version")" = "0.4.15"
+          test "$(node -p "require('./src-tauri/tauri.conf.json').version")" = "0.4.15"
+          grep -q '^version = "0.4.15"' src-tauri/Cargo.toml
+          python - <<'PY'
+          from pathlib import Path
+          text = Path('src-tauri/Cargo.lock').read_text(encoding='utf-8')
+          assert '[[package]]\nname = "aula-facil"\nversion = "0.4.15"' in text
+          PY
+
+      - name: Commitar versão validada
+        shell: bash
+        run: |
+          git config user.name "kuadm"
+          git config user.email "kuadmff2@gmail.com"
+          git add package.json package-lock.json src-tauri/tauri.conf.json src-tauri/Cargo.toml src-tauri/Cargo.lock
+          git diff --cached --quiet && exit 0
+          git commit -m "release: AulaFácil 0.4.15 valida APIs e corrige emissão de Pix e boleto"
+          git push origin HEAD:main
