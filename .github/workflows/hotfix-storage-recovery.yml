@@ -1,0 +1,432 @@
+name: Hotfix de recuperação do armazenamento protegido
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - ".github/workflows/hotfix-storage-recovery.yml"
+
+permissions:
+  contents: write
+
+concurrency:
+  group: hotfix-storage-recovery
+  cancel-in-progress: true
+
+jobs:
+  hotfix:
+    runs-on: windows-latest
+    steps:
+      - name: Baixar código
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Preparar Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Preparar Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Aplicar recuperação segura
+        shell: python
+        run: |
+          from pathlib import Path
+
+          lib_path = Path("src-tauri/src/lib.rs")
+          lib = lib_path.read_text(encoding="utf-8-sig")
+          marker = '#[tauri::command]\nfn secure_storage_load(app: tauri::AppHandle) -> Result<Option<String>, String> {'
+          if marker not in lib:
+              raise SystemExit("Não encontrei o ponto de inserção do carregador protegido.")
+          insertion = r'''#[tauri::command]
+          fn secure_storage_load_candidates(app: tauri::AppHandle) -> Result<Vec<String>, String> {
+              let mut candidates = Vec::new();
+              let mut errors = Vec::new();
+
+              for (path, label) in [
+                  (database_path(&app)?, "o banco protegido"),
+                  (database_backup_path(&app)?, "a cópia de recuperação"),
+              ] {
+                  match load_protected_file(&path, MAX_DATABASE_BYTES, label) {
+                      Ok(Some(content)) => candidates.push(content),
+                      Ok(None) => {}
+                      Err(error) => errors.push(error),
+                  }
+              }
+
+              for path in exit_backup::exit_backup_paths(&app)? {
+                  if candidates.len() >= 12 {
+                      break;
+                  }
+                  match load_protected_file(&path, MAX_DATABASE_BYTES, "um backup automático de saída") {
+                      Ok(Some(content)) => candidates.push(content),
+                      Ok(None) => {}
+                      Err(error) => errors.push(error),
+                  }
+              }
+
+              if candidates.is_empty() && !errors.is_empty() {
+                  return Err(errors.join(" "));
+              }
+              Ok(candidates)
+          }
+
+          #[tauri::command]
+          fn secure_storage_quarantine_current(app: tauri::AppHandle) -> Result<(), String> {
+              let timestamp = std::time::SystemTime::now()
+                  .duration_since(std::time::UNIX_EPOCH)
+                  .map_err(|error| format!("O relógio do sistema não permitiu preservar os dados: {error}"))?
+                  .as_millis();
+              let directory = data_directory(&app)?.join("recovery-quarantine").join(timestamp.to_string());
+              fs::create_dir_all(&directory)
+                  .map_err(|error| format!("Não foi possível preparar a quarentena de recuperação: {error}"))?;
+
+              for (source, name) in [
+                  (database_path(&app)?, DATABASE_FILE),
+                  (database_backup_path(&app)?, DATABASE_BACKUP_FILE),
+                  (database_temp_path(&app)?, DATABASE_TEMP_FILE),
+              ] {
+                  if !source.exists() {
+                      continue;
+                  }
+                  fs::copy(&source, directory.join(name)).map_err(|error| {
+                      format!("Não foi possível preservar {name} antes da recuperação: {error}")
+                  })?;
+              }
+              Ok(())
+          }
+
+          '''
+          lib = lib.replace(marker, insertion + marker, 1)
+          handler_old = '            secure_storage_load,\n            secure_storage_save,'
+          handler_new = '            secure_storage_load,\n            secure_storage_load_candidates,\n            secure_storage_quarantine_current,\n            secure_storage_save,'
+          if handler_old not in lib:
+              raise SystemExit("Não encontrei o registro dos comandos Tauri.")
+          lib = lib.replace(handler_old, handler_new, 1)
+          lib_path.write_text(lib, encoding="utf-8")
+
+          storage = r'''import { emptyDatabase, ensureUuidDatabase, normalizeDatabase, type SchoolDatabase } from "./model";
+
+          const LEGACY_STORAGE_KEY = "aulafacil.desktop.database.v1";
+          const MAX_DATABASE_CHARS = 64 * 1024 * 1024;
+
+          type TauriInternals = {
+            invoke<T>(command: string, args?: Record<string, unknown>): Promise<T>;
+          };
+
+          type TauriWindow = Window & {
+            __TAURI_INTERNALS__?: TauriInternals;
+          };
+
+          let cachedDatabase: SchoolDatabase = emptyDatabase();
+          let initialized = false;
+          let desktopRuntime = false;
+          let writeQueue: Promise<void> = Promise.resolve();
+          let storageFailureShown = false;
+
+          function internals() {
+            return (window as TauriWindow).__TAURI_INTERNALS__;
+          }
+
+          function parseDatabaseText(content: string): SchoolDatabase {
+            if (content.length > MAX_DATABASE_CHARS) {
+              throw new Error("O banco de dados excede o limite de segurança permitido.");
+            }
+
+            let parsed: unknown;
+            try {
+              parsed = JSON.parse(content);
+            } catch {
+              throw new Error("O banco de dados está corrompido e não será sobrescrito.");
+            }
+
+            const normalized = normalizeDatabase(parsed);
+            if (!normalized) {
+              throw new Error("O banco de dados possui uma estrutura inválida e não será sobrescrito.");
+            }
+            return ensureUuidDatabase(normalized);
+          }
+
+          function readLegacyDatabase(): SchoolDatabase | null {
+            const stored = localStorage.getItem(LEGACY_STORAGE_KEY);
+            if (!stored) return null;
+            try {
+              return parseDatabaseText(stored);
+            } catch {
+              return null;
+            }
+          }
+
+          async function invoke<T>(command: string, args?: Record<string, unknown>): Promise<T> {
+            const bridge = internals();
+            if (!bridge?.invoke) throw new Error("A ponte segura do AulaFácil não está disponível.");
+            return bridge.invoke<T>(command, args);
+          }
+
+          async function readProtectedCandidates() {
+            try {
+              return await invoke<string[]>("secure_storage_load_candidates");
+            } catch (candidateError) {
+              try {
+                const single = await invoke<string | null>("secure_storage_load");
+                return single ? [single] : [];
+              } catch {
+                throw candidateError;
+              }
+            }
+          }
+
+          export async function initializeSecureStorage() {
+            if (initialized) return;
+
+            const legacy = readLegacyDatabase();
+            desktopRuntime = Boolean(internals()?.invoke);
+
+            if (desktopRuntime) {
+              const candidates = await readProtectedCandidates();
+              let firstValidationError: unknown = null;
+
+              for (let index = 0; index < candidates.length; index += 1) {
+                try {
+                  const recovered = parseDatabaseText(candidates[index]);
+                  if (index > 0) {
+                    await invoke<void>("secure_storage_quarantine_current");
+                  }
+                  cachedDatabase = recovered;
+                  localStorage.removeItem(LEGACY_STORAGE_KEY);
+                  await invoke<void>("secure_storage_save", { payload: JSON.stringify(cachedDatabase) });
+                  initialized = true;
+                  return;
+                } catch (error) {
+                  firstValidationError ??= error;
+                }
+              }
+
+              if (candidates.length > 0) {
+                throw firstValidationError instanceof Error
+                  ? new Error(`${firstValidationError.message} As cópias locais protegidas também foram verificadas, mas nenhuma pôde ser aberta com segurança.`)
+                  : new Error("Nenhuma cópia local protegida pôde ser aberta com segurança.");
+              }
+
+              if (legacy) {
+                await invoke<void>("secure_storage_save", { payload: JSON.stringify(legacy) });
+                cachedDatabase = structuredClone(legacy);
+                localStorage.removeItem(LEGACY_STORAGE_KEY);
+              } else {
+                cachedDatabase = emptyDatabase();
+              }
+            } else {
+              cachedDatabase = legacy ?? emptyDatabase();
+            }
+
+            initialized = true;
+          }
+
+          export async function replaceProtectedDatabase(database: SchoolDatabase) {
+            const normalized = normalizeDatabase(database);
+            if (!normalized) throw new Error("Os dados escolhidos para recuperação não possuem uma estrutura válida.");
+            const recovered = ensureUuidDatabase(normalized);
+            desktopRuntime = Boolean(internals()?.invoke);
+
+            if (desktopRuntime) {
+              await invoke<void>("secure_storage_quarantine_current");
+              await invoke<void>("secure_storage_save", { payload: JSON.stringify(recovered) });
+              localStorage.removeItem(LEGACY_STORAGE_KEY);
+            } else {
+              localStorage.setItem(LEGACY_STORAGE_KEY, JSON.stringify(recovered));
+            }
+
+            cachedDatabase = structuredClone(recovered);
+            initialized = true;
+            storageFailureShown = false;
+          }
+
+          export function loadDatabase(): SchoolDatabase {
+            if (!initialized) {
+              return readLegacyDatabase() ?? emptyDatabase();
+            }
+            return structuredClone(cachedDatabase);
+          }
+
+          function reportStorageFailure(error: unknown) {
+            console.error("Falha no armazenamento protegido do AulaFácil", error);
+            if (storageFailureShown) return;
+            storageFailureShown = true;
+            const message = "O AulaFácil não conseguiu gravar os dados no armazenamento protegido. "
+              + "Não feche o aplicativo até fazer um backup e verificar o problema.";
+            window.dispatchEvent(new CustomEvent("aulafacil:storage-failure", { detail: { message } }));
+          }
+
+          export function saveDatabase(database: SchoolDatabase) {
+            cachedDatabase = structuredClone(database);
+
+            if (!desktopRuntime) {
+              localStorage.setItem(LEGACY_STORAGE_KEY, JSON.stringify(database));
+              return;
+            }
+
+            const payload = JSON.stringify(database);
+            writeQueue = writeQueue
+              .catch(() => undefined)
+              .then(async () => {
+                await invoke<void>("secure_storage_save", { payload });
+                localStorage.removeItem(LEGACY_STORAGE_KEY);
+                storageFailureShown = false;
+              })
+              .catch((error) => {
+                reportStorageFailure(error);
+              });
+          }
+
+          export function parseBackup(content: string): SchoolDatabase {
+            const parsed = parseDatabaseText(content);
+            return { ...parsed, updatedAt: new Date().toISOString() };
+          }
+          '''
+          storage = "\n".join(line[10:] if line.startswith("          ") else line for line in storage.splitlines()) + "\n"
+          Path("src/storage.ts").write_text(storage, encoding="utf-8")
+
+          recovery = r'''import { useState } from "react";
+          import { getCloudAuthState, listCloudSchools } from "./cloud";
+          import { safePullFromCloud } from "./cloud-safe-sync";
+          import { replaceProtectedDatabase } from "./storage";
+
+          const SELECTED_SCHOOL_KEY = "aulafacil.cloud.selected-school";
+
+          export function StorageRecoveryScreen({ detail }: { detail: string }) {
+            const [busy, setBusy] = useState(false);
+            const [message, setMessage] = useState("");
+            const [failed, setFailed] = useState(false);
+
+            const recoverFromCloud = async () => {
+              setBusy(true);
+              setFailed(false);
+              setMessage("Conferindo sua conta e a instituição na nuvem...");
+              try {
+                const auth = await getCloudAuthState();
+                if (!auth.user) {
+                  throw new Error("A sessão do AulaFácil Cloud não está disponível neste computador. Entre novamente pela versão corrigida antes de recuperar.");
+                }
+
+                const schools = await listCloudSchools();
+                if (!schools.length) throw new Error("Sua conta não possui nenhuma instituição disponível para recuperação.");
+
+                const remembered = localStorage.getItem(SELECTED_SCHOOL_KEY) ?? "";
+                const selected = schools.find((school) => school.id === remembered) ?? (schools.length === 1 ? schools[0] : null);
+                if (!selected) {
+                  throw new Error("Há mais de uma instituição na conta e não foi possível determinar com segurança qual delas recuperar.");
+                }
+
+                localStorage.setItem(SELECTED_SCHOOL_KEY, selected.id);
+                setMessage(`Baixando os dados de ${selected.name} sem alterar a cópia local original...`);
+                const database = await safePullFromCloud(selected.id, "system");
+                setMessage("Preservando o arquivo local em quarentena e restaurando a cópia da nuvem...");
+                await replaceProtectedDatabase(database);
+                setMessage("Recuperação concluída. Reiniciando o AulaFácil...");
+                window.setTimeout(() => window.location.reload(), 700);
+              } catch (error) {
+                setFailed(true);
+                setMessage(error instanceof Error ? error.message : "Não foi possível recuperar os dados da nuvem.");
+                setBusy(false);
+              }
+            };
+
+            return (
+              <main style={{ minHeight: "100vh", display: "grid", placeItems: "center", padding: 32, background: "#f3f6fb" }}>
+                <section style={{ width: "min(720px, 100%)", padding: 30, borderRadius: 20, background: "white", boxShadow: "0 18px 50px rgba(15, 23, 42, .12)" }}>
+                  <h1 style={{ marginTop: 0 }}>Os dados foram protegidos</h1>
+                  <p>O AulaFácil encontrou o armazenamento local, mas recusou abrir uma estrutura que não passou na validação. Nenhum cadastro local foi apagado por esta tela.</p>
+                  <p style={{ color: "#b42318" }}>{detail}</p>
+                  <p>A versão corrigida verifica também as cópias protegidas de recuperação. Se nenhuma delas abrir, você pode recuperar a instituição do AulaFácil Cloud; antes de substituir qualquer arquivo, o armazenamento atual é preservado em quarentena.</p>
+                  {message && <p style={{ color: failed ? "#b42318" : "#1649b8", fontWeight: 700 }}>{message}</p>}
+                  <div style={{ display: "flex", gap: 12, flexWrap: "wrap", marginTop: 22 }}>
+                    <button type="button" disabled={busy} onClick={() => void recoverFromCloud()} style={{ minHeight: 44, border: 0, borderRadius: 10, padding: "0 18px", background: "#1649b8", color: "white", fontWeight: 800, cursor: busy ? "wait" : "pointer" }}>
+                      {busy ? "Recuperando..." : "Recuperar dados da nuvem"}
+                    </button>
+                    <button type="button" disabled={busy} onClick={() => window.location.reload()} style={{ minHeight: 44, border: "1px solid #cbd5e1", borderRadius: 10, padding: "0 18px", background: "white", color: "#0f172a", fontWeight: 750, cursor: "pointer" }}>
+                      Tentar abrir novamente
+                    </button>
+                  </div>
+                </section>
+              </main>
+            );
+          }
+          '''
+          recovery = "\n".join(line[10:] if line.startswith("          ") else line for line in recovery.splitlines()) + "\n"
+          Path("src/storage-recovery-screen.tsx").write_text(recovery, encoding="utf-8")
+
+          main = r'''import { StrictMode } from "react";
+          import { createRoot } from "react-dom/client";
+          import App from "./AppNext";
+          import { initializeSecureStorage } from "./storage";
+          import { StorageRecoveryScreen } from "./storage-recovery-screen";
+          import { installGlobalInputGuards } from "./input-guards";
+          import { installDesktopInteractions } from "./desktop-interactions";
+          import { installDocumentPrintIsolation } from "./print-export";
+          import "./styles.css";
+          import "./theme.css";
+          import "./layout-safety.css";
+          import "./desktop-interactions.css";
+          import "./print-document-fixes.css";
+          import "./contrast-fixes.css";
+          import "./ux-0.4.css";
+          import "./responsive-hardening.css";
+          import "./vertical-scroll-hardening.css";
+          import "./student-fields-compact.css";
+          // Última camada visual: impede que regras anteriores reabram overflow ou cortem texto.
+          import "./text-layout-hardening.css";
+
+          const root = createRoot(document.getElementById("root")!);
+
+          installGlobalInputGuards();
+          installDesktopInteractions();
+          installDocumentPrintIsolation();
+
+          async function start() {
+            try {
+              await initializeSecureStorage();
+              root.render(
+                <StrictMode>
+                  <App />
+                </StrictMode>,
+              );
+            } catch (error) {
+              console.error("Falha ao abrir o armazenamento protegido", error);
+              const detail = error instanceof Error ? error.message : "Erro desconhecido";
+              root.render(
+                <StrictMode>
+                  <StorageRecoveryScreen detail={detail} />
+                </StrictMode>,
+              );
+            }
+          }
+
+          void start();
+          '''
+          main = "\n".join(line[10:] if line.startswith("          ") else line for line in main.splitlines()) + "\n"
+          Path("src/main.tsx").write_text(main, encoding="utf-8")
+
+      - name: Instalar dependências
+        run: npm ci --no-audit
+
+      - name: Executar testes
+        run: npm test
+
+      - name: Validar frontend
+        run: npm run build
+
+      - name: Validar Tauri no Windows
+        run: cargo check --locked --manifest-path src-tauri/Cargo.toml
+
+      - name: Publicar hotfix e remover workflow temporário
+        shell: bash
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add src/storage.ts src/storage-recovery-screen.tsx src/main.tsx src-tauri/src/lib.rs
+          git rm .github/workflows/hotfix-storage-recovery.yml
+          git commit -m "fix: recuperar armazenamento protegido sem perda de dados"
+          git push origin HEAD:main
