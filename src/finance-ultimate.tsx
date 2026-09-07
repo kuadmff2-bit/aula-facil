@@ -1,6 +1,6 @@
 import { useMemo, useState } from "react";
 import { AlertTriangle, CheckCircle2, Copy, ExternalLink, Plus, ReceiptText, Search, WalletCards, X } from "lucide-react";
-import { emptyBillingProfile, generateProviderCharge, getBillingProfile, saveBillingProfile, type BillingProfile, type GeneratedCharge } from "./billing";
+import { cancelProviderCharge, emptyBillingProfile, generateProviderCharge, getBillingProfile, saveBillingProfile, type BillingProfile, type GeneratedCharge } from "./billing";
 import { invoiceAmountDue, referenceMonthFromDate } from "./finance-utils";
 import { ensureOpenEndedInvoiceForMonth } from "./enrollment-plan";
 import { makeId, type Invoice, type Payment, type SchoolDatabase, type Student } from "./model";
@@ -80,6 +80,8 @@ export function FinanceUltimate({ database, onChange, onReceipt }: Props) {
   const [chargeMethod, setChargeMethod] = useState<"pix" | "boleto">("pix");
   const [generatedCharge, setGeneratedCharge] = useState<GeneratedCharge | null>(null);
   const [reopenArmed, setReopenArmed] = useState("");
+  const [cancelArmed, setCancelArmed] = useState("");
+  const [reissueArmed, setReissueArmed] = useState("");
   const [query, setQuery] = useState("");
 
   const students = useMemo(() => new Map(database.students.map((item) => [item.id, item])), [database.students]);
@@ -290,17 +292,76 @@ export function FinanceUltimate({ database, onChange, onReceipt }: Props) {
     } finally { setBusy(false); }
   };
 
-  const cancelInvoice = (invoice: Invoice) => {
-    if (invoice.status === "paid") return;
-    onChange(replaceDatabase(database, (draft) => {
-      const target = draft.invoices.find((item) => item.id === invoice.id);
-      if (!target) return;
-      target.status = "cancelled";
-      target.cancelledAt = new Date().toISOString();
-      target.cancellationReason = "Cancelada manualmente no financeiro";
-    }));
-    setNotice({ tone: "warning", text: "Cobrança cancelada. O histórico foi preservado." });
-  };
+  const cancelInvoice = (invoice: Invoice) => void (async () => {
+    if (invoice.status === "paid" || busy) return;
+    if (cancelArmed !== invoice.id) {
+      setCancelArmed(invoice.id);
+      setReissueArmed("");
+      setNotice({ tone: "warning", text: `Clique novamente em “Confirmar cancelamento” para cancelar ${invoice.reference}. Se existir Pix ou boleto, ele será cancelado primeiro no provedor.` });
+      return;
+    }
+
+    const schoolId = localStorage.getItem(SELECTED_SCHOOL_KEY) ?? "";
+    const hasExternalCharge = Boolean(invoice.providerChargeId || invoice.pixCopyPaste || invoice.boletoUrl);
+    setBusy(true);
+    setNotice(null);
+    try {
+      if (schoolId) {
+        const syncStatus = await getCloudSyncStatus(schoolId, database);
+        if (syncStatus !== "synced") throw new Error("Sincronize este computador antes de cancelar a mensalidade. O cancelamento foi bloqueado para não deixar Pix ou boleto ativo no provedor.");
+        const result = await cancelProviderCharge({ invoiceId: invoice.id, cancelInvoice: true, reason: "Cancelada manualmente no financeiro" });
+        onChange(await safePullFromCloud(schoolId, database.settings.appearance));
+        setNotice({ tone: "success", text: result.providerChargeCancelled
+          ? "Mensalidade cancelada. A cobrança bancária também foi cancelada no provedor e o histórico foi preservado."
+          : "Mensalidade cancelada com segurança. Não havia cobrança bancária externa ativa." });
+      } else {
+        if (hasExternalCharge) throw new Error("Esta mensalidade possui uma cobrança bancária vinculada. Conecte o AulaFácil Cloud para cancelar primeiro no provedor.");
+        onChange(replaceDatabase(database, (draft) => {
+          const target = draft.invoices.find((item) => item.id === invoice.id);
+          if (!target) return;
+          target.status = "cancelled";
+          target.cancelledAt = new Date().toISOString();
+          target.cancellationReason = "Cancelada manualmente no financeiro em modo local";
+        }));
+        setNotice({ tone: "warning", text: "Mensalidade local cancelada. Não havia cobrança bancária vinculada." });
+      }
+      setCancelArmed("");
+    } catch (error) {
+      setNotice({ tone: "danger", text: error instanceof Error ? error.message : "Não foi possível cancelar a mensalidade." });
+    } finally { setBusy(false); }
+  })();
+
+  const removeProviderChargeForReissue = () => void (async () => {
+    if (!modal || modal.kind !== "charge" || busy) return;
+    if (reissueArmed !== modal.invoice.id) {
+      setReissueArmed(modal.invoice.id);
+      setCancelArmed("");
+      setNotice({ tone: "warning", text: "Clique novamente em “Confirmar remoção” para cancelar a cobrança bancária atual no provedor. A mensalidade continuará em aberto e poderá receber um novo Pix ou boleto." });
+      return;
+    }
+    const schoolId = localStorage.getItem(SELECTED_SCHOOL_KEY) ?? "";
+    if (!schoolId) {
+      setNotice({ tone: "danger", text: "Conecte o AulaFácil Cloud para remover uma cobrança bancária antes da reemissão." });
+      return;
+    }
+    setBusy(true);
+    try {
+      const syncStatus = await getCloudSyncStatus(schoolId, database);
+      if (syncStatus !== "synced") throw new Error("Sincronize este computador antes de remover a cobrança bancária para reemissão.");
+      const result = await cancelProviderCharge({ invoiceId: modal.invoice.id, cancelInvoice: false, reason: "Cobrança bancária removida para reemissão" });
+      const restored = await safePullFromCloud(schoolId, database.settings.appearance);
+      onChange(restored);
+      const refreshed = restored.invoices.find((item) => item.id === modal.invoice.id);
+      if (refreshed) setModal({ ...modal, invoice: refreshed });
+      setGeneratedCharge(null);
+      setReissueArmed("");
+      setNotice({ tone: "success", text: result.providerChargeCancelled
+        ? "Cobrança bancária anterior cancelada no provedor. A mensalidade continua em aberto e já pode receber um novo Pix ou boleto."
+        : "O vínculo bancário foi limpo com segurança. A mensalidade continua em aberto e pode ser reemitida." });
+    } catch (error) {
+      setNotice({ tone: "danger", text: error instanceof Error ? error.message : "Não foi possível preparar a reemissão." });
+    } finally { setBusy(false); }
+  })();
 
   return <section className="finance-ultimate stack">
     <div className="finance-ultimate-head">
@@ -314,7 +375,7 @@ export function FinanceUltimate({ database, onChange, onReceipt }: Props) {
       <article className="danger"><AlertTriangle/><div><small>Inadimplentes</small><strong>{metrics.overdue}</strong></div></article>
     </div>
 
-    {notice && !modal && <div className={`finance-notice ${notice.tone}`} role={notice.tone === "danger" ? "alert" : "status"} aria-live="assertive"><span>{notice.text}</span><button aria-label="Fechar aviso" onClick={() => { setNotice(null); setReopenArmed(""); }}><X size={15}/></button></div>}
+    {notice && !modal && <div className={`finance-notice ${notice.tone}`} role={notice.tone === "danger" ? "alert" : "status"} aria-live="assertive"><span>{notice.text}</span><button aria-label="Fechar aviso" onClick={() => { setNotice(null); setReopenArmed(""); setCancelArmed(""); setReissueArmed(""); }}><X size={15}/></button></div>}
 
     <label className="finance-search"><Search size={18}/><input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Buscar aluno, mensalidade, CPF, telefone ou vencimento"/></label>
 
@@ -331,7 +392,7 @@ export function FinanceUltimate({ database, onChange, onReceipt }: Props) {
         <td><strong>{money(status === "paid" && payment ? payment.amountReceived : breakdown.totalDue)}</strong>{breakdown.daysOverdue > 0 && status !== "paid" && <small className="late-detail">+ {money(breakdown.lateFee + breakdown.interest)} · {breakdown.daysOverdue}d atraso</small>}</td>
         <td><span className={`status ${status}`}>{statusLabel(status)}</span></td>
         <td><div className="finance-actions">
-          {(status === "pending" || status === "overdue") && <><button className="primary-button small" onClick={() => openPayment(invoice)}>Receber</button><button className="secondary-button small" disabled={busy} onClick={() => void openCharge(invoice)}>Pix / boleto</button><button className="text-button" onClick={() => cancelInvoice(invoice)}>Cancelar</button></>}
+          {(status === "pending" || status === "overdue") && <><button className="primary-button small" onClick={() => openPayment(invoice)}>Receber</button><button className="secondary-button small" disabled={busy} onClick={() => void openCharge(invoice)}>Pix / boleto</button><button className="text-button" disabled={busy} onClick={() => cancelInvoice(invoice)}>{cancelArmed === invoice.id ? "Confirmar cancelamento" : "Cancelar"}</button></>}
           {status === "paid" && student && payment && <><button className="secondary-button small" onClick={() => onReceipt(student, invoice, payment)}><ReceiptText size={16}/> Recibo</button><button className="text-button" disabled={busy} onClick={() => reopenPayment(invoice)}>{reopenArmed === invoice.id ? "Confirmar reabertura" : "Reabrir"}</button></>}
           {invoice.pixCopyPaste && <button className="icon-button small" title="Copiar Pix" onClick={() => void navigator.clipboard.writeText(invoice.pixCopyPaste ?? "")}><Copy size={16}/></button>}
           {invoice.boletoUrl && <button className="icon-button small" title="Abrir cobrança" onClick={() => window.open(invoice.boletoUrl ?? "", "_blank", "noopener,noreferrer")}><ExternalLink size={16}/></button>}
@@ -343,6 +404,6 @@ export function FinanceUltimate({ database, onChange, onReceipt }: Props) {
 
     {modal?.kind === "pay" && <div className="modal-backdrop"><section className="modal finance-modal"><header><div><h2>Registrar pagamento</h2><p>{modal.student.name} · {modal.invoice.reference}</p></div><button className="modal-close" onClick={() => setModal(null)}><X/></button></header>{(() => { const b = invoiceAmountDue(modal.invoice, database.settings.finance); const final = Math.max(0, b.totalDue - discount); return <div className="finance-payment-body"><div className="payment-breakdown"><div><span>Mensalidade</span><b>{money(b.baseAmount)}</b></div><div><span>Multa</span><b>{money(b.lateFee)}</b></div><div><span>Juros</span><b>{money(b.interest)}</b></div><div><span>Desconto</span><b>- {money(discount)}</b></div><div className="total"><span>Total recebido</span><strong>{money(final)}</strong></div></div><label><span>Desconto concedido</span><input type="number" min={0} max={b.totalDue} step="0.01" value={discount} onChange={(event) => setDiscount(Math.max(0, Number(event.target.value) || 0))}/></label><label><span>Forma de pagamento</span><select value={paymentMethod} onChange={(event) => setPaymentMethod(event.target.value)}><option value="dinheiro">Dinheiro</option><option value="pix_manual">Pix manual</option><option value="cartao">Cartão/maquininha</option><option value="transferencia">Transferência</option><option value="outro">Outro</option></select></label><div className="form-actions"><button className="secondary-button" onClick={() => setModal(null)}>Cancelar</button><button className="primary-button" onClick={confirmPayment}>Confirmar e gerar recibo</button></div></div>; })()}</section></div>}
 
-    {modal?.kind === "charge" && <div className="modal-backdrop"><section className="modal finance-modal charge-modal"><header><div><h2>Gerar cobrança bancária</h2><p>{modal.student.name} · os dados abaixo são usados somente quando o provedor exigir.</p></div><button className="modal-close" onClick={() => { setModal(null); setNotice(null); }}><X/></button></header>{notice && <div className={`finance-modal-notice ${notice.tone}`} role={notice.tone === "danger" ? "alert" : "status"} aria-live="assertive">{notice.tone === "success" ? <CheckCircle2 size={20}/> : <AlertTriangle size={20}/>}<span>{notice.text}</span><button type="button" aria-label="Fechar aviso" onClick={() => setNotice(null)}><X size={16}/></button></div>}<div className="billing-grid"><label><span>Método</span><select value={chargeMethod} onChange={(event) => setChargeMethod(event.target.value as "pix"|"boleto")}><option value="pix">Pix</option><option value="boleto">Boleto</option></select></label><label><span>CPF/CNPJ</span><input value={billing.documentNumber} onChange={(e) => setBilling({...billing, documentNumber:e.target.value})}/></label><label><span>E-mail</span><input type="email" value={billing.email} onChange={(e) => setBilling({...billing, email:e.target.value})}/></label><label><span>Telefone</span><input type="tel" inputMode="tel" maxLength={19} value={billing.phone} onChange={(e) => setBilling({...billing, phone:e.target.value})}/></label><label><span>CEP</span><input inputMode="numeric" maxLength={9} value={billing.postalCode} onChange={(e) => setBilling({...billing, postalCode:e.target.value})}/></label><label><span>Rua</span><input value={billing.streetName} onChange={(e) => setBilling({...billing, streetName:e.target.value})}/></label><label><span>Número</span><input value={billing.streetNumber} onChange={(e) => setBilling({...billing, streetNumber:e.target.value})}/></label><label><span>Bairro</span><input value={billing.neighborhood} onChange={(e) => setBilling({...billing, neighborhood:e.target.value})}/></label><label><span>Cidade</span><input value={billing.city} onChange={(e) => setBilling({...billing, city:e.target.value})}/></label><label><span>UF</span><input maxLength={2} value={billing.state} onChange={(e) => setBilling({...billing, state:e.target.value.toUpperCase()})}/></label></div>{generatedCharge && <div className="generated-charge"><strong>{generatedCharge.reused ? "Cobrança recuperada" : "Cobrança criada"} · {generatedCharge.provider}</strong>{generatedCharge.environment === "sandbox" && <div className="payment-message warning" role="alert"><strong>🧪 AMBIENTE DE TESTE</strong><span>Esta cobrança não é real e não movimenta dinheiro. Troque o Asaas para Produção antes de cobrar alunos de verdade.</span></div>}{generatedCharge.delivery && <div className={`payment-message ${generatedCharge.delivery.status === "sent" ? "success" : "warning"}`} role="status"><strong>Envio ao aluno</strong><span>{generatedCharge.delivery.message}</span></div>}{generatedCharge.pixCopyPaste && <div><code>{generatedCharge.pixCopyPaste}</code><button onClick={() => void navigator.clipboard.writeText(generatedCharge.pixCopyPaste)}><Copy size={16}/> Copiar Pix</button></div>}{!generatedCharge.pixCopyPaste && typeof generatedCharge.metadata.manualPixKey === "string" && generatedCharge.metadata.manualPixKey && <div><div><small>Chave Pix manual{typeof generatedCharge.metadata.recipientName === "string" && generatedCharge.metadata.recipientName ? ` · ${generatedCharge.metadata.recipientName}` : ""}</small><code>{String(generatedCharge.metadata.manualPixKey)}</code></div><button onClick={() => void navigator.clipboard.writeText(String(generatedCharge.metadata.manualPixKey))}><Copy size={16}/> Copiar chave Pix</button></div>}{(generatedCharge.boletoUrl || generatedCharge.paymentUrl) && <button className="secondary-button" onClick={() => window.open(generatedCharge.boletoUrl || generatedCharge.paymentUrl, "_blank", "noopener,noreferrer")}><ExternalLink size={16}/> Abrir cobrança</button>}{generatedCharge.publicPaymentUrl && <div className="generated-payment-link"><code>{generatedCharge.publicPaymentUrl}</code><button className="secondary-button" onClick={() => void navigator.clipboard.writeText(generatedCharge.publicPaymentUrl)}><Copy size={16}/> Copiar link do aluno</button></div>}</div>}<div className="form-actions"><button className="secondary-button" onClick={() => { setModal(null); setNotice(null); }}>Fechar</button><button className="primary-button" disabled={busy} aria-busy={busy} onClick={() => void generateCharge()}>{busy ? `Gerando ${chargeMethod === "pix" ? "Pix" : "boleto"}...` : `Gerar ${chargeMethod === "pix" ? "Pix" : "boleto"}`}</button></div></section></div>}
+    {modal?.kind === "charge" && <div className="modal-backdrop"><section className="modal finance-modal charge-modal"><header><div><h2>Gerar cobrança bancária</h2><p>{modal.student.name} · os dados abaixo são usados somente quando o provedor exigir.</p></div><button className="modal-close" onClick={() => { setModal(null); setNotice(null); }}><X/></button></header>{notice && <div className={`finance-modal-notice ${notice.tone}`} role={notice.tone === "danger" ? "alert" : "status"} aria-live="assertive">{notice.tone === "success" ? <CheckCircle2 size={20}/> : <AlertTriangle size={20}/>}<span>{notice.text}</span><button type="button" aria-label="Fechar aviso" onClick={() => setNotice(null)}><X size={16}/></button></div>}<div className="billing-grid"><label><span>Método</span><select value={chargeMethod} onChange={(event) => setChargeMethod(event.target.value as "pix"|"boleto")}><option value="pix">Pix</option><option value="boleto">Boleto</option></select></label><label><span>CPF/CNPJ</span><input value={billing.documentNumber} onChange={(e) => setBilling({...billing, documentNumber:e.target.value})}/></label><label><span>E-mail</span><input type="email" value={billing.email} onChange={(e) => setBilling({...billing, email:e.target.value})}/></label><label><span>Telefone</span><input type="tel" inputMode="tel" maxLength={19} value={billing.phone} onChange={(e) => setBilling({...billing, phone:e.target.value})}/></label><label><span>CEP</span><input inputMode="numeric" maxLength={9} value={billing.postalCode} onChange={(e) => setBilling({...billing, postalCode:e.target.value})}/></label><label><span>Rua</span><input value={billing.streetName} onChange={(e) => setBilling({...billing, streetName:e.target.value})}/></label><label><span>Número</span><input value={billing.streetNumber} onChange={(e) => setBilling({...billing, streetNumber:e.target.value})}/></label><label><span>Bairro</span><input value={billing.neighborhood} onChange={(e) => setBilling({...billing, neighborhood:e.target.value})}/></label><label><span>Cidade</span><input value={billing.city} onChange={(e) => setBilling({...billing, city:e.target.value})}/></label><label><span>UF</span><input maxLength={2} value={billing.state} onChange={(e) => setBilling({...billing, state:e.target.value.toUpperCase()})}/></label></div>{generatedCharge && <div className="generated-charge"><strong>{generatedCharge.reused ? "Cobrança recuperada" : "Cobrança criada"} · {generatedCharge.provider}</strong>{generatedCharge.environment === "sandbox" && <div className="payment-message warning" role="alert"><strong>🧪 AMBIENTE DE TESTE</strong><span>Esta cobrança não é real e não movimenta dinheiro. Troque o Asaas para Produção antes de cobrar alunos de verdade.</span></div>}{generatedCharge.delivery && <div className={`payment-message ${generatedCharge.delivery.status === "sent" ? "success" : "warning"}`} role="status"><strong>Envio ao aluno</strong><span>{generatedCharge.delivery.message}</span></div>}{generatedCharge.pixCopyPaste && <div><code>{generatedCharge.pixCopyPaste}</code><button onClick={() => void navigator.clipboard.writeText(generatedCharge.pixCopyPaste)}><Copy size={16}/> Copiar Pix</button></div>}{!generatedCharge.pixCopyPaste && typeof generatedCharge.metadata.manualPixKey === "string" && generatedCharge.metadata.manualPixKey && <div><div><small>Chave Pix manual{typeof generatedCharge.metadata.recipientName === "string" && generatedCharge.metadata.recipientName ? ` · ${generatedCharge.metadata.recipientName}` : ""}</small><code>{String(generatedCharge.metadata.manualPixKey)}</code></div><button onClick={() => void navigator.clipboard.writeText(String(generatedCharge.metadata.manualPixKey))}><Copy size={16}/> Copiar chave Pix</button></div>}{(generatedCharge.boletoUrl || generatedCharge.paymentUrl) && <button className="secondary-button" onClick={() => window.open(generatedCharge.boletoUrl || generatedCharge.paymentUrl, "_blank", "noopener,noreferrer")}><ExternalLink size={16}/> Abrir cobrança</button>}{generatedCharge.publicPaymentUrl && <div className="generated-payment-link"><code>{generatedCharge.publicPaymentUrl}</code><button className="secondary-button" onClick={() => void navigator.clipboard.writeText(generatedCharge.publicPaymentUrl)}><Copy size={16}/> Copiar link do aluno</button></div>}</div>}<div className="form-actions">{(modal.invoice.providerChargeId || modal.invoice.pixCopyPaste || modal.invoice.boletoUrl || generatedCharge?.providerChargeId) && <button className="danger-button" disabled={busy} onClick={() => removeProviderChargeForReissue()}>{reissueArmed === modal.invoice.id ? "Confirmar remoção" : "Remover cobrança atual para reemitir"}</button>}<button className="secondary-button" onClick={() => { setModal(null); setNotice(null); setReissueArmed(""); }}>Fechar</button><button className="primary-button" disabled={busy} aria-busy={busy} onClick={() => void generateCharge()}>{busy ? `Gerando ${chargeMethod === "pix" ? "Pix" : "boleto"}...` : `Gerar ${chargeMethod === "pix" ? "Pix" : "boleto"}`}</button></div></section></div>}
   </section>;
 }
