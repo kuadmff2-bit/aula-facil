@@ -34,8 +34,22 @@ jobs:
       - name: Run tests
         run: npm test
 
-      - name: Typecheck and build
-        run: npm run build
+      - name: Typecheck and build with diagnostics
+        shell: bash
+        run: |
+          set +e
+          npm run build > build-debug.log 2>&1
+          status=$?
+          cat build-debug.log
+          if [ "$status" != "0" ]; then
+            git config user.name "github-actions[bot]"
+            git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+            git add -f build-debug.log
+            git commit -m "debug: capture 0.4.13 TypeScript failure"
+            git push
+            exit "$status"
+          fi
+          rm -f build-debug.log
 
       - name: Commit generated hardening
         shell: bash
