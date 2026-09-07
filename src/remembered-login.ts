@@ -12,11 +12,11 @@ export type RememberedLogin = {
   password: string;
 };
 
-function validEmail(value: unknown) {
+function validEmail(value: unknown): value is string {
   return typeof value === "string" && value.length >= 3 && value.length <= 200 && value.includes("@");
 }
 
-function validPassword(value: unknown) {
+function validPassword(value: unknown): value is string {
   return typeof value === "string" && value.length >= 8 && value.length <= 256;
 }
 
@@ -29,7 +29,7 @@ export async function loadRememberedLogin(): Promise<RememberedLogin | null> {
   const raw = await getProtectedAuthItem(REMEMBERED_LOGIN_KEY);
   if (!raw) return null;
   try {
-    const parsed = JSON.parse(raw) as Partial<RememberedLogin>;
+    const parsed = JSON.parse(raw) as Record<string, unknown>;
     if (!validEmail(parsed.email) || !validPassword(parsed.password)) {
       await clearRememberedLogin();
       return null;
