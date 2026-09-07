@@ -49,7 +49,17 @@ function readBaseline(schoolId: string): SyncBaseline | null {
 }
 
 export function localSyncSignature(database: SchoolDatabase, role: CloudSyncRole) {
-  if (role === "owner" || role === "admin") return JSON.stringify(database);
+  if (role === "owner" || role === "admin") return JSON.stringify({
+  version: database.version,
+  settings: database.settings,
+  classes: database.classes,
+  students: database.students,
+  invoices: database.invoices,
+  payments: database.payments,
+  attendance: database.attendance,
+  grades: database.grades,
+  notices: database.notices,
+});
   if (role === "finance") return JSON.stringify({ finance: database.settings.finance, invoices: database.invoices, payments: database.payments });
   if (role === "teacher") return JSON.stringify({ classes: database.classes, students: database.students, attendance: database.attendance, grades: database.grades });
   return JSON.stringify({ classes: database.classes, students: database.students, attendance: database.attendance, notices: database.notices });
@@ -109,7 +119,19 @@ export async function getCloudSyncStatus(schoolId: string, database: SchoolDatab
   }
 
   const baseline = readBaseline(schoolId);
-  if (!baseline) return "not_linked";
+  if (!baseline) {
+    try {
+      const cloudBase = await downloadCloudDatabase(schoolId, database.settings.appearance);
+      const cloudDatabase = ensureUuidDatabase(await hydrateProfessionalCloudFields(schoolId, cloudBase));
+      if (localSyncSignature(cloudDatabase, role) === signature) {
+        writeBaseline(schoolId, cloudRevision, database, role);
+        return "synced";
+      }
+    } catch {
+      // Se a comparação não puder ser feita, mantém o comportamento conservador.
+    }
+    return "not_linked";
+  }
   if (baseline.role && baseline.role !== role) return "not_linked";
   const localChanged = baseline.localSignature ? signature !== baseline.localSignature : database.updatedAt !== baseline.localUpdatedAt;
   const cloudChanged = cloudRevision !== baseline.revision;
@@ -125,14 +147,10 @@ async function upsertRows(table: string, rows: Record<string, unknown>[], onConf
   if (error) throw new Error(`Não foi possível sincronizar ${table}: ${error.message}`);
 }
 
-async function softDeleteMissing(table: string, schoolId: string, keepIds: string[]) {
-  const { data, error } = await cloud.from(table).select("id").eq("school_id", schoolId).is("deleted_at", null);
-  if (error) throw new Error(`Não foi possível conferir exclusões de ${table}: ${error.message}`);
-  const keep = new Set(keepIds);
-  const remove = (data ?? []).map((row: any) => String(row.id)).filter((id) => !keep.has(id));
-  if (!remove.length) return;
-  const { error: deleteError } = await cloud.from(table).update({ deleted_at: new Date().toISOString() }).eq("school_id", schoolId).in("id", remove);
-  if (deleteError) throw new Error(`Não foi possível sincronizar exclusões de ${table}: ${deleteError.message}`);
+async function softDeleteMissing(_table: string, _schoolId: string, _keepIds: string[]) {
+  // Segurança: ausência em uma fotografia local NÃO significa exclusão.
+  // Exclusões na nuvem só poderão voltar quando houver tombstones/ações explícitas.
+  return;
 }
 
 async function pushSnapshot(schoolId: string, source: SchoolDatabase, role: CloudSyncRole) {
