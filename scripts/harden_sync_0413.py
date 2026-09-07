@@ -96,19 +96,25 @@ async function withSchoolSyncLease<T>(schoolId: string, operation: () => Promise
 '''
     text = text.replace(anchor, anchor + lease_code + "\n", 1)
 
-# Wrap safePushToCloud in a school lease and always read the final server state.
 start_marker = 'export async function safePushToCloud(schoolId: string, database: SchoolDatabase) {'
 end_marker = '\nexport async function replaceCloudWithLocal'
-if 'return withSchoolSyncLease(schoolId, async () =>' not in text[text.index(start_marker):text.index(end_marker, text.index(start_marker))]:
-    start = text.index(start_marker)
-    end = text.index(end_marker, start)
-    original = text[start:end]
-    body = original[len(start_marker):].strip()
-    if not (body.startswith('{') and body.endswith('}')):
+start = text.index(start_marker)
+end = text.index(end_marker, start)
+push_block = text[start:end]
+if 'return withSchoolSyncLease(schoolId, async () =>' not in push_block:
+    body = push_block[len(start_marker):]
+    if not body.endswith('}'):
         raise SystemExit("unexpected safePushToCloud shape")
-    body = body[1:-1]
-    old_tail = '''      const revision = await getCloudRevision(schoolId);\n      writeBaseline(schoolId, revision, pushed, role);\n      clearPushAttempt(schoolId);\n      return pushed;'''
-    new_tail = '''      // Um webhook financeiro ou outro processo do servidor pode ter alterado a nuvem durante o envio.\n      // Só considera a sincronização concluída depois de reler o estado final do servidor.\n      const finalDatabase = await safePullFromCloud(schoolId, pushed.settings.appearance);\n      clearPushAttempt(schoolId);\n      return finalDatabase;'''
+    body = body[:-1]
+    old_tail = '''      const revision = await getCloudRevision(schoolId);
+      writeBaseline(schoolId, revision, pushed, role);
+      clearPushAttempt(schoolId);
+      return pushed;'''
+    new_tail = '''      // Um webhook financeiro ou outro processo do servidor pode ter alterado a nuvem durante o envio.
+      // Só considera a sincronização concluída depois de reler o estado final do servidor.
+      const finalDatabase = await safePullFromCloud(schoolId, pushed.settings.appearance);
+      clearPushAttempt(schoolId);
+      return finalDatabase;'''
     if old_tail not in body:
         raise SystemExit("safePushToCloud finalization block not found")
     body = body.replace(old_tail, new_tail, 1)
@@ -116,15 +122,56 @@ if 'return withSchoolSyncLease(schoolId, async () =>' not in text[text.index(sta
     replacement = start_marker + "\n  return withSchoolSyncLease(schoolId, async () => {" + indented + "\n  });\n}"
     text = text[:start] + replacement + text[end:]
 
-old_replace = '''export async function replaceCloudWithLocal(schoolId: string, database: SchoolDatabase) {\n  const role = await getCloudSyncRole(schoolId);\n  if (!isAdmin(role)) throw new Error("Somente proprietário ou administrador pode aplicar alterações deste computador durante um conflito.");\n  await pushSnapshot(schoolId, database, role);\n  await flushPendingCloudDeletions(schoolId);\n  clearPushAttempt(schoolId);\n  // Depois de aplicar as alterações locais, baixa novamente a cópia final.\n  // Registros existentes apenas na nuvem são preservados; exclusões confirmadas são respeitadas.\n  return safePullFromCloud(schoolId, database.settings.appearance);\n}'''
-new_replace = '''export async function replaceCloudWithLocal(schoolId: string, database: SchoolDatabase) {\n  return withSchoolSyncLease(schoolId, async () => {\n    const role = await getCloudSyncRole(schoolId);\n    if (!isAdmin(role)) throw new Error("Somente proprietário ou administrador pode aplicar alterações deste computador durante um conflito.");\n    await pushSnapshot(schoolId, database, role);\n    await flushPendingCloudDeletions(schoolId);\n    clearPushAttempt(schoolId);\n    // Depois de aplicar as alterações locais, baixa novamente a cópia final.\n    // Registros existentes apenas na nuvem são preservados; exclusões confirmadas são respeitadas.\n    return safePullFromCloud(schoolId, database.settings.appearance);\n  });\n}'''
+old_replace = '''export async function replaceCloudWithLocal(schoolId: string, database: SchoolDatabase) {
+  const role = await getCloudSyncRole(schoolId);
+  if (!isAdmin(role)) throw new Error("Somente proprietário ou administrador pode aplicar alterações deste computador durante um conflito.");
+  await pushSnapshot(schoolId, database, role);
+  await flushPendingCloudDeletions(schoolId);
+  clearPushAttempt(schoolId);
+  // Depois de aplicar as alterações locais, baixa novamente a cópia final.
+  // Registros existentes apenas na nuvem são preservados; exclusões confirmadas são respeitadas.
+  return safePullFromCloud(schoolId, database.settings.appearance);
+}'''
+new_replace = '''export async function replaceCloudWithLocal(schoolId: string, database: SchoolDatabase) {
+  return withSchoolSyncLease(schoolId, async () => {
+    const role = await getCloudSyncRole(schoolId);
+    if (!isAdmin(role)) throw new Error("Somente proprietário ou administrador pode aplicar alterações deste computador durante um conflito.");
+    await pushSnapshot(schoolId, database, role);
+    await flushPendingCloudDeletions(schoolId);
+    clearPushAttempt(schoolId);
+    // Depois de aplicar as alterações locais, baixa novamente a cópia final.
+    // Registros existentes apenas na nuvem são preservados; exclusões confirmadas são respeitadas.
+    return safePullFromCloud(schoolId, database.settings.appearance);
+  });
+}'''
 if old_replace in text:
     text = text.replace(old_replace, new_replace, 1)
 elif new_replace not in text:
     raise SystemExit("replaceCloudWithLocal block not found")
 
-old_pull = '''export async function safePullFromCloud(schoolId: string, localAppearance: SchoolDatabase["settings"]["appearance"] = "system") {\n  const role = await getCloudSyncRole(schoolId);\n  const base = await downloadCloudDatabase(schoolId, localAppearance);\n  const database = ensureUuidDatabase(await hydrateProfessionalCloudFields(schoolId, base));\n  const repaired = canWriteFinance(role) ? repairMissingEnrollmentInvoices(database) : 0;\n  if (repaired) await pushSnapshot(schoolId, database, role);\n  writeBaseline(schoolId, await getCloudRevision(schoolId), database, role);\n  writePendingCloudDeletions(schoolId, []);\n  return database;\n}'''
-new_pull = '''export async function safePullFromCloud(schoolId: string, localAppearance: SchoolDatabase["settings"]["appearance"] = "system") {\n  return withSchoolSyncLease(schoolId, async () => {\n    const role = await getCloudSyncRole(schoolId);\n    const base = await downloadCloudDatabase(schoolId, localAppearance);\n    const database = ensureUuidDatabase(await hydrateProfessionalCloudFields(schoolId, base));\n    const repaired = canWriteFinance(role) ? repairMissingEnrollmentInvoices(database) : 0;\n    if (repaired) await pushSnapshot(schoolId, database, role);\n    // A revisão só é fixada depois de carregar e, se necessário, reparar o snapshot final.\n    writeBaseline(schoolId, await getCloudRevision(schoolId), database, role);\n    writePendingCloudDeletions(schoolId, []);\n    return database;\n  });\n}'''
+old_pull = '''export async function safePullFromCloud(schoolId: string, localAppearance: SchoolDatabase["settings"]["appearance"] = "system") {
+  const role = await getCloudSyncRole(schoolId);
+  const base = await downloadCloudDatabase(schoolId, localAppearance);
+  const database = ensureUuidDatabase(await hydrateProfessionalCloudFields(schoolId, base));
+  const repaired = canWriteFinance(role) ? repairMissingEnrollmentInvoices(database) : 0;
+  if (repaired) await pushSnapshot(schoolId, database, role);
+  writeBaseline(schoolId, await getCloudRevision(schoolId), database, role);
+  writePendingCloudDeletions(schoolId, []);
+  return database;
+}'''
+new_pull = '''export async function safePullFromCloud(schoolId: string, localAppearance: SchoolDatabase["settings"]["appearance"] = "system") {
+  return withSchoolSyncLease(schoolId, async () => {
+    const role = await getCloudSyncRole(schoolId);
+    const base = await downloadCloudDatabase(schoolId, localAppearance);
+    const database = ensureUuidDatabase(await hydrateProfessionalCloudFields(schoolId, base));
+    const repaired = canWriteFinance(role) ? repairMissingEnrollmentInvoices(database) : 0;
+    if (repaired) await pushSnapshot(schoolId, database, role);
+    // A revisão só é fixada depois de carregar e, se necessário, reparar o snapshot final.
+    writeBaseline(schoolId, await getCloudRevision(schoolId), database, role);
+    writePendingCloudDeletions(schoolId, []);
+    return database;
+  });
+}'''
 if old_pull in text:
     text = text.replace(old_pull, new_pull, 1)
 elif new_pull not in text:
