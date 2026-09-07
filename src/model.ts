@@ -180,6 +180,9 @@ export type Payment = {
   notes?: string;
   reversedAt?: string | null;
   reversalReason?: string;
+  refundedAmount?: number;
+  refundStatus?: string;
+  refundUpdatedAt?: string | null;
   createdAt: string;
 };
 
@@ -451,6 +454,9 @@ function sanitizePayment(item: unknown): Payment | null {
     notes: text(item.notes, 2_000),
     reversedAt: item.reversedAt === null || item.reversedAt === undefined ? null : text(item.reversedAt, 48) || null,
     reversalReason: text(item.reversalReason, 500),
+    refundedAmount: finiteNumber(item.refundedAmount, 0, amountReceived, 0) ?? 0,
+    refundStatus: text(item.refundStatus, 40, "none"),
+    refundUpdatedAt: item.refundUpdatedAt === null || item.refundUpdatedAt === undefined ? null : text(item.refundUpdatedAt, 48) || null,
     createdAt,
   };
 }

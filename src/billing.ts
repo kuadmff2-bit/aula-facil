@@ -45,6 +45,16 @@ export type CancelledProviderCharge = {
   result: Record<string, unknown>;
 };
 
+export type ProviderRefundResult = {
+  provider: string;
+  requestedAmount: number;
+  refundedAmount: number;
+  refundState: string;
+  completed: boolean;
+  reused: boolean;
+  message: string;
+};
+
 export const emptyBillingProfile = (): BillingProfile => ({
   payerName: "", email: "", documentNumber: "", phone: "", postalCode: "", streetName: "",
   streetNumber: "", neighborhood: "", city: "", state: "",
@@ -196,5 +206,31 @@ export async function cancelProviderCharge(input: {
     providerChargeCancelled: Boolean(data?.providerChargeCancelled),
     invoiceCancelled: Boolean(data?.invoiceCancelled),
     result: data?.result && typeof data.result === "object" ? data.result : {},
+  };
+}
+
+
+export async function requestProviderRefund(input: {
+  paymentId: string;
+  amount?: number;
+  reason: string;
+}): Promise<ProviderRefundResult> {
+  const { data, error } = await cloud.functions.invoke("payment-refund", {
+    body: {
+      paymentId: input.paymentId,
+      amount: input.amount,
+      reason: input.reason.trim(),
+    },
+  });
+  if (error) throw new Error(await getEdgeFunctionErrorMessage(error));
+  if (data?.error) throw new Error(String(data.error));
+  return {
+    provider: String(data?.provider ?? ""),
+    requestedAmount: Number(data?.requestedAmount ?? input.amount ?? 0),
+    refundedAmount: Number(data?.refundedAmount ?? 0),
+    refundState: String(data?.refundState ?? "pending"),
+    completed: Boolean(data?.completed),
+    reused: Boolean(data?.reused),
+    message: String(data?.message ?? "Estorno solicitado."),
   };
 }

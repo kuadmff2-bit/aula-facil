@@ -1,6 +1,6 @@
 import { useMemo, useState } from "react";
 import { AlertTriangle, CheckCircle2, Copy, ExternalLink, Plus, ReceiptText, Search, WalletCards, X } from "lucide-react";
-import { cancelProviderCharge, emptyBillingProfile, generateProviderCharge, getBillingProfile, saveBillingProfile, type BillingProfile, type GeneratedCharge } from "./billing";
+import { cancelProviderCharge, emptyBillingProfile, generateProviderCharge, getBillingProfile, requestProviderRefund, saveBillingProfile, type BillingProfile, type GeneratedCharge } from "./billing";
 import { invoiceAmountDue, referenceMonthFromDate } from "./finance-utils";
 import { ensureOpenEndedInvoiceForMonth } from "./enrollment-plan";
 import { makeId, type Invoice, type Payment, type SchoolDatabase, type Student } from "./model";
@@ -18,7 +18,10 @@ type Props = {
 };
 
 type Filter = "all" | "pending" | "overdue" | "paid" | "cancelled" | "negotiated";
-type Modal = { kind: "pay" | "charge"; invoice: Invoice; student: Student } | null;
+type Modal =
+  | { kind: "pay" | "charge"; invoice: Invoice; student: Student }
+  | { kind: "refund"; invoice: Invoice; student: Student; payment: Payment }
+  | null;
 type Notice = { tone: "success" | "warning" | "danger"; text: string } | null;
 
 function localDate() {
@@ -82,6 +85,9 @@ export function FinanceUltimate({ database, onChange, onReceipt }: Props) {
   const [reopenArmed, setReopenArmed] = useState("");
   const [cancelArmed, setCancelArmed] = useState("");
   const [reissueArmed, setReissueArmed] = useState("");
+  const [refundAmount, setRefundAmount] = useState(0);
+  const [refundReason, setRefundReason] = useState("");
+  const [refundArmed, setRefundArmed] = useState(false);
   const [query, setQuery] = useState("");
 
   const students = useMemo(() => new Map(database.students.map((item) => [item.id, item])), [database.students]);
@@ -98,7 +104,7 @@ export function FinanceUltimate({ database, onChange, onReceipt }: Props) {
   }, [database.invoices, filter, query, students]);
 
   const metrics = useMemo(() => {
-    const received = database.payments.filter((item) => item.status === "confirmed").reduce((sum, item) => sum + item.amountReceived, 0);
+    const received = database.payments.filter((item) => item.status === "confirmed").reduce((sum, item) => sum + Math.max(0, item.amountReceived - (item.refundedAmount ?? 0)), 0);
     let open = 0;
     let overdue = 0;
     for (const invoice of database.invoices) {
@@ -206,6 +212,11 @@ export function FinanceUltimate({ database, onChange, onReceipt }: Props) {
 
   const reopenPayment = (invoice: Invoice) => void (async () => {
     if (busy) return;
+    const providerPayment = paymentForInvoice(database, invoice.id);
+    if (providerPayment?.provider && providerPayment.providerPaymentId) {
+      setNotice({ tone: "danger", text: "Pagamento confirmado por provedor não pode ser reaberto manualmente. Use “Estornar” para devolver o valor com rastreabilidade." });
+      return;
+    }
     if (reopenArmed !== invoice.id) {
       setReopenArmed(invoice.id);
       setNotice({ tone: "warning", text: `Clique novamente em “Confirmar reabertura” para reabrir ${invoice.reference}. A baixa anterior ficará preservada no histórico.` });
@@ -238,6 +249,65 @@ export function FinanceUltimate({ database, onChange, onReceipt }: Props) {
       setNotice({ tone: "warning", text: "Pagamento reaberto. A baixa anterior continua no histórico para auditoria." });
     } catch (error) {
       setNotice({ tone: "danger", text: error instanceof Error ? error.message : "Não foi possível reabrir o pagamento." });
+    } finally { setBusy(false); }
+  })();
+
+  const openRefund = (invoice: Invoice, payment: Payment) => {
+    const student = students.get(invoice.studentId);
+    if (!student) return;
+    if (!payment.provider || !payment.providerPaymentId) {
+      setNotice({ tone: "warning", text: "Este pagamento é manual. Use “Reabrir” para desfazer a baixa mantendo o histórico." });
+      return;
+    }
+    const remaining = Math.max(0, Math.round((payment.amountReceived - (payment.refundedAmount ?? 0)) * 100) / 100);
+    if (remaining <= 0) {
+      setNotice({ tone: "warning", text: "Este pagamento já foi estornado integralmente." });
+      return;
+    }
+    setRefundAmount(remaining);
+    setRefundReason("");
+    setRefundArmed(false);
+    setNotice(null);
+    setModal({ kind: "refund", invoice, student, payment });
+  };
+
+  const confirmRefund = () => void (async () => {
+    if (!modal || modal.kind !== "refund" || busy) return;
+    const remaining = Math.max(0, Math.round((modal.payment.amountReceived - (modal.payment.refundedAmount ?? 0)) * 100) / 100);
+    const amount = Math.round((Number(refundAmount) || 0) * 100) / 100;
+    if (amount <= 0 || amount > remaining) {
+      setNotice({ tone: "danger", text: `Informe um valor entre R$ 0,01 e ${money(remaining)}.` });
+      return;
+    }
+    if (refundReason.trim().length < 4) {
+      setNotice({ tone: "danger", text: "Informe o motivo do estorno para o histórico financeiro." });
+      return;
+    }
+    if (!refundArmed) {
+      setRefundArmed(true);
+      setNotice({ tone: "warning", text: `Confirme novamente: o AulaFácil solicitará ao provedor a devolução de ${money(amount)}. Esta operação pode movimentar dinheiro real.` });
+      return;
+    }
+    const schoolId = localStorage.getItem(SELECTED_SCHOOL_KEY) ?? "";
+    if (!schoolId) {
+      setNotice({ tone: "danger", text: "Conecte o AulaFácil Cloud para solicitar estorno bancário." });
+      return;
+    }
+    setBusy(true);
+    try {
+      const syncStatus = await getCloudSyncStatus(schoolId, database);
+      if (syncStatus !== "synced") throw new Error("Sincronize este computador antes de solicitar o estorno.");
+      const result = await requestProviderRefund({ paymentId: modal.payment.id, amount, reason: refundReason });
+      const restored = await safePullFromCloud(schoolId, database.settings.appearance);
+      onChange(restored);
+      setModal(null);
+      setRefundArmed(false);
+      setNotice({ tone: result.completed ? "success" : "warning", text: result.completed
+        ? `${result.message} Total devolvido reconhecido: ${money(result.refundedAmount)}.`
+        : `${result.message} O AulaFácil acompanhará a confirmação pelo provedor automaticamente.` });
+    } catch (error) {
+      setRefundArmed(false);
+      setNotice({ tone: "danger", text: error instanceof Error ? error.message : "Não foi possível solicitar o estorno." });
     } finally { setBusy(false); }
   })();
 
@@ -389,11 +459,11 @@ export function FinanceUltimate({ database, onChange, onReceipt }: Props) {
       return <tr key={invoice.id}>
         <td><strong>{student?.name ?? "Aluno removido"}</strong></td>
         <td>{invoice.reference}</td><td>{dateLabel(invoice.dueDate)}</td>
-        <td><strong>{money(status === "paid" && payment ? payment.amountReceived : breakdown.totalDue)}</strong>{breakdown.daysOverdue > 0 && status !== "paid" && <small className="late-detail">+ {money(breakdown.lateFee + breakdown.interest)} · {breakdown.daysOverdue}d atraso</small>}</td>
+        <td><strong>{money(status === "paid" && payment ? Math.max(0, payment.amountReceived - (payment.refundedAmount ?? 0)) : breakdown.totalDue)}</strong>{payment && (payment.refundedAmount ?? 0) > 0 && <small className="late-detail">Estornado: {money(payment.refundedAmount ?? 0)}{payment.refundStatus && payment.refundStatus !== "none" ? ` · ${payment.refundStatus === "partial" ? "parcial" : payment.refundStatus === "pending" ? "aguardando" : payment.refundStatus}` : ""}</small>}{breakdown.daysOverdue > 0 && status !== "paid" && <small className="late-detail">+ {money(breakdown.lateFee + breakdown.interest)} · {breakdown.daysOverdue}d atraso</small>}</td>
         <td><span className={`status ${status}`}>{statusLabel(status)}</span></td>
         <td><div className="finance-actions">
           {(status === "pending" || status === "overdue") && <><button className="primary-button small" onClick={() => openPayment(invoice)}>Receber</button><button className="secondary-button small" disabled={busy} onClick={() => void openCharge(invoice)}>Pix / boleto</button><button className="text-button" disabled={busy} onClick={() => cancelInvoice(invoice)}>{cancelArmed === invoice.id ? "Confirmar cancelamento" : "Cancelar"}</button></>}
-          {status === "paid" && student && payment && <><button className="secondary-button small" onClick={() => onReceipt(student, invoice, payment)}><ReceiptText size={16}/> Recibo</button><button className="text-button" disabled={busy} onClick={() => reopenPayment(invoice)}>{reopenArmed === invoice.id ? "Confirmar reabertura" : "Reabrir"}</button></>}
+          {status === "paid" && student && payment && <><button className="secondary-button small" onClick={() => onReceipt(student, invoice, payment)}><ReceiptText size={16}/> Recibo</button>{payment.provider && payment.providerPaymentId ? <button className="text-button" disabled={busy} onClick={() => openRefund(invoice, payment)}>Estornar</button> : <button className="text-button" disabled={busy} onClick={() => reopenPayment(invoice)}>{reopenArmed === invoice.id ? "Confirmar reabertura" : "Reabrir"}</button>}</>}
           {invoice.pixCopyPaste && <button className="icon-button small" title="Copiar Pix" onClick={() => void navigator.clipboard.writeText(invoice.pixCopyPaste ?? "")}><Copy size={16}/></button>}
           {invoice.boletoUrl && <button className="icon-button small" title="Abrir cobrança" onClick={() => window.open(invoice.boletoUrl ?? "", "_blank", "noopener,noreferrer")}><ExternalLink size={16}/></button>}
         </div></td>
@@ -403,6 +473,9 @@ export function FinanceUltimate({ database, onChange, onReceipt }: Props) {
     <DebtNegotiationPanel database={database} onChange={onChange} />
 
     {modal?.kind === "pay" && <div className="modal-backdrop"><section className="modal finance-modal"><header><div><h2>Registrar pagamento</h2><p>{modal.student.name} · {modal.invoice.reference}</p></div><button className="modal-close" onClick={() => setModal(null)}><X/></button></header>{(() => { const b = invoiceAmountDue(modal.invoice, database.settings.finance); const final = Math.max(0, b.totalDue - discount); return <div className="finance-payment-body"><div className="payment-breakdown"><div><span>Mensalidade</span><b>{money(b.baseAmount)}</b></div><div><span>Multa</span><b>{money(b.lateFee)}</b></div><div><span>Juros</span><b>{money(b.interest)}</b></div><div><span>Desconto</span><b>- {money(discount)}</b></div><div className="total"><span>Total recebido</span><strong>{money(final)}</strong></div></div><label><span>Desconto concedido</span><input type="number" min={0} max={b.totalDue} step="0.01" value={discount} onChange={(event) => setDiscount(Math.max(0, Number(event.target.value) || 0))}/></label><label><span>Forma de pagamento</span><select value={paymentMethod} onChange={(event) => setPaymentMethod(event.target.value)}><option value="dinheiro">Dinheiro</option><option value="pix_manual">Pix manual</option><option value="cartao">Cartão/maquininha</option><option value="transferencia">Transferência</option><option value="outro">Outro</option></select></label><div className="form-actions"><button className="secondary-button" onClick={() => setModal(null)}>Cancelar</button><button className="primary-button" onClick={confirmPayment}>Confirmar e gerar recibo</button></div></div>; })()}</section></div>}
+
+
+    {modal?.kind === "refund" && <div className="modal-backdrop"><section className="modal finance-modal"><header><div><h2>Estornar pagamento</h2><p>{modal.student.name} · {modal.invoice.reference}</p></div><button className="modal-close" disabled={busy} onClick={() => { setModal(null); setNotice(null); setRefundArmed(false); }}><X/></button></header><div className="finance-payment-body"><div className="payment-breakdown"><div><span>Pagamento recebido</span><b>{money(modal.payment.amountReceived)}</b></div><div><span>Já estornado</span><b>{money(modal.payment.refundedAmount ?? 0)}</b></div><div className="total"><span>Máximo disponível</span><strong>{money(Math.max(0, modal.payment.amountReceived - (modal.payment.refundedAmount ?? 0)))}</strong></div></div><label><span>Valor a estornar</span><input type="number" min={0.01} max={Math.max(0, modal.payment.amountReceived - (modal.payment.refundedAmount ?? 0))} step="0.01" value={refundAmount} onChange={(event) => { setRefundAmount(Math.max(0, Number(event.target.value) || 0)); setRefundArmed(false); }}/></label><label><span>Motivo do estorno</span><textarea rows={3} maxLength={500} value={refundReason} onChange={(event) => { setRefundReason(event.target.value); setRefundArmed(false); }} placeholder="Ex.: pagamento duplicado, cancelamento acordado com o aluno..."/></label>{notice && <div className={`finance-modal-notice ${notice.tone}`} role={notice.tone === "danger" ? "alert" : "status"}><AlertTriangle size={20}/><span>{notice.text}</span></div>}<div className="form-actions"><button className="secondary-button" disabled={busy} onClick={() => { setModal(null); setNotice(null); setRefundArmed(false); }}>Cancelar</button><button className="danger-button" disabled={busy} onClick={() => confirmRefund()}>{busy ? "Processando estorno..." : refundArmed ? `Confirmar estorno de ${money(refundAmount)}` : "Solicitar estorno"}</button></div></div></section></div>}
 
     {modal?.kind === "charge" && <div className="modal-backdrop"><section className="modal finance-modal charge-modal"><header><div><h2>Gerar cobrança bancária</h2><p>{modal.student.name} · os dados abaixo são usados somente quando o provedor exigir.</p></div><button className="modal-close" onClick={() => { setModal(null); setNotice(null); }}><X/></button></header>{notice && <div className={`finance-modal-notice ${notice.tone}`} role={notice.tone === "danger" ? "alert" : "status"} aria-live="assertive">{notice.tone === "success" ? <CheckCircle2 size={20}/> : <AlertTriangle size={20}/>}<span>{notice.text}</span><button type="button" aria-label="Fechar aviso" onClick={() => setNotice(null)}><X size={16}/></button></div>}<div className="billing-grid"><label><span>Método</span><select value={chargeMethod} onChange={(event) => setChargeMethod(event.target.value as "pix"|"boleto")}><option value="pix">Pix</option><option value="boleto">Boleto</option></select></label><label><span>CPF/CNPJ</span><input value={billing.documentNumber} onChange={(e) => setBilling({...billing, documentNumber:e.target.value})}/></label><label><span>E-mail</span><input type="email" value={billing.email} onChange={(e) => setBilling({...billing, email:e.target.value})}/></label><label><span>Telefone</span><input type="tel" inputMode="tel" maxLength={19} value={billing.phone} onChange={(e) => setBilling({...billing, phone:e.target.value})}/></label><label><span>CEP</span><input inputMode="numeric" maxLength={9} value={billing.postalCode} onChange={(e) => setBilling({...billing, postalCode:e.target.value})}/></label><label><span>Rua</span><input value={billing.streetName} onChange={(e) => setBilling({...billing, streetName:e.target.value})}/></label><label><span>Número</span><input value={billing.streetNumber} onChange={(e) => setBilling({...billing, streetNumber:e.target.value})}/></label><label><span>Bairro</span><input value={billing.neighborhood} onChange={(e) => setBilling({...billing, neighborhood:e.target.value})}/></label><label><span>Cidade</span><input value={billing.city} onChange={(e) => setBilling({...billing, city:e.target.value})}/></label><label><span>UF</span><input maxLength={2} value={billing.state} onChange={(e) => setBilling({...billing, state:e.target.value.toUpperCase()})}/></label></div>{generatedCharge && <div className="generated-charge"><strong>{generatedCharge.reused ? "Cobrança recuperada" : "Cobrança criada"} · {generatedCharge.provider}</strong>{generatedCharge.environment === "sandbox" && <div className="payment-message warning" role="alert"><strong>🧪 AMBIENTE DE TESTE</strong><span>Esta cobrança não é real e não movimenta dinheiro. Troque o Asaas para Produção antes de cobrar alunos de verdade.</span></div>}{generatedCharge.delivery && <div className={`payment-message ${generatedCharge.delivery.status === "sent" ? "success" : "warning"}`} role="status"><strong>Envio ao aluno</strong><span>{generatedCharge.delivery.message}</span></div>}{generatedCharge.pixCopyPaste && <div><code>{generatedCharge.pixCopyPaste}</code><button onClick={() => void navigator.clipboard.writeText(generatedCharge.pixCopyPaste)}><Copy size={16}/> Copiar Pix</button></div>}{!generatedCharge.pixCopyPaste && typeof generatedCharge.metadata.manualPixKey === "string" && generatedCharge.metadata.manualPixKey && <div><div><small>Chave Pix manual{typeof generatedCharge.metadata.recipientName === "string" && generatedCharge.metadata.recipientName ? ` · ${generatedCharge.metadata.recipientName}` : ""}</small><code>{String(generatedCharge.metadata.manualPixKey)}</code></div><button onClick={() => void navigator.clipboard.writeText(String(generatedCharge.metadata.manualPixKey))}><Copy size={16}/> Copiar chave Pix</button></div>}{(generatedCharge.boletoUrl || generatedCharge.paymentUrl) && <button className="secondary-button" onClick={() => window.open(generatedCharge.boletoUrl || generatedCharge.paymentUrl, "_blank", "noopener,noreferrer")}><ExternalLink size={16}/> Abrir cobrança</button>}{generatedCharge.publicPaymentUrl && <div className="generated-payment-link"><code>{generatedCharge.publicPaymentUrl}</code><button className="secondary-button" onClick={() => void navigator.clipboard.writeText(generatedCharge.publicPaymentUrl)}><Copy size={16}/> Copiar link do aluno</button></div>}</div>}<div className="form-actions">{(modal.invoice.providerChargeId || modal.invoice.pixCopyPaste || modal.invoice.boletoUrl || generatedCharge?.providerChargeId) && <button className="danger-button" disabled={busy} onClick={() => removeProviderChargeForReissue()}>{reissueArmed === modal.invoice.id ? "Confirmar remoção" : "Remover cobrança atual para reemitir"}</button>}<button className="secondary-button" onClick={() => { setModal(null); setNotice(null); setReissueArmed(""); }}>Fechar</button><button className="primary-button" disabled={busy} aria-busy={busy} onClick={() => void generateCharge()}>{busy ? `Gerando ${chargeMethod === "pix" ? "Pix" : "boleto"}...` : `Gerar ${chargeMethod === "pix" ? "Pix" : "boleto"}`}</button></div></section></div>}
   </section>;
