@@ -82,18 +82,23 @@ jobs:
       - uses: denoland/setup-deno@v2
         with:
           deno-version: v2.x
-      - name: Deno check em todas as funções
+      - name: Deno check em todas as funções, sem parar na primeira falha
         shell: bash
         run: |
-          set -euo pipefail
+          set -uo pipefail
           count=0
+          failures=0
           while IFS= read -r file; do
             count=$((count+1))
             echo "===== DENO CHECK: $file ====="
-            deno check --node-modules-dir=auto "$file"
+            if ! deno check --node-modules-dir=auto "$file"; then
+              echo "::error file=$file::Typecheck falhou em $file"
+              failures=$((failures+1))
+            fi
           done < <(find supabase/functions -name index.ts -type f | sort)
+          echo "Edge Functions verificadas: $count; falhas: $failures"
           test "$count" -ge 10
-          echo "Edge Functions verificadas: $count"
+          test "$failures" -eq 0
 
   external-contracts:
     name: Contratos externos e rejeição segura
@@ -132,6 +137,7 @@ jobs:
           done
           check_alive 'payment-webhook sem parâmetros' -X POST -H 'Content-Type: application/json' -d '{}' "$BASE/payment-webhook"
           check_alive 'payment-page sem token' "$BASE/payment-page"
+          check_alive 'Supabase Auth health' 'https://fkafrirbitwlsbjpqtcf.supabase.co/auth/v1/health'
           check_alive 'AulaFácil Robot Railway' 'https://aulafacil-robot-production.up.railway.app/'
 
   native-windows:
