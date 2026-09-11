@@ -5,6 +5,7 @@ import {
   ActivityIndicator,
   Alert,
   AppState,
+  Image,
   Linking,
   Modal,
   Pressable,
@@ -31,13 +32,16 @@ import {
   type MobileSchool,
   type MobileStudent,
 } from "./src/api";
+import {
+  loadClasses,
+  loadSchoolBrand,
+  loadStudentClassLinks,
+  type MobileClass,
+  type StudentClassLink,
+} from "./src/school-extras";
 
-type Tab = "home" | "students" | "finance" | "more";
-type ChargeState = {
-  invoice: MobileInvoice;
-  studentName: string;
-  result?: ChargeResult;
-} | null;
+type Tab = "home" | "students" | "classes" | "finance" | "more";
+type ChargeState = { invoice: MobileInvoice; studentName: string; result?: ChargeResult } | null;
 
 const C = {
   bg: "#081225",
@@ -64,10 +68,31 @@ function dateLabel(value: string) {
   return year && month && day ? `${day}/${month}/${year}` : value;
 }
 
+function timeLabel(value: string) {
+  if (!value) return "—";
+  const date = new Date(value);
+  return Number.isNaN(date.getTime()) ? "—" : date.toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" });
+}
+
+function phoneLabel(value: string) {
+  const digits = value.replace(/\D/g, "");
+  if (digits.length === 11) return `(${digits.slice(0, 2)}) ${digits.slice(2, 7)}-${digits.slice(7)}`;
+  if (digits.length === 10) return `(${digits.slice(0, 2)}) ${digits.slice(2, 6)}-${digits.slice(6)}`;
+  return value || "Sem telefone";
+}
+
+function paymentMethodLabel(value: string) {
+  const method = value.toLowerCase();
+  if (method === "pix") return "Pix";
+  if (method === "boleto") return "Boleto";
+  if (method === "dinheiro" || method === "cash") return "Dinheiro";
+  if (method === "cartao" || method === "card") return "Cartão";
+  return value || "Pagamento";
+}
+
 function effectiveStatus(invoice: MobileInvoice) {
   if (["paid", "cancelled", "negotiated"].includes(invoice.status)) return invoice.status;
-  const today = new Date().toISOString().slice(0, 10);
-  return invoice.dueDate < today ? "overdue" : "pending";
+  return invoice.dueDate < new Date().toISOString().slice(0, 10) ? "overdue" : "pending";
 }
 
 function statusLabel(status: string) {
@@ -85,12 +110,7 @@ function statusColor(status: string) {
   return C.warning;
 }
 
-function ActionButton({
-  label,
-  onPress,
-  tone = "primary",
-  disabled = false,
-}: {
+function ActionButton({ label, onPress, tone = "primary", disabled = false }: {
   label: string;
   onPress: () => void;
   tone?: "primary" | "gold" | "ghost" | "danger";
@@ -133,6 +153,11 @@ export default function App() {
   const [students, setStudents] = useState<MobileStudent[]>([]);
   const [invoices, setInvoices] = useState<MobileInvoice[]>([]);
   const [payments, setPayments] = useState<MobilePayment[]>([]);
+  const [classes, setClasses] = useState<MobileClass[]>([]);
+  const [studentClassLinks, setStudentClassLinks] = useState<StudentClassLink[]>([]);
+  const [schoolLogoUrl, setSchoolLogoUrl] = useState("");
+  const [lastSyncAt, setLastSyncAt] = useState("");
+
   const [tab, setTab] = useState<Tab>("home");
   const [query, setQuery] = useState("");
   const [refreshing, setRefreshing] = useState(false);
@@ -143,6 +168,13 @@ export default function App() {
   const [schoolPicker, setSchoolPicker] = useState(false);
 
   const studentMap = useMemo(() => new Map(students.map((item) => [item.id, item])), [students]);
+  const classMap = useMemo(() => new Map(classes.map((item) => [item.id, item])), [classes]);
+  const studentClassMap = useMemo(() => new Map(studentClassLinks.map((item) => [item.studentId, item.classId])), [studentClassLinks]);
+  const classStudentCounts = useMemo(() => {
+    const counts = new Map<string, number>();
+    for (const link of studentClassLinks) counts.set(link.classId, (counts.get(link.classId) ?? 0) + 1);
+    return counts;
+  }, [studentClassLinks]);
 
   const metrics = useMemo(() => {
     let pending = 0;
@@ -166,15 +198,24 @@ export default function App() {
   const visibleStudents = useMemo(() => {
     const q = query.trim().toLocaleLowerCase("pt-BR");
     if (!q) return students;
-    return students.filter((item) => `${item.name} ${item.phone} ${item.guardianName} ${item.guardianPhone}`.toLocaleLowerCase("pt-BR").includes(q));
-  }, [students, query]);
+    return students.filter((item) => {
+      const className = classMap.get(studentClassMap.get(item.id) ?? "")?.name ?? "";
+      return `${item.name} ${item.phone} ${item.guardianName} ${item.guardianPhone} ${className}`.toLocaleLowerCase("pt-BR").includes(q);
+    });
+  }, [students, query, classMap, studentClassMap]);
+
+  const visibleClasses = useMemo(() => {
+    const q = query.trim().toLocaleLowerCase("pt-BR");
+    if (!q) return classes;
+    return classes.filter((item) => `${item.name} ${item.groupName} ${item.teacher} ${item.schedule} ${item.room}`.toLocaleLowerCase("pt-BR").includes(q));
+  }, [classes, query]);
 
   const visibleInvoices = useMemo(() => {
     const q = query.trim().toLocaleLowerCase("pt-BR");
     return invoices
       .filter((item) => {
-        const student = studentMap.get(item.studentId);
         if (!q) return true;
+        const student = studentMap.get(item.studentId);
         return `${student?.name ?? ""} ${item.reference} ${statusLabel(effectiveStatus(item))}`.toLocaleLowerCase("pt-BR").includes(q);
       })
       .sort((a, b) => b.dueDate.localeCompare(a.dueDate));
@@ -183,14 +224,21 @@ export default function App() {
   const loadSchoolData = async (selected: MobileSchool, silent = false) => {
     if (!silent) setLoadingData(true);
     try {
-      const [nextStudents, nextInvoices, nextPayments] = await Promise.all([
+      const [nextStudents, nextInvoices, nextPayments, nextClasses, nextLinks, nextBrand] = await Promise.all([
         loadStudents(selected.id),
         loadInvoices(selected.id),
         loadPayments(selected.id),
+        loadClasses(selected.id),
+        loadStudentClassLinks(selected.id),
+        loadSchoolBrand(selected.id),
       ]);
       setStudents(nextStudents);
       setInvoices(nextInvoices);
       setPayments(nextPayments);
+      setClasses(nextClasses);
+      setStudentClassLinks(nextLinks);
+      setSchoolLogoUrl(nextBrand.logoUrl);
+      setLastSyncAt(new Date().toISOString());
       setMessage("");
     } catch (error) {
       setMessage(error instanceof Error ? error.message : "Não foi possível atualizar os dados.");
@@ -216,13 +264,16 @@ export default function App() {
       const ok = Boolean(data.session);
       setAuthenticated(ok);
       if (ok) {
-        try { await loadAccount(); } catch (error) { setMessage(error instanceof Error ? error.message : "Falha ao carregar a conta."); }
+        try {
+          await loadAccount();
+        } catch (error) {
+          setMessage(error instanceof Error ? error.message : "Falha ao carregar a conta.");
+        }
       }
       if (mounted) setBooting(false);
     });
     const { data } = supabase.auth.onAuthStateChange((_event, session) => {
-      if (!mounted) return;
-      setAuthenticated(Boolean(session));
+      if (mounted) setAuthenticated(Boolean(session));
     });
     return () => {
       mounted = false;
@@ -236,6 +287,12 @@ export default function App() {
       if (state === "active" && authenticated && school) void loadSchoolData(school, true);
     });
     return () => subscription.remove();
+  }, [authenticated, school]);
+
+  useEffect(() => {
+    if (!authenticated || !school) return;
+    const interval = setInterval(() => void loadSchoolData(school, true), 30_000);
+    return () => clearInterval(interval);
   }, [authenticated, school]);
 
   const login = async () => {
@@ -284,7 +341,7 @@ export default function App() {
     try {
       const result = await generateCharge(charge.invoice.id, method);
       setCharge({ ...charge, result });
-      await refresh();
+      await loadSchoolData(school!, true);
     } catch (error) {
       Alert.alert("Não foi possível gerar", error instanceof Error ? error.message : "A cobrança não pôde ser criada.");
     } finally {
@@ -307,7 +364,7 @@ export default function App() {
             try {
               await confirmManualPayment({ schoolId: school.id, invoiceId: invoice.id, method: "dinheiro" });
               await loadSchoolData(school, true);
-              Alert.alert("Pagamento confirmado", "A mensalidade foi baixada no servidor e o recibo foi registrado.");
+              Alert.alert("Pagamento confirmado", "A mensalidade foi baixada e o recibo foi registrado.");
             } catch (error) {
               Alert.alert("Não foi possível receber", error instanceof Error ? error.message : "Falha ao registrar o pagamento.");
             } finally {
@@ -327,6 +384,10 @@ export default function App() {
     setStudents([]);
     setInvoices([]);
     setPayments([]);
+    setClasses([]);
+    setStudentClassLinks([]);
+    setSchoolLogoUrl("");
+    setLastSyncAt("");
     setTab("home");
   };
 
@@ -392,14 +453,21 @@ export default function App() {
     <View style={styles.app}>
       <StatusBar style="light" />
       <View style={styles.topbar}>
-        <View style={{ flex: 1 }}>
-          <Text style={styles.brand}>AulaFácil</Text>
-          <Pressable onPress={() => schools.length > 1 && setSchoolPicker(true)}>
-            <Text numberOfLines={1} style={styles.schoolName}>{school.name}{schools.length > 1 ? "  ▾" : ""}</Text>
-          </Pressable>
+        <View style={styles.schoolHeader}>
+          {schoolLogoUrl ? (
+            <Image source={{ uri: schoolLogoUrl }} style={styles.schoolLogo} resizeMode="cover" />
+          ) : (
+            <View style={styles.schoolLogoFallback}><Text style={styles.schoolLogoFallbackText}>{school.name.slice(0, 1).toUpperCase()}</Text></View>
+          )}
+          <View style={{ flex: 1 }}>
+            <Text style={styles.brand}>AulaFácil</Text>
+            <Pressable onPress={() => schools.length > 1 && setSchoolPicker(true)}>
+              <Text numberOfLines={1} style={styles.schoolName}>{school.name}{schools.length > 1 ? "  ▾" : ""}</Text>
+            </Pressable>
+          </View>
         </View>
         <Pressable style={styles.syncButton} onPress={() => void refresh()} disabled={refreshing}>
-          <Text style={styles.syncButtonText}>{refreshing ? "..." : "↻"}</Text>
+          <Text style={styles.syncButtonText}>{refreshing ? "…" : "↻"}</Text>
         </Pressable>
       </View>
 
@@ -417,11 +485,11 @@ export default function App() {
           <>
             <Text style={styles.pageEyebrow}>VISÃO RÁPIDA</Text>
             <Text style={styles.pageTitle}>Hoje na sua escola</Text>
-            <Text style={styles.pageSubtitle}>Só o que você precisa para agir rápido.</Text>
+            <Text style={styles.pageSubtitle}>Dados atualizados automaticamente. Última atualização: {timeLabel(lastSyncAt)}.</Text>
 
             <View style={styles.metricsGrid}>
               <View style={styles.metric}><Text style={styles.metricValue}>{students.length}</Text><Text style={styles.metricLabel}>Alunos</Text></View>
-              <View style={styles.metric}><Text style={styles.metricValue}>{metrics.pending}</Text><Text style={styles.metricLabel}>Em aberto</Text></View>
+              <View style={styles.metric}><Text style={styles.metricValue}>{classes.length}</Text><Text style={styles.metricLabel}>Turmas</Text></View>
               <View style={[styles.metric, metrics.overdue > 0 && { borderColor: C.danger }]}><Text style={[styles.metricValue, metrics.overdue > 0 && { color: C.danger }]}>{metrics.overdue}</Text><Text style={styles.metricLabel}>Atrasadas</Text></View>
               <View style={styles.metric}><Text style={[styles.metricValue, { fontSize: 18 }]}>{money(metrics.receivedMonth)}</Text><Text style={styles.metricLabel}>Recebido no mês</Text></View>
             </View>
@@ -429,7 +497,7 @@ export default function App() {
             <View style={styles.highlightCard}>
               <Text style={styles.highlightKicker}>VALOR EM ABERTO</Text>
               <Text style={styles.highlightValue}>{money(metrics.openValue)}</Text>
-              <Text style={styles.highlightText}>Toque em Financeiro para cobrar ou receber uma mensalidade.</Text>
+              <Text style={styles.highlightText}>{metrics.pending} mensalidades abertas. Toque abaixo para cobrar ou receber.</Text>
               <ActionButton label="Abrir financeiro" onPress={() => setTab("finance")} tone="gold" />
             </View>
 
@@ -457,25 +525,44 @@ export default function App() {
           <>
             <Text style={styles.pageEyebrow}>ALUNOS</Text>
             <Text style={styles.pageTitle}>{students.length} cadastrados</Text>
-            <TextInput
-              placeholder="Buscar aluno ou responsável"
-              placeholderTextColor={C.muted}
-              value={query}
-              onChangeText={setQuery}
-              style={styles.search}
-            />
-            {visibleStudents.length ? visibleStudents.map((student) => (
-              <View key={student.id} style={styles.listCardColumn}>
-                <View style={styles.rowBetween}>
-                  <Text style={styles.listTitle}>{student.name}</Text>
-                  <Text style={[styles.statusChip, { color: student.enrollmentStatus === "active" ? C.success : C.warning }]}>
-                    {student.enrollmentStatus === "active" ? "Ativo" : "Pausado"}
-                  </Text>
+            <TextInput placeholder="Buscar aluno, responsável ou turma" placeholderTextColor={C.muted} value={query} onChangeText={setQuery} style={styles.search} />
+            {visibleStudents.length ? visibleStudents.map((student) => {
+              const classItem = classMap.get(studentClassMap.get(student.id) ?? "");
+              return (
+                <View key={student.id} style={styles.listCardColumn}>
+                  <View style={styles.rowBetween}>
+                    <Text style={styles.listTitle}>{student.name}</Text>
+                    <Text style={[styles.statusChip, { color: student.enrollmentStatus === "active" ? C.success : C.warning }]}>{student.enrollmentStatus === "active" ? "Ativo" : "Pausado"}</Text>
+                  </View>
+                  <Text style={styles.className}>{classItem ? `${classItem.name}${classItem.groupName ? ` • ${classItem.groupName}` : ""}` : "Sem turma vinculada"}</Text>
+                  <Text style={styles.listMeta}>{phoneLabel(student.phone)}</Text>
+                  {student.guardianName ? <Text style={styles.listMeta}>Responsável: {student.guardianName}{student.guardianPhone ? ` • ${phoneLabel(student.guardianPhone)}` : ""}</Text> : null}
                 </View>
-                <Text style={styles.listMeta}>{student.phone || "Sem telefone"}</Text>
-                {student.guardianName ? <Text style={styles.listMeta}>Responsável: {student.guardianName} {student.guardianPhone ? `• ${student.guardianPhone}` : ""}</Text> : null}
+              );
+            }) : <Empty title="Nenhum aluno encontrado" text="Tente outro nome, telefone ou turma." />}
+          </>
+        ) : null}
+
+        {!loadingData && tab === "classes" ? (
+          <>
+            <Text style={styles.pageEyebrow}>TURMAS</Text>
+            <Text style={styles.pageTitle}>{classes.length} turmas</Text>
+            <Text style={styles.pageSubtitle}>Cursos, horários, professores e alunos em um só lugar.</Text>
+            <TextInput placeholder="Buscar turma ou professor" placeholderTextColor={C.muted} value={query} onChangeText={setQuery} style={styles.search} />
+            {visibleClasses.length ? visibleClasses.map((item) => (
+              <View key={item.id} style={styles.classCard}>
+                <View style={[styles.classStripe, { backgroundColor: item.color || C.primary }]} />
+                <View style={{ flex: 1, gap: 5 }}>
+                  <View style={styles.rowBetween}>
+                    <Text style={styles.listTitle}>{item.name}{item.groupName ? ` • ${item.groupName}` : ""}</Text>
+                    <Text style={styles.statusChip}>{classStudentCounts.get(item.id) ?? 0} alunos</Text>
+                  </View>
+                  <Text style={styles.listMeta}>{item.teacher ? `Professor(a): ${item.teacher}` : "Professor não informado"}</Text>
+                  <Text style={styles.listMeta}>{[item.schedule, item.room].filter(Boolean).join(" • ") || "Horário não informado"}</Text>
+                  <Text style={styles.classFee}>{money(item.monthlyFee)} / mês</Text>
+                </View>
               </View>
-            )) : <Empty title="Nenhum aluno encontrado" text="Tente outro nome ou telefone." />}
+            )) : <Empty title="Nenhuma turma encontrada" text="As turmas cadastradas no desktop aparecem aqui automaticamente." />}
           </>
         ) : null}
 
@@ -484,13 +571,7 @@ export default function App() {
             <Text style={styles.pageEyebrow}>FINANCEIRO</Text>
             <Text style={styles.pageTitle}>Mensalidades</Text>
             <Text style={styles.pageSubtitle}>Cobrar, receber e conferir sem sair da tela.</Text>
-            <TextInput
-              placeholder="Buscar aluno ou referência"
-              placeholderTextColor={C.muted}
-              value={query}
-              onChangeText={setQuery}
-              style={styles.search}
-            />
+            <TextInput placeholder="Buscar aluno ou referência" placeholderTextColor={C.muted} value={query} onChangeText={setQuery} style={styles.search} />
             {visibleInvoices.length ? visibleInvoices.map((invoice) => {
               const student = studentMap.get(invoice.studentId);
               const status = effectiveStatus(invoice);
@@ -500,7 +581,7 @@ export default function App() {
                   <View style={styles.rowBetween}>
                     <View style={{ flex: 1 }}>
                       <Text numberOfLines={1} style={styles.listTitle}>{student?.name ?? "Aluno"}</Text>
-                      <Text style={styles.listMeta}>{invoice.reference} • {dateLabel(invoice.dueDate)}</Text>
+                      <Text style={styles.listMeta}>{invoice.reference} • vencimento {dateLabel(invoice.dueDate)}</Text>
                     </View>
                     <View style={{ alignItems: "flex-end" }}>
                       <Text style={styles.listAmount}>{money(invoice.amount)}</Text>
@@ -512,9 +593,7 @@ export default function App() {
                       <ActionButton label="Pix / boleto" onPress={() => startCharge(invoice)} tone="gold" disabled={actionBusy} />
                       <ActionButton label="Receber" onPress={() => receiveCash(invoice)} tone="ghost" disabled={actionBusy} />
                     </View>
-                  ) : invoice.providerChargeId ? (
-                    <Text style={styles.providerNote}>Cobrança {invoice.provider || "bancária"} vinculada.</Text>
-                  ) : null}
+                  ) : invoice.providerChargeId ? <Text style={styles.providerNote}>Cobrança {invoice.provider || "bancária"} vinculada.</Text> : null}
                 </View>
               );
             }) : <Empty title="Nenhuma mensalidade" text="Não há resultados para esta busca." />}
@@ -526,9 +605,15 @@ export default function App() {
             <Text style={styles.pageEyebrow}>MAIS</Text>
             <Text style={styles.pageTitle}>Conta e recibos</Text>
             <View style={styles.accountCard}>
-              <Text style={styles.listTitle}>{school.name}</Text>
-              <Text style={styles.listMeta}>Acesso: {school.role || "usuário"}</Text>
-              <Text style={styles.listMeta}>Os dados deste celular vêm da mesma nuvem do desktop.</Text>
+              <View style={styles.accountHeader}>
+                {schoolLogoUrl ? <Image source={{ uri: schoolLogoUrl }} style={styles.accountLogo} resizeMode="cover" /> : null}
+                <View style={{ flex: 1 }}>
+                  <Text style={styles.listTitle}>{school.name}</Text>
+                  <Text style={styles.listMeta}>Acesso: {school.role || "usuário"}</Text>
+                </View>
+              </View>
+              <Text style={styles.syncOk}>● Sincronização automática ativa</Text>
+              <Text style={styles.listMeta}>Última atualização: {timeLabel(lastSyncAt)}. O app também atualiza ao abrir e ao voltar para a tela.</Text>
             </View>
 
             <Text style={styles.sectionTitle}>Recebimentos recentes</Text>
@@ -538,7 +623,7 @@ export default function App() {
                 <View key={payment.id} style={styles.listCard}>
                   <View style={{ flex: 1 }}>
                     <Text numberOfLines={1} style={styles.listTitle}>{student?.name ?? "Aluno"}</Text>
-                    <Text style={styles.listMeta}>{dateLabel(payment.paidAt)} • {payment.method || "pagamento"}</Text>
+                    <Text style={styles.listMeta}>{dateLabel(payment.paidAt)} • {paymentMethodLabel(payment.method)}</Text>
                     {payment.receiptNumber ? <Text style={styles.receipt}>Recibo {payment.receiptNumber}</Text> : null}
                   </View>
                   <Text style={styles.listAmount}>{money(payment.amountReceived)}</Text>
@@ -549,6 +634,7 @@ export default function App() {
             <View style={{ height: 10 }} />
             <ActionButton label="Atualizar agora" onPress={() => void refresh()} tone="ghost" />
             <ActionButton label="Sair da conta" onPress={() => void logout()} tone="danger" />
+            <Text style={styles.version}>AulaFácil Mobile 0.2.0</Text>
           </>
         ) : null}
       </ScrollView>
@@ -557,6 +643,7 @@ export default function App() {
         {([
           ["home", "⌂", "Início"],
           ["students", "♙", "Alunos"],
+          ["classes", "▦", "Turmas"],
           ["finance", "$", "Financeiro"],
           ["more", "•••", "Mais"],
         ] as const).map(([key, icon, label]) => (
@@ -577,7 +664,7 @@ export default function App() {
                 <Text style={styles.sheetSubtitle}>{charge.studentName} • {charge.invoice.reference} • {money(charge.invoice.amount)}</Text>
                 {!charge.result ? (
                   <>
-                    <Text style={styles.sheetInfo}>Os dados do pagador são puxados automaticamente da matrícula. Você não precisa preencher tudo de novo.</Text>
+                    <Text style={styles.sheetInfo}>Os dados do pagador vêm automaticamente da matrícula. Você não precisa preencher tudo de novo.</Text>
                     <ActionButton label={actionBusy ? "Gerando..." : "Gerar Pix"} onPress={() => void createCharge("pix")} tone="gold" disabled={actionBusy} />
                     <ActionButton label={actionBusy ? "Gerando..." : "Gerar boleto"} onPress={() => void createCharge("boleto")} tone="primary" disabled={actionBusy} />
                   </>
@@ -641,9 +728,13 @@ const styles = StyleSheet.create({
   bootText: { color: C.muted, fontWeight: "700" },
   input: { minHeight: 52, backgroundColor: C.surface2, color: C.text, borderWidth: 1, borderColor: C.border, borderRadius: 14, paddingHorizontal: 15, fontSize: 16 },
   errorText: { color: "#fda4af", fontSize: 13, lineHeight: 18 },
-  topbar: { minHeight: 64, flexDirection: "row", alignItems: "center", paddingHorizontal: 18, paddingBottom: 10, borderBottomWidth: 1, borderBottomColor: C.border },
-  brand: { color: C.gold, fontWeight: "900", fontSize: 13, letterSpacing: 0.5 },
-  schoolName: { color: C.text, fontWeight: "800", fontSize: 18, marginTop: 3 },
+  topbar: { minHeight: 70, flexDirection: "row", alignItems: "center", paddingHorizontal: 16, paddingBottom: 10, borderBottomWidth: 1, borderBottomColor: C.border, gap: 10 },
+  schoolHeader: { flex: 1, flexDirection: "row", alignItems: "center", gap: 11 },
+  schoolLogo: { width: 44, height: 44, borderRadius: 13, backgroundColor: C.surface2, borderWidth: 1, borderColor: C.border },
+  schoolLogoFallback: { width: 44, height: 44, borderRadius: 13, alignItems: "center", justifyContent: "center", backgroundColor: "#0d2d73", borderWidth: 1, borderColor: "#28569a" },
+  schoolLogoFallbackText: { color: C.text, fontSize: 20, fontWeight: "900" },
+  brand: { color: C.gold, fontWeight: "900", fontSize: 12, letterSpacing: 0.6 },
+  schoolName: { color: C.text, fontWeight: "800", fontSize: 17, marginTop: 2 },
   syncButton: { width: 42, height: 42, borderRadius: 14, backgroundColor: C.surface2, alignItems: "center", justifyContent: "center", borderWidth: 1, borderColor: C.border },
   syncButtonText: { color: C.text, fontSize: 22, fontWeight: "800" },
   message: { backgroundColor: "#421820", paddingHorizontal: 16, paddingVertical: 10, borderBottomWidth: 1, borderBottomColor: "#8b2937" },
@@ -666,13 +757,21 @@ const styles = StyleSheet.create({
   listCard: { flexDirection: "row", alignItems: "center", gap: 10, backgroundColor: C.surface, borderWidth: 1, borderColor: C.border, borderRadius: 16, padding: 14, marginTop: 8 },
   listCardColumn: { gap: 5, backgroundColor: C.surface, borderWidth: 1, borderColor: C.border, borderRadius: 16, padding: 14, marginTop: 8 },
   invoiceCard: { gap: 13, backgroundColor: C.surface, borderWidth: 1, borderColor: C.border, borderRadius: 18, padding: 15, marginTop: 8 },
-  accountCard: { gap: 7, backgroundColor: C.surface, borderWidth: 1, borderColor: C.border, borderRadius: 18, padding: 16, marginTop: 8 },
+  classCard: { flexDirection: "row", gap: 12, backgroundColor: C.surface, borderWidth: 1, borderColor: C.border, borderRadius: 18, padding: 14, marginTop: 8, overflow: "hidden" },
+  classStripe: { width: 5, borderRadius: 6, alignSelf: "stretch" },
+  classFee: { color: C.gold, fontSize: 12, fontWeight: "900", marginTop: 2 },
+  className: { color: "#c8d6ee", fontSize: 12.5, fontWeight: "700" },
+  accountCard: { gap: 9, backgroundColor: C.surface, borderWidth: 1, borderColor: C.border, borderRadius: 18, padding: 16, marginTop: 8 },
+  accountHeader: { flexDirection: "row", alignItems: "center", gap: 12 },
+  accountLogo: { width: 52, height: 52, borderRadius: 15, backgroundColor: C.surface2 },
+  syncOk: { color: C.success, fontSize: 12, fontWeight: "900", marginTop: 4 },
+  version: { color: C.muted, fontSize: 11, textAlign: "center", marginTop: 10 },
   rowBetween: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", gap: 12 },
   listTitle: { color: C.text, fontSize: 15, fontWeight: "800", flexShrink: 1 },
   listMeta: { color: C.muted, fontSize: 12.5, lineHeight: 18 },
   listAmount: { color: C.text, fontSize: 14, fontWeight: "900" },
   statusText: { fontSize: 11, fontWeight: "900" },
-  statusChip: { fontSize: 11, fontWeight: "900" },
+  statusChip: { color: C.muted, fontSize: 11, fontWeight: "900" },
   receipt: { color: C.gold, fontSize: 11, fontWeight: "800", marginTop: 2 },
   providerNote: { color: C.muted, fontSize: 12 },
   invoiceActions: { flexDirection: "row", gap: 8 },
@@ -686,8 +785,8 @@ const styles = StyleSheet.create({
   emptyText: { color: C.muted, fontSize: 13, textAlign: "center", lineHeight: 19 },
   bottomNav: { position: "absolute", left: 0, right: 0, bottom: 0, height: 82, paddingBottom: 14, flexDirection: "row", backgroundColor: "#0a1529", borderTopWidth: 1, borderTopColor: C.border },
   navItem: { flex: 1, alignItems: "center", justifyContent: "center", gap: 3 },
-  navIcon: { color: C.muted, fontSize: 20, fontWeight: "900" },
-  navLabel: { color: C.muted, fontSize: 10.5, fontWeight: "800" },
+  navIcon: { color: C.muted, fontSize: 19, fontWeight: "900" },
+  navLabel: { color: C.muted, fontSize: 9.5, fontWeight: "800" },
   navActive: { color: C.gold },
   modalBackdrop: { flex: 1, backgroundColor: "rgba(0,0,0,.65)", justifyContent: "flex-end" },
   modalBackdropCenter: { flex: 1, backgroundColor: "rgba(0,0,0,.72)", justifyContent: "center", padding: 20 },
