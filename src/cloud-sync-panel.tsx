@@ -194,7 +194,7 @@ export function CloudSyncPanel({ database, onReplaceDatabase }: Props) {
         <div className={`cloud-sync-badge ${schoolId ? status : "not_linked"}`}>{!navigator.onLine ? "sem internet" : schoolId ? statusLabel[status] : "escola não selecionada"}</div>
       </div>
 
-      <div className="cloud-sync-plain-note"><strong>No uso normal, você não precisa fazer nada:</strong> o AulaFácil sincroniza sozinho ao abrir, depois de alterações e quando a internet volta. O botão abaixo serve apenas para forçar uma conferência imediata.</div>
+      <div className="cloud-sync-plain-note"><strong>No uso normal, é simples:</strong> você não precisa fazer nada. O AulaFácil sincroniza sozinho ao abrir, depois de alterações e quando a internet volta. O botão abaixo serve apenas para forçar uma conferência imediata.</div>
 
       {!schoolId && <div className="cloud-sync-warning">Escolha ou crie a escola no bloco acima. Depois clique em “Sincronizar agora”.</div>}
 
