@@ -4,6 +4,9 @@ src-tauri/target/
 src-tauri/icons/
 verification/
 AulaFacil-Windows-*.zip
+mobile/android/
+mobile/.expo/
+mobile/AulaFacil-Mobile-Android.apk
 *.log
 .DS_Store
 Thumbs.db
