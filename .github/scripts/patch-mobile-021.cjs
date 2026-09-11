@@ -64,9 +64,4 @@ appJson.expo.version = '0.2.1';
 appJson.expo.android.versionCode = 4;
 fs.writeFileSync(appJsonPath, JSON.stringify(appJson, null, 2) + '\n');
 
-const workflowPath = '.github/workflows/build-mobile-android.yml';
-let workflow = fs.readFileSync(workflowPath, 'utf8');
-workflow = workflow.replaceAll('0.2.0', '0.2.1');
-fs.writeFileSync(workflowPath, workflow);
-
 console.log('AulaFácil Mobile 0.2.1 preparado: menu elevado, alunos clicáveis e textos corrigidos.');
