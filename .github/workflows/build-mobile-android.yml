@@ -1,4 +1,4 @@
-# AulaFácil Mobile 0.1.1 - APK autônomo com bundle JavaScript embutido
+# AulaFácil Mobile 0.2.0 - APK autônomo com identidade própria
 name: Gerar APK do AulaFácil Mobile
 
 on:
@@ -49,6 +49,16 @@ jobs:
       - name: Validar TypeScript
         run: npm run typecheck
 
+      - name: Gerar identidade visual
+        run: node scripts/generate-assets.cjs
+
+      - name: Validar ícone e capa
+        run: |
+          test -s assets/icon.png
+          test -s assets/adaptive-icon.png
+          test -s assets/splash.png
+          echo "Ícone e capa confirmados."
+
       - name: Gerar projeto Android nativo
         run: npx expo prebuild --platform android --clean --non-interactive
 
@@ -66,12 +76,12 @@ jobs:
           echo "Bundle JavaScript confirmado dentro do APK."
 
       - name: Preparar nome amigável
-        run: cp android/app/build/outputs/apk/release/app-release.apk AulaFacil-Mobile-Android-0.1.1.apk
+        run: cp android/app/build/outputs/apk/release/app-release.apk AulaFacil-Mobile-Android-0.2.0.apk
 
       - name: Publicar APK como artefato
         uses: actions/upload-artifact@v4
         with:
-          name: AulaFacil-Mobile-Android-0.1.1
-          path: mobile/AulaFacil-Mobile-Android-0.1.1.apk
+          name: AulaFacil-Mobile-Android-0.2.0
+          path: mobile/AulaFacil-Mobile-Android-0.2.0.apk
           if-no-files-found: error
           retention-days: 30
