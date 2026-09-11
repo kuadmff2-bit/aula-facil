@@ -40,10 +40,11 @@ jobs:
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add mobile/App.tsx mobile/package.json mobile/app.json .github/workflows/build-mobile-android.yml
+          git add mobile/App.tsx mobile/package.json mobile/app.json
           if git diff --cached --quiet; then
             echo "Nenhuma alteração necessária."
             exit 0
           fi
           git commit -m "fix: corrigir navegação e alunos no mobile 0.2.1"
+          git pull --rebase origin main
           git push origin HEAD:main
