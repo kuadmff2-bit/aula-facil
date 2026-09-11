@@ -2,15 +2,22 @@
   "expo": {
     "name": "AulaFácil",
     "slug": "aulafacil-mobile",
-    "version": "0.1.1",
+    "version": "0.2.0",
     "orientation": "portrait",
     "userInterfaceStyle": "automatic",
     "backgroundColor": "#081225",
+    "icon": "./assets/icon.png",
+    "splash": {
+      "image": "./assets/splash.png",
+      "resizeMode": "contain",
+      "backgroundColor": "#081225"
+    },
     "android": {
       "package": "com.aulafacil.mobile",
-      "versionCode": 2,
+      "versionCode": 3,
       "adaptiveIcon": {
-        "backgroundColor": "#0d2d73"
+        "foregroundImage": "./assets/adaptive-icon.png",
+        "backgroundColor": "#081225"
       }
     },
     "ios": {
