@@ -1,0 +1,49 @@
+name: Aplicar correções do AulaFácil Mobile 0.2.1
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - ".github/scripts/patch-mobile-021.cjs"
+      - ".github/workflows/patch-mobile-021.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Baixar código
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Preparar Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Aplicar correções
+        run: node .github/scripts/patch-mobile-021.cjs
+
+      - name: Instalar dependências do mobile
+        working-directory: mobile
+        run: npm install --no-audit --no-fund
+
+      - name: Validar TypeScript
+        working-directory: mobile
+        run: npm run typecheck
+
+      - name: Publicar correções no main
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add mobile/App.tsx mobile/package.json mobile/app.json .github/workflows/build-mobile-android.yml
+          if git diff --cached --quiet; then
+            echo "Nenhuma alteração necessária."
+            exit 0
+          fi
+          git commit -m "fix: corrigir navegação e alunos no mobile 0.2.1"
+          git push origin HEAD:main
