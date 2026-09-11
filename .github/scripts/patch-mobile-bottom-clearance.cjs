@@ -1,0 +1,10 @@
+const fs = require('fs');
+const path = 'mobile/App.tsx';
+let src = fs.readFileSync(path, 'utf8');
+const before = 'bottomNav: { position: "absolute", left: 0, right: 0, bottom: 28, height: 72, paddingBottom: 0,';
+const after = 'bottomNav: { position: "absolute", left: 0, right: 0, bottom: 50, height: 72, paddingBottom: 0,';
+if (!src.includes(before)) throw new Error('Posição atual do menu inferior não encontrada.');
+src = src.replace(before, after);
+src = src.replace('contentInner: { padding: 18, paddingBottom: 150, gap: 12 }', 'contentInner: { padding: 18, paddingBottom: 180, gap: 12 }');
+fs.writeFileSync(path, src);
+console.log('Menu inferior elevado para ficar acima da navegação de três botões do Android.');
