@@ -1,4 +1,4 @@
-# Recompilação do AulaFácil Mobile 0.1.0 após validação de tipagem
+# AulaFácil Mobile 0.1.1 - APK autônomo com bundle JavaScript embutido
 name: Gerar APK do AulaFácil Mobile
 
 on:
@@ -52,19 +52,26 @@ jobs:
       - name: Gerar projeto Android nativo
         run: npx expo prebuild --platform android --clean --non-interactive
 
-      - name: Compilar APK instalável
+      - name: Compilar APK Release autônomo
         run: |
           chmod +x android/gradlew
           cd android
-          ./gradlew assembleDebug --no-daemon
+          ./gradlew assembleRelease --no-daemon
+
+      - name: Validar bundle JavaScript dentro do APK
+        run: |
+          APK="android/app/build/outputs/apk/release/app-release.apk"
+          test -f "$APK"
+          unzip -l "$APK" | grep -q "assets/index.android.bundle"
+          echo "Bundle JavaScript confirmado dentro do APK."
 
       - name: Preparar nome amigável
-        run: cp android/app/build/outputs/apk/debug/app-debug.apk AulaFacil-Mobile-Android.apk
+        run: cp android/app/build/outputs/apk/release/app-release.apk AulaFacil-Mobile-Android-0.1.1.apk
 
       - name: Publicar APK como artefato
         uses: actions/upload-artifact@v4
         with:
-          name: AulaFacil-Mobile-Android
-          path: mobile/AulaFacil-Mobile-Android.apk
+          name: AulaFacil-Mobile-Android-0.1.1
+          path: mobile/AulaFacil-Mobile-Android-0.1.1.apk
           if-no-files-found: error
           retention-days: 30
