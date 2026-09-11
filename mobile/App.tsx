@@ -668,7 +668,7 @@ const styles = StyleSheet.create({
   invoiceCard: { gap: 13, backgroundColor: C.surface, borderWidth: 1, borderColor: C.border, borderRadius: 18, padding: 15, marginTop: 8 },
   accountCard: { gap: 7, backgroundColor: C.surface, borderWidth: 1, borderColor: C.border, borderRadius: 18, padding: 16, marginTop: 8 },
   rowBetween: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", gap: 12 },
-  listTitle: { color: C.text, fontSize: 15, fontWeight: "850", flexShrink: 1 },
+  listTitle: { color: C.text, fontSize: 15, fontWeight: "800", flexShrink: 1 },
   listMeta: { color: C.muted, fontSize: 12.5, lineHeight: 18 },
   listAmount: { color: C.text, fontSize: 14, fontWeight: "900" },
   statusText: { fontSize: 11, fontWeight: "900" },
