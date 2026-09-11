@@ -1,4 +1,4 @@
-# AulaFácil Mobile 0.2.1 - APK autônomo com identidade própria
+# AulaFácil Mobile 0.2.1 - build final com navegação Android corrigida
 name: Gerar APK do AulaFácil Mobile
 
 on:
