@@ -1,109 +1,14 @@
-name: Corrigir cobrança por alias v2
+name: Patch legado de alias de cobrança
 
 on:
-  push:
-    branches: [main]
-    paths:
-      - ".github/workflows/patch-charge-alias-resolution-v2.yml"
   workflow_dispatch:
 
 permissions:
-  contents: write
+  contents: read
 
 jobs:
-  patch:
+  legacy:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-        with:
-          ref: main
-          fetch-depth: 0
-      - uses: actions/setup-node@v4
-        with:
-          node-version: 22
-          cache: npm
-      - uses: denoland/setup-deno@v2
-        with:
-          deno-version: v2.x
-      - name: Aplicar resolução de alias
-        shell: python
-        run: |
-          from pathlib import Path
-          import re
-
-          p = Path('supabase/functions/payment-charge/index.ts')
-          s = p.read_text(encoding='utf-8')
-          if 'invoice_sync_aliases' not in s:
-              pattern = re.compile(r'  const \{ data: invoice, error: invoiceError \} = await admin\.from\("invoices"\)\.select\("\*"\)\.eq\("id", invoiceId\)\.maybeSingle\(\);\n  if \(invoiceError\) return reply\(500, \{ error: `Não foi possível carregar a cobrança: \$\{invoiceError\.message\}` \}\);\n  if \(!invoice\) return reply\(404, \{ error: "Cobrança não encontrada\." \}\);')
-              replacement = '''  let invoiceResult = await admin.from("invoices").select("*").eq("id", invoiceId).maybeSingle();
-  if (invoiceResult.error) return reply(500, { error: `Não foi possível carregar a cobrança: ${invoiceResult.error.message}` });
-  let invoice: any = invoiceResult.data;
-
-  // Compatibilidade com mensalidades cujo UUID local antigo virou alias do ID canônico da nuvem.
-  if (!invoice) {
-    const { data: memberships, error: membershipError } = await admin
-      .from("school_members").select("school_id")
-      .eq("user_id", userData.user.id).eq("active", true);
-    if (membershipError) return reply(500, { error: "Não foi possível validar as instituições da sua conta." });
-    const schoolIds = (memberships ?? []).map((item: any) => String(item.school_id)).filter(Boolean);
-    if (schoolIds.length) {
-      const { data: aliases, error: aliasError } = await admin
-        .from("invoice_sync_aliases")
-        .select("school_id,canonical_invoice_id")
-        .eq("local_invoice_id", invoiceId)
-        .in("school_id", schoolIds)
-        .limit(2);
-      if (aliasError) return reply(500, { error: "Não foi possível resolver o identificador antigo da cobrança." });
-      if ((aliases ?? []).length > 1) return reply(409, { error: "O identificador antigo desta cobrança ficou ambíguo entre instituições. Sincronize novamente antes de emitir." });
-      const canonicalId = String(aliases?.[0]?.canonical_invoice_id ?? "");
-      if (canonicalId) {
-        invoiceResult = await admin.from("invoices").select("*").eq("id", canonicalId).maybeSingle();
-        if (invoiceResult.error) return reply(500, { error: `Não foi possível carregar a cobrança reconciliada: ${invoiceResult.error.message}` });
-        invoice = invoiceResult.data;
-      }
-    }
-  }
-  if (!invoice) return reply(404, { error: "Cobrança não encontrada nem entre os identificadores reconciliados. Sincronize o AulaFácil e tente novamente." });'''
-              s, n = pattern.subn(replacement, s, count=1)
-              if n != 1:
-                  raise SystemExit('Não foi possível localizar o bloco de cobrança para resolver alias')
-          if 'canonicalInvoiceId: invoice.id' not in s:
-              s = s.replace('return reply(200, { ok: true, reused: true, provider: invoice.provider,', 'return reply(200, { ok: true, canonicalInvoiceId: invoice.id, reused: true, provider: invoice.provider,', 1)
-              s = s.replace('return reply(200, { ok: true, reused: Boolean(normalized.metadata.recoveredFromProvider || claim.action === "reuse"), provider: normalized.provider,', 'return reply(200, { ok: true, canonicalInvoiceId: invoice.id, reused: Boolean(normalized.metadata.recoveredFromProvider || claim.action === "reuse"), provider: normalized.provider,', 1)
-          p.write_text(s, encoding='utf-8')
-
-          p = Path('supabase/functions/payment-charge-link/index.ts')
-          s = p.read_text(encoding='utf-8')
-          if 'resolvedInvoiceId' not in s:
-              needle = '  const db = createClient(url, serviceKey, { auth: { persistSession: false, autoRefreshToken: false } });\n'
-              if needle not in s:
-                  raise SystemExit('Não foi possível localizar o cliente do payment-charge-link')
-              s = s.replace(needle, needle + '  const resolvedInvoiceId = String(chargeData?.canonicalInvoiceId ?? invoiceId);\n', 1)
-              marker = '  const { data: invoice, error: invoiceError } = await db\n'
-              idx = s.find(marker)
-              if idx < 0:
-                  raise SystemExit('Não foi possível localizar leitura de invoice no payment-charge-link')
-              tail = s[idx:]
-              tail, n = re.subn(r'\.eq\("id", invoiceId\)', '.eq("id", resolvedInvoiceId)', tail, count=1)
-              if n != 1:
-                  raise SystemExit('Não foi possível trocar invoiceId pelo ID canônico')
-              s = s[:idx] + tail
-          p.write_text(s, encoding='utf-8')
-      - name: Typecheck Edge Functions
-        run: |
-          deno check supabase/functions/payment-charge/index.ts
-          deno check supabase/functions/payment-charge-link/index.ts
-      - name: Testes e build
-        run: |
-          npm ci
-          npm test
-          npm run build
-      - name: Commitar
-        shell: bash
-        run: |
-          git config user.name "kuadm"
-          git config user.email "kuadmff2@gmail.com"
-          git add supabase/functions/payment-charge/index.ts supabase/functions/payment-charge-link/index.ts
-          git diff --cached --quiet && exit 0
-          git commit -m "fix: resolver ID antigo ao gerar Pix e boleto"
-          git push origin HEAD:main
+      - name: Informar estado
+        run: echo "A correção de alias de cobrança já foi incorporada ao código principal e ao backend. Nenhum patch adicional é necessário."
