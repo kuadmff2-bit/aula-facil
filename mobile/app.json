@@ -1,0 +1,30 @@
+{
+  "expo": {
+    "name": "AulaFácil",
+    "slug": "aulafacil-mobile",
+    "version": "0.1.0",
+    "orientation": "portrait",
+    "userInterfaceStyle": "automatic",
+    "backgroundColor": "#081225",
+    "android": {
+      "package": "com.aulafacil.mobile",
+      "versionCode": 1,
+      "adaptiveIcon": {
+        "backgroundColor": "#0d2d73"
+      }
+    },
+    "ios": {
+      "bundleIdentifier": "com.aulafacil.mobile",
+      "supportsTablet": true
+    },
+    "plugins": [
+      [
+        "expo-secure-store",
+        {
+          "configureAndroidBackup": true,
+          "faceIDPermission": "Permita que o AulaFácil proteja sua sessão neste aparelho."
+        }
+      ]
+    ]
+  }
+}
