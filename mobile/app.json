@@ -2,7 +2,7 @@
   "expo": {
     "name": "AulaFácil",
     "slug": "aulafacil-mobile",
-    "version": "0.2.0",
+    "version": "0.2.1",
     "orientation": "portrait",
     "userInterfaceStyle": "automatic",
     "backgroundColor": "#081225",
@@ -14,7 +14,7 @@
     },
     "android": {
       "package": "com.aulafacil.mobile",
-      "versionCode": 3,
+      "versionCode": 4,
       "adaptiveIcon": {
         "foregroundImage": "./assets/adaptive-icon.png",
         "backgroundColor": "#081225"

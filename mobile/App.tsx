@@ -166,6 +166,7 @@ export default function App() {
   const [message, setMessage] = useState("");
   const [charge, setCharge] = useState<ChargeState>(null);
   const [schoolPicker, setSchoolPicker] = useState(false);
+  const [selectedStudent, setSelectedStudent] = useState<MobileStudent | null>(null);
 
   const studentMap = useMemo(() => new Map(students.map((item) => [item.id, item])), [students]);
   const classMap = useMemo(() => new Map(classes.map((item) => [item.id, item])), [classes]);
@@ -528,16 +529,26 @@ export default function App() {
             <TextInput placeholder="Buscar aluno, responsável ou turma" placeholderTextColor={C.muted} value={query} onChangeText={setQuery} style={styles.search} />
             {visibleStudents.length ? visibleStudents.map((student) => {
               const classItem = classMap.get(studentClassMap.get(student.id) ?? "");
+              const className = classItem ? `${classItem.name}${classItem.groupName ? ` • ${classItem.groupName}` : ""}` : "Sem turma vinculada";
               return (
-                <View key={student.id} style={styles.listCardColumn}>
+                <Pressable
+                  key={student.id}
+                  accessibilityRole="button"
+                  accessibilityLabel={`Abrir dados de ${student.name}`}
+                  onPress={() => setSelectedStudent(student)}
+                  style={({ pressed }) => [styles.listCardColumn, styles.studentCard, pressed && styles.pressed]}
+                >
                   <View style={styles.rowBetween}>
-                    <Text style={styles.listTitle}>{student.name}</Text>
-                    <Text style={[styles.statusChip, { color: student.enrollmentStatus === "active" ? C.success : C.warning }]}>{student.enrollmentStatus === "active" ? "Ativo" : "Pausado"}</Text>
+                    <Text numberOfLines={2} style={styles.listTitle}>{student.name}</Text>
+                    <Text numberOfLines={1} style={[styles.statusChip, { color: student.enrollmentStatus === "active" ? C.success : C.warning }]}>
+                      {student.enrollmentStatus === "active" ? "Ativo" : "Pausado"}
+                    </Text>
                   </View>
-                  <Text style={styles.className}>{classItem ? `${classItem.name}${classItem.groupName ? ` • ${classItem.groupName}` : ""}` : "Sem turma vinculada"}</Text>
-                  <Text style={styles.listMeta}>{phoneLabel(student.phone)}</Text>
-                  {student.guardianName ? <Text style={styles.listMeta}>Responsável: {student.guardianName}{student.guardianPhone ? ` • ${phoneLabel(student.guardianPhone)}` : ""}</Text> : null}
-                </View>
+                  <Text numberOfLines={2} style={styles.studentClassName}>{className}</Text>
+                  <Text numberOfLines={1} style={styles.listMeta}>{phoneLabel(student.phone)}</Text>
+                  {student.guardianName ? <Text numberOfLines={2} style={styles.listMeta}>Responsável: {student.guardianName}{student.guardianPhone ? ` • ${phoneLabel(student.guardianPhone)}` : ""}</Text> : null}
+                  <Text style={styles.openHint}>Toque para abrir os dados</Text>
+                </Pressable>
               );
             }) : <Empty title="Nenhum aluno encontrado" text="Tente outro nome, telefone ou turma." />}
           </>
@@ -590,7 +601,7 @@ export default function App() {
                   </View>
                   {open ? (
                     <View style={styles.invoiceActions}>
-                      <ActionButton label="Pix / boleto" onPress={() => startCharge(invoice)} tone="gold" disabled={actionBusy} />
+                      <ActionButton label="Cobrar" onPress={() => startCharge(invoice)} tone="gold" disabled={actionBusy} />
                       <ActionButton label="Receber" onPress={() => receiveCash(invoice)} tone="ghost" disabled={actionBusy} />
                     </View>
                   ) : invoice.providerChargeId ? <Text style={styles.providerNote}>Cobrança {invoice.provider || "bancária"} vinculada.</Text> : null}
@@ -634,7 +645,7 @@ export default function App() {
             <View style={{ height: 10 }} />
             <ActionButton label="Atualizar agora" onPress={() => void refresh()} tone="ghost" />
             <ActionButton label="Sair da conta" onPress={() => void logout()} tone="danger" />
-            <Text style={styles.version}>AulaFácil Mobile 0.2.0</Text>
+            <Text style={styles.version}>AulaFácil Mobile 0.2.1</Text>
           </>
         ) : null}
       </ScrollView>
@@ -653,6 +664,39 @@ export default function App() {
           </Pressable>
         ))}
       </View>
+
+      <Modal transparent visible={Boolean(selectedStudent)} animationType="slide" onRequestClose={() => setSelectedStudent(null)}>
+        <View style={styles.modalBackdrop}>
+          <View style={styles.sheet}>
+            {selectedStudent ? (() => {
+              const classItem = classMap.get(studentClassMap.get(selectedStudent.id) ?? "");
+              const className = classItem ? `${classItem.name}${classItem.groupName ? ` • ${classItem.groupName}` : ""}` : "Sem turma vinculada";
+              const openInvoices = invoices.filter((item) => item.studentId === selectedStudent.id && ["pending", "overdue"].includes(effectiveStatus(item))).length;
+              return (
+                <>
+                  <View style={styles.sheetHandle} />
+                  <Text style={styles.sheetTitle}>{selectedStudent.name}</Text>
+                  <Text style={styles.sheetSubtitle}>{className}</Text>
+                  <View style={styles.studentDetailBox}>
+                    <Text style={styles.detailLabel}>Telefone</Text>
+                    <Text style={styles.detailValue}>{phoneLabel(selectedStudent.phone)}</Text>
+                    <Text style={styles.detailLabel}>Responsável</Text>
+                    <Text style={styles.detailValue}>{selectedStudent.guardianName || "Não informado"}</Text>
+                    <Text style={styles.detailLabel}>Contato do responsável</Text>
+                    <Text style={styles.detailValue}>{selectedStudent.guardianPhone ? phoneLabel(selectedStudent.guardianPhone) : "Não informado"}</Text>
+                    <Text style={styles.detailLabel}>Situação</Text>
+                    <Text style={styles.detailValue}>{selectedStudent.enrollmentStatus === "active" ? "Ativo" : "Pausado"}</Text>
+                    <Text style={styles.detailLabel}>Mensalidades em aberto</Text>
+                    <Text style={styles.detailValue}>{openInvoices}</Text>
+                  </View>
+                  <ActionButton label="Ver financeiro deste aluno" onPress={() => { const name = selectedStudent.name; setSelectedStudent(null); setTab("finance"); setQuery(name); }} tone="gold" />
+                  <ActionButton label="Fechar" onPress={() => setSelectedStudent(null)} tone="ghost" />
+                </>
+              );
+            })() : null}
+          </View>
+        </View>
+      </Modal>
 
       <Modal transparent visible={Boolean(charge)} animationType="slide" onRequestClose={() => setCharge(null)}>
         <View style={styles.modalBackdrop}>
@@ -740,7 +784,7 @@ const styles = StyleSheet.create({
   message: { backgroundColor: "#421820", paddingHorizontal: 16, paddingVertical: 10, borderBottomWidth: 1, borderBottomColor: "#8b2937" },
   messageText: { color: "#fecdd3", fontSize: 13, lineHeight: 18 },
   content: { flex: 1 },
-  contentInner: { padding: 18, paddingBottom: 110, gap: 12 },
+  contentInner: { padding: 18, paddingBottom: 150, gap: 12 },
   pageEyebrow: { color: C.gold, fontSize: 11, fontWeight: "900", letterSpacing: 1.4 },
   pageTitle: { color: C.text, fontSize: 26, fontWeight: "900", marginTop: 3 },
   pageSubtitle: { color: C.muted, fontSize: 14, lineHeight: 20, marginBottom: 6 },
@@ -756,6 +800,12 @@ const styles = StyleSheet.create({
   search: { minHeight: 48, backgroundColor: C.surface, borderWidth: 1, borderColor: C.border, borderRadius: 14, color: C.text, paddingHorizontal: 14, marginVertical: 8 },
   listCard: { flexDirection: "row", alignItems: "center", gap: 10, backgroundColor: C.surface, borderWidth: 1, borderColor: C.border, borderRadius: 16, padding: 14, marginTop: 8 },
   listCardColumn: { gap: 5, backgroundColor: C.surface, borderWidth: 1, borderColor: C.border, borderRadius: 16, padding: 14, marginTop: 8 },
+  studentCard: { minHeight: 118 },
+  studentClassName: { color: "#d7e2f3", fontSize: 13.5, fontWeight: "800", lineHeight: 19 },
+  openHint: { color: C.gold, fontSize: 11, fontWeight: "800", marginTop: 3 },
+  studentDetailBox: { gap: 4, backgroundColor: C.surface2, borderRadius: 16, padding: 15, marginVertical: 4 },
+  detailLabel: { color: C.muted, fontSize: 10.5, fontWeight: "800", textTransform: "uppercase", marginTop: 5 },
+  detailValue: { color: C.text, fontSize: 14, fontWeight: "700", lineHeight: 20 },
   invoiceCard: { gap: 13, backgroundColor: C.surface, borderWidth: 1, borderColor: C.border, borderRadius: 18, padding: 15, marginTop: 8 },
   classCard: { flexDirection: "row", gap: 12, backgroundColor: C.surface, borderWidth: 1, borderColor: C.border, borderRadius: 18, padding: 14, marginTop: 8, overflow: "hidden" },
   classStripe: { width: 5, borderRadius: 6, alignSelf: "stretch" },
@@ -769,8 +819,8 @@ const styles = StyleSheet.create({
   rowBetween: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", gap: 12 },
   listTitle: { color: C.text, fontSize: 15, fontWeight: "800", flexShrink: 1 },
   listMeta: { color: C.muted, fontSize: 12.5, lineHeight: 18 },
-  listAmount: { color: C.text, fontSize: 14, fontWeight: "900" },
-  statusText: { fontSize: 11, fontWeight: "900" },
+  listAmount: { color: C.text, fontSize: 13, fontWeight: "900", flexShrink: 0 },
+  statusText: { fontSize: 10, lineHeight: 14, fontWeight: "900", flexShrink: 0 },
   statusChip: { color: C.muted, fontSize: 11, fontWeight: "900" },
   receipt: { color: C.gold, fontSize: 11, fontWeight: "800", marginTop: 2 },
   providerNote: { color: C.muted, fontSize: 12 },
@@ -783,7 +833,7 @@ const styles = StyleSheet.create({
   emptyIcon: { color: C.muted, fontSize: 34 },
   emptyTitle: { color: C.text, fontWeight: "900", fontSize: 16, textAlign: "center" },
   emptyText: { color: C.muted, fontSize: 13, textAlign: "center", lineHeight: 19 },
-  bottomNav: { position: "absolute", left: 0, right: 0, bottom: 0, height: 82, paddingBottom: 14, flexDirection: "row", backgroundColor: "#0a1529", borderTopWidth: 1, borderTopColor: C.border },
+  bottomNav: { position: "absolute", left: 0, right: 0, bottom: 28, height: 72, paddingBottom: 0, flexDirection: "row", backgroundColor: "#0a1529", borderTopWidth: 1, borderTopColor: C.border },
   navItem: { flex: 1, alignItems: "center", justifyContent: "center", gap: 3 },
   navIcon: { color: C.muted, fontSize: 19, fontWeight: "900" },
   navLabel: { color: C.muted, fontSize: 9.5, fontWeight: "800" },
