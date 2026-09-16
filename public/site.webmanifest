@@ -1,10 +1,1 @@
-{
-  "name": "AulaFácil",
-  "short_name": "AulaFácil",
-  "description": "Gestão escolar simples, segura e organizada.",
-  "start_url": ".",
-  "display": "standalone",
-  "background_color": "#eef1f5",
-  "theme_color": "#0d2d73",
-  "icons": [{ "src": "/favicon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any maskable" }]
-}
+{"name":"AulaFácil — Gestão educacional","short_name":"AulaFácil","lang":"pt-BR","start_url":"/","display":"standalone","background_color":"#f5f6f4","theme_color":"#182d2b","icons":[{"src":"/favicon.svg","sizes":"any","type":"image/svg+xml","purpose":"any"}]}

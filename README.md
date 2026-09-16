@@ -1,84 +1,86 @@
-# AulaFácil Desktop
+# AulaFácil — Gestão educacional
 
-O **AulaFácil** é um sistema de gestão escolar para Windows, criado para funcionar de forma simples no dia a dia da instituição e continuar útil mesmo quando a internet não está disponível.
+Reconstrução do AulaFácil com React/TypeScript, autenticação Supabase e PostgreSQL. **Candidata em revisão; ainda não publicada em produção.** Leia os gates em [docs/rebuild/VALIDATION.md](docs/rebuild/VALIDATION.md).
 
-A linha **0.3.x** adiciona recursos profissionais sem abandonar a cópia local protegida: sincronização opcional entre dispositivos, financeiro com histórico de pagamentos, personalização da instituição, backups criptografados e integrações que podem ser habilitadas conforme a necessidade da escola.
+## O que foi implementado
 
-## Principais recursos
+Login/cadastro/recuperação de conta, instituições, permissões, alunos, responsáveis compartilhados, cursos, turmas, matrículas com geração transacional de parcelas, mensalidades, pagamento parcial, idempotência, estorno manual, recibos, PIX estático, cobranças por WhatsApp revisadas pelo operador, inadimplentes, resumo financeiro, auditoria, configurações, temas claro/escuro e layout responsivo.
 
-- painel com alunos, turmas, presença e situação financeira;
-- cadastro de alunos com campos personalizados e vencimento individual;
-- turmas, horários, professores, mensalidades e carga horária;
-- chamada e histórico de notas;
-- geração mensal de cobranças respeitando o vencimento de cada aluno;
-- multa, juros, desconto, negociação e histórico financeiro;
-- registro de pagamentos e recibos em duas vias;
-- declarações e certificados personalizáveis;
-- identidade da instituição: nome, dados, logotipo e cores;
-- modo claro, escuro ou seguindo o Windows;
-- backup portátil protegido por senha no formato `.afbackup`;
-- restauração validada de backups compatíveis de versões anteriores;
-- conta e sincronização do AulaFácil Cloud opcionais;
-- integrações financeiras e automações de mensagens configuráveis;
-- suporte a Windows x64 e Windows ARM64.
+Os dados operacionais são consultados no banco. Nenhum cadastro ou pagamento é salvo em localStorage. Apenas a preferência de tema fica lá. Sessões usam o adaptador protegido do Tauri e sessionStorage no navegador. Não há pagamento offline nem confirmação automática de PIX estático.
 
-A instalação começa **sem alunos ou dados de demonstração**.
+## Arquitetura
 
-## Segurança e dados
+- `src/management`: aplicação nova, componentes, páginas, tipos e cliente de dados.
+- `src/secure-auth-storage.ts`: adaptador de sessão protegido existente.
+- `supabase/migrations/20260915231400_management_rebuild.sql`: migração aditiva sobre o banco atual.
+- `supabase/functions/af-upload`: upload autenticado de imagens para bucket privado.
+- `tests/management`: testes de moeda/PIX e asserções SQL transacionais.
+- `src-tauri`: empacotamento Windows existente; não recompilado nesta entrega.
+- `mobile` e integrações antigas de provedores: preservados, sem alegação de compatibilidade validada com a nova interface.
 
-A cópia local do banco é protegida no Windows usando **DPAPI**. O backup portátil usa criptografia autenticada **AES-256-GCM** e exige a senha escolhida na exportação.
-
-Quando o AulaFácil Cloud é ativado, o acesso online é separado por instituição e permissões de usuário. Credenciais administrativas de provedores de pagamento ou mensagens não devem ficar no frontend nem ser incluídas no repositório.
-
-Nenhum software pode garantir risco zero. Por isso, o projeto mantém validação de dados, recuperação de gravação, backups, controle de acesso, RLS no backend e um portão automatizado de qualidade antes dos pacotes de lançamento.
-
-Consulte a [Política de Privacidade](PRIVACY.md), os [Termos de Uso](TERMS_OF_USE.md), a [Política de Segurança](SECURITY.md) e o [Checklist de Lançamento](RELEASE_CHECKLIST.md).
-
-## Microsoft Store
-
-A distribuição principal para usuários finais é preparada para a Microsoft Store. O workflow
-[`.github/workflows/build-store-msix.yml`](.github/workflows/build-store-msix.yml) compila e valida as arquiteturas **x64** e **ARM64**, cria os dois pacotes MSIX e os reúne em um único **MSIX Bundle**, acompanhado do hash SHA-256.
-
-A identidade usada no pacote da Store deve ser exatamente a identidade atribuída ao produto no Partner Center. Alterar manualmente essa identidade quebra a associação com a publicação existente.
+RPCs: `af_list`, `af_save`, `af_enroll`, `af_pay`, `af_detail`, `af_dashboard`, `af_settings`, `af_action`. O schema `af_private` não deve ser exposto pelo Data API. Cada operação verifica associação ativa e papel. Foreign keys compostas impedem referências entre instituições.
 
 ## Desenvolvimento
 
-Pré-requisitos principais: Node.js 22, Rust estável e dependências de desenvolvimento do Tauri 2 para Windows.
+Node.js 22 ou posterior:
 
-```bash
+```sh
 npm ci
+cp .env.example .env.local
+# Configure URL e chave publicável de uma instância de homologação.
+npm run dev
+```
+
+O projeto conserva os identificadores públicos do Supabase já usado pelo AulaFácil em `src/management/public-config.ts`; variáveis de ambiente substituem esses valores. Chave publicável não é segredo nem concede autorização. Nunca usar service_role/secret em variável VITE_.
+
+```sh
+npm run lint
+npm run typecheck
 npm test
 npm run build
-npm run desktop:dev
 ```
 
-Para validar o código nativo:
+## Banco e migrations
 
-```bash
-cargo check --locked --manifest-path src-tauri/Cargo.toml
+**A migration exige a base AulaFácil existente.** As migrations históricas do repositório não criam sozinhas um banco vazio. Antes de preparar uma instância nova, obtenha e versione um baseline de esquema sem dados/segredos a partir da instância atual.
+
+Na homologação, aplique a migration depois de revisar os dados e o backup. Execute as asserções SQL dentro de uma transação:
+
+```sql
+BEGIN;
+-- conteúdo da migration em uma base que ainda não a recebeu
+-- conteúdo de tests/management/database.sql
+ROLLBACK;
 ```
 
-O workflow **Validar qualidade do AulaFácil** executa testes, TypeScript/frontend e validação do Tauri em cada alteração relevante de desenvolvimento.
+O teste cria fixtures temporárias e alterna para o papel authenticated. Não remova o ROLLBACK para executar os testes. Nunca rodar reset do banco produtivo.
 
-## Processo de lançamento
+## Publicação e corte
 
-A branch `main` é tratada como estável. Mudanças maiores são concentradas na `develop` e somente devem chegar à versão publicada quando os testes e o checklist de lançamento estiverem concluídos.
+1. Criar backup e validar restauração em homologação. Em cada desktop antigo, reconciliar antes eventuais registros ainda não sincronizados; o novo frontend não importa automaticamente cópias locais.
+2. Aplicar a migration na homologação. Configurar Auth: domínio/redirects, SMTP, limite de tentativas, política de senha e proteção contra credenciais vazadas conforme suporte do plano.
+3. Publicar `af-upload` com verificação de JWT e configurar `AF_ALLOWED_ORIGINS` somente com as origens necessárias. A função usa variáveis de servidor fornecidas pelo Supabase; segredos nunca entram no frontend.
+4. Testar os fluxos de [VALIDATION.md](docs/rebuild/VALIDATION.md), especialmente login, recuperação, permissões, uploads, impressão e telas móveis.
+5. Coordenar o corte de clientes antigos: a migration revoga gravação direta em invoices/payments. Aplicar a migration e publicar o frontend na mesma janela.
+6. Hospedar `dist/` com HTTPS. Para Cloudflare Pages: build `npm run build`, saída `dist`. `_headers` define CSP, proteção de frames e cache; `_redirects` mantém retorno de autenticação na aplicação. Outros hosts precisam aplicar cabeçalhos equivalentes.
+7. Publicar uma release Windows depois de validar o workflow Tauri/assinatura; nenhum instalador novo foi gerado aqui.
 
-Não é suficiente o aplicativo apenas compilar: a versão candidata também precisa validar migração e recuperação de dados, fluxos financeiros, autenticação/sincronização, instalação x64 e ARM64 e atualização sobre a versão anterior.
+Sem alterações persistentes no banco de produção nesta branch. Não basta publicar o frontend antes da migration.
 
-## Aplicativo para responsáveis e alunos
+## Segurança
 
-Uma aplicação móvel independente pode usar o mesmo backend autorizado do AulaFácil. Ela deve ser distribuída como aplicativo real no dispositivo, sem colocar chaves secretas de provedores dentro do APK.
+Sem anon nos endpoints de gestão. Banco com RLS, autenticação gerenciada, índices únicos para pagamentos/recibos, locks de mensalidade, valores NUMERIC no servidor e centavos inteiros na entrada do cliente. Escritas financeiras passam por rotinas transacionais. Recibos preservam snapshot; estorno preserva pagamento e histórico. CPF mascarado nas listagens.
 
-## Tecnologia
+Uploads limitados a 2 MB, assinatura e MIME PNG/JPEG/WebP, nomes aleatórios e bucket privado. URLs de leitura são temporárias. Validar o endpoint implantado antes do uso. Não há garantia de segurança absoluta; limites restantes estão documentados.
 
-- React
-- TypeScript
-- Vite
-- Tauri 2
-- Rust
-- Supabase para os recursos opcionais de autenticação e nuvem
+## Backup e recuperação
 
-## Licença
+Preservar: banco (esquemas, dados e Auth), objetos do bucket privado, configuração Auth/redirects, origens e segredos das Edge Functions. Backups do banco não incluem automaticamente os bytes do Storage.
 
-Distribuído sob a [licença MIT](LICENSE).
+Use backups gerenciados/PITR conforme o plano ou dump PostgreSQL por conexão administrativa mantida somente no ambiente do operador. Criptografe e restrinja acesso aos arquivos; eles contêm dados pessoais. Nunca commitar backups.
+
+Restaure primeiro numa instância isolada, restaure os objetos de Storage, configure segredos e Auth, compare contagem de alunos/mensalidades/pagamentos e saldos e teste acesso de duas instituições. Só então coordene a recuperação do serviço. Não reimporte JSON antigo do desktop por cima do livro financeiro atual.
+
+## Estado da entrega
+
+[Auditoria](docs/rebuild/AUDIT.md) · [Testes e pendências explícitas](docs/rebuild/VALIDATION.md).

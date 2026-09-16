@@ -2,7 +2,7 @@ name: Gerar instaladores do AulaFácil
 
 on:
   push:
-    branches: [main, develop]
+    branches: [main, develop, rebuild/aulafacil-management]
     tags: ["v*"]
   workflow_dispatch:
 
