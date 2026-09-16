@@ -16,7 +16,7 @@
 - O navegador remoto retornou `ERR_BLOCKED_BY_CLIENT` ao abrir a prévia local. Não houve inspeção visual nem teste interativo nos tamanhos 320, 375, 390, 430, 768, 1024, 1366 e 1920.
 - Cadastro/login/logout/recuperação por e-mail, navegação autenticada, upload implantado e impressão/PDF ainda precisam de teste ponta a ponta em homologação.
 - Não houve teste concorrente com múltiplas conexões reais, embora as operações usem locks transacionais e índices únicos.
-- Migração NÃO foi aplicada persistentemente no banco de produção. A Edge Function de upload NÃO foi publicada.
+- Atualização de 16/09/2026: migração aplicada após autorização, com cópia privada dos dados e verificações de preservação dos registros e valores das mensalidades. Testes transacionais repetidos após implantação passaram. Upload publicado para a origem do aplicativo Windows; teste autenticado de upload ainda pendente.
 - A migration restringe gravação financeira de clientes antigos; coordenar atualização antes do corte.
 
 ## Recursos do pedido ainda incompletos

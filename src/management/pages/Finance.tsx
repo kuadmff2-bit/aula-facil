@@ -53,7 +53,18 @@ export function Finance({
       const phone = string(r, "guardian_phone") || string(r, "phone");
       const text = `Olá, ${string(r, "guardian_name") || "responsável"}. A mensalidade de ${string(r, "name")}, referente a ${string(r, "reference") || "parcelas em aberto"}, está pendente. Valor: ${money(r.balance)}.${r.due_date ? " Vencimento: " + day(r.due_date) + "." : ""} Caso já tenha realizado o pagamento, desconsidere esta mensagem.`;
       const url = whatsapp(phone, text);
-      window.open(url, "_blank", "noopener,noreferrer");
+      const native = (
+        window as Window & {
+          __TAURI_INTERNALS__?: {
+            invoke(
+              command: string,
+              args: Record<string, unknown>,
+            ): Promise<void>;
+          };
+        }
+      ).__TAURI_INTERNALS__;
+      if (native) await native.invoke("open_external_url", { url });
+      else window.open(url, "_blank", "noopener,noreferrer");
       await rpc("af_action", {
         p_school: school.id,
         p_action: "collection",

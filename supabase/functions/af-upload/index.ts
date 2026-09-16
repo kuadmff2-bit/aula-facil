@@ -1,6 +1,6 @@
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.115.0';
 const max = 2 * 1024 * 1024;
-const origins = (Deno.env.get('AF_ALLOWED_ORIGINS') || '').split(',').filter(Boolean);
+const origins = ['http://tauri.localhost', 'https://tauri.localhost', ...(Deno.env.get('AF_ALLOWED_ORIGINS') || '').split(',').map(v => v.trim()).filter(Boolean)];
 Deno.serve(async (req: Request) => {
  const origin=req.headers.get('origin') || '';
  const headers:Record<string,string>={'Content-Type':'application/json','Cache-Control':'no-store','X-Content-Type-Options':'nosniff','Vary':'Origin'};
